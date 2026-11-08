@@ -70,7 +70,7 @@ async function startApp(opts = {}) {
 
   const close = async () => {
     server.close();
-    store.flushCache();
+    store.flush();
   };
   return { context, scanner, store, server, port, panelUrl, close };
 }

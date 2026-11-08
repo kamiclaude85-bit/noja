@@ -333,6 +333,8 @@ td.good { color: var(--good); }
 .compare img { width: 100%; height: 120px; border-radius: 8px; object-fit: cover; }
 .best { color: var(--good); font-weight: 700; }
 
+.new-pill { display: inline-flex; align-items: center; font-size: 12px; font-weight: 700; color: var(--on-primary); background: var(--primary); border-radius: 6px; padding: 0 7px; margin-inline-end: 8px; vertical-align: 2px; line-height: 1.7; }
+
 /* Mobile filters sheet controls (hidden on desktop) */
 .filters-toggle, .filters-done { display: none; }
 .tray { white-space: nowrap; }

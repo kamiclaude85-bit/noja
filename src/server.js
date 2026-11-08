@@ -56,6 +56,7 @@ function cleanCriteria(b) {
     speed: ['slow', 'normal', 'fast', 'test'].includes(b.speed) ? b.speed : 'normal',
     dailyLimit: Math.min(Math.max(num(b.dailyLimit) || DEFAULT_DAILY_LIMIT, 1), 2000),
     requireLogin: b.requireLogin !== false,
+    recheckAll: !!b.recheckAll,
     searchUrl,
   };
 }
@@ -72,6 +73,8 @@ function publicRun(run) {
     activity: run.activity || '',
     waitUntil: run.waitUntil || null,
     stats: run.stats || null,
+    toVisit: run.toVisit != null ? run.toVisit : null,
+    collectStop: run.collectStop || null,
     sourceUrl: run.sourceUrl,
     items: run.items,
     posts: Object.values(run.posts),

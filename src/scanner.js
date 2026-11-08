@@ -25,6 +25,20 @@ const SPEEDS = {
   test: { read: [60, 120], gap: [20, 50], breakEvery: [8, 12], breakLen: [300, 600] }, // automated tests only
 };
 const DEFAULT_DAILY_LIMIT = 300;
+/** Divar lists newest ads first: after this many already-known ads in a row, the rest is old. */
+const KNOWN_STREAK_STOP = 20;
+
+/** Identifies a saved search, so its ads can be remembered across runs. */
+function searchKey(c) {
+  if (c.searchUrl) return `url:${c.searchUrl}`;
+  return ['q', c.city || 'tehran', P.normalizeText(c.query || ''), c.yearMin || '', c.yearMax || ''].join('|');
+}
+
+/** Price shown on the search-list card (e.g. «۴۸۵٬۰۰۰٬۰۰۰ تومان»), or null. */
+function cardPrice(item) {
+  const line = (item.lines || []).find((l) => /تومان/.test(l));
+  return line ? P.parseNumber(line) : null;
+}
 
 const fa = (n) => Number(n).toLocaleString('fa-IR');
 
@@ -62,7 +76,7 @@ class Scanner {
       items: [],
       posts: {},
       errors: {},
-      stats: { opened: 0, cached: 0, readMs: 0 },
+      stats: { opened: 0, newAds: 0, known: 0, priceChanged: 0, readMs: 0 },
       finishedAt: null,
     };
     this.current = run;
@@ -151,14 +165,53 @@ class Scanner {
       const listUrl = await this.openSearch(run, page);
       run.sourceUrl = listUrl;
 
-      // ---- 3. Collect the list ----
+      // ---- 3. Collect the list (stops early at ads already seen) ----
+      const key = searchKey(c);
+      this.store.touchSearch(key, c);
       await this.collect(run, page);
+
+      // ---- 4. Decide what to open: only new ads, and old ads whose price changed ----
+      const toVisit = [];
+      for (const item of run.items) {
+        const rec = c.recheckAll ? null : this.store.knownAd(item.token);
+        if (rec && rec.removed) continue;
+        if (rec && rec.post) {
+          const now = cardPrice(item);
+          const before = rec.post.price;
+          const changed = now != null && before != null && Math.abs(now - before) / before > 0.005;
+          if (!changed) {
+            run.posts[item.token] = { ...rec.post, order: item.order, isNew: false, firstSeenAt: rec.firstSeenAt };
+            this.store.addToSearch(key, item.token);
+            run.stats.known++;
+            continue;
+          }
+          item.priceFrom = before;
+        }
+        toVisit.push(item);
+      }
+      // Ads this search found on earlier days that are further down the list (not scrolled to today).
+      const inList = new Set(run.items.map((it) => it.token));
+      for (const token of this.store.searchTokens(key)) {
+        if (inList.has(token)) continue;
+        const rec = this.store.knownAd(token);
+        if (!rec || !rec.post || rec.removed) continue;
+        const order = run.items.length;
+        run.items.push({ token, href: rec.post.url, title: rec.post.title, order, fromMemory: true });
+        run.posts[token] = { ...rec.post, order, isNew: false, firstSeenAt: rec.firstSeenAt };
+        run.stats.known++;
+      }
+      run.toVisit = toVisit.length;
+      this.store.saveRun(run, true);
+
       if (!run.items.length) {
         return this.finish(run, 'done', 'هیچ آگهی‌ای در نتایج جستجو پیدا نشد. نام خودرو یا لینک را بررسی کنید.');
       }
+      if (!toVisit.length) {
+        return this.finish(run, 'done', `آگهی جدیدی نبود. ${fa(run.stats.known)} آگهی را از قبل داشتیم.`);
+      }
 
-      // ---- 4. Read the ads ----
-      const queue = H.looseOrder(run.items);
+      // ---- 5. Read them ----
+      const queue = H.looseOrder(toVisit);
       let sinceBreak = 0;
       let nextBreak = H.randInt(...pace.breakEvery);
       let n = 0;
@@ -166,28 +219,34 @@ class Scanner {
         if (this.control.stop) break;
         await this.pauseGate(run);
         n++;
-        const cached = this.store.cachedPost(item.token);
-        if (cached) {
-          run.posts[item.token] = { ...cached, order: item.order, url: item.href || cached.url };
-          run.stats.cached++;
-          this.store.saveRun(run);
-          continue;
-        }
         if (this.store.dailyCount() >= dailyLimit) {
           return this.finish(run, 'done',
-            `به سقف روزانهٔ ${fa(dailyLimit)} آگهی رسیدیم؛ ${fa(Object.keys(run.posts).length)} آگهی خوانده شد. بقیه را فردا ادامه دهید (یا سقف را در تنظیمات بیشتر کنید).`);
+            `به سقف روزانهٔ ${fa(dailyLimit)} آگهی رسیدیم؛ ${fa(run.stats.newAds)} آگهی جدید خوانده شد. بقیه را فردا ادامه دهید (یا سقف را در تنظیمات بیشتر کنید).`);
         }
-        this.setStatus(run, 'reading', `در حال خواندن آگهی ${fa(n)} از ${fa(run.items.length)}`, item.title || '');
+        this.setStatus(run, 'reading', `در حال خواندن آگهی ${fa(n)} از ${fa(queue.length)}`, item.title || '');
         const t0 = Date.now();
         try {
           const post = await this.readAd(run, page, item, pace, listUrl);
           if (post) {
+            const rec = this.store.rememberAd(post, key);
+            post.firstSeenAt = rec.firstSeenAt;
+            if (item.priceFrom != null) {
+              if (post.price != null && post.price !== item.priceFrom) {
+                post.priceChange = { from: item.priceFrom, to: post.price };
+                run.stats.priceChanged++;
+              }
+              post.isNew = false;
+            } else {
+              post.isNew = true;
+              run.stats.newAds++;
+            }
             run.posts[item.token] = post;
             delete run.errors[item.token];
-            this.store.cachePost(post);
           }
         } catch (err) {
-          run.errors[item.token] = String(err && err.message ? err.message : err).slice(0, 200);
+          const msg = String(err && err.message ? err.message : err).slice(0, 200);
+          if (/حذف شده/.test(msg)) this.store.markRemoved(item.token, key);
+          run.errors[item.token] = msg;
         }
         run.stats.opened++;
         run.stats.readMs += Date.now() - t0;
@@ -208,7 +267,7 @@ class Scanner {
       }
       return this.finish(run, this.control.stop ? 'stopped' : 'done');
     } finally {
-      this.store.flushCache();
+      this.store.flush();
     }
   }
 
@@ -269,22 +328,44 @@ class Scanner {
     return page.url();
   }
 
-  /** Scroll the result list (unevenly, with pauses) and collect every ad link. */
+  /**
+   * Scroll the result list (unevenly, with pauses) and collect ad links.
+   * Stops when it has `maxAds` new ads, or when it reaches a long run of ads it
+   * has already read (Divar shows newest first, so everything below is old).
+   */
   async collect(run, page) {
-    const maxAds = Math.max(1, Number(run.criteria.maxAds) || 150);
+    const c = run.criteria;
+    const maxNew = Math.max(1, Number(c.maxAds) || 150);
+    const useMemory = !c.recheckAll;
+    const isKnown = (t) => useMemory && !!this.store.knownAd(t);
     await page.waitForSelector('a[href*="/v/"]', { timeout: 20000 }).catch(() => {});
     await H.sleep(H.natural(900, 1800));
     const found = new Map();
+    let reason = '';
     const add = async () => {
       for (const it of await page.evaluate(S.collectListItems)) if (!found.has(it.token)) found.set(it.token, it);
-      run.items = Array.from(found.values()).slice(0, maxAds);
+      run.items = Array.from(found.values());
+    };
+    const counts = () => {
+      let fresh = 0;
+      let streak = 0;
+      for (const it of run.items) {
+        if (isKnown(it.token)) streak++;
+        else { fresh++; streak = 0; }
+      }
+      return { fresh, streak };
     };
     let idle = 0;
     await add();
-    while (!this.control.stop && found.size < maxAds && idle < 6) {
+    while (!this.control.stop && idle < 6) {
+      const { fresh, streak } = counts();
+      if (fresh >= maxNew) { reason = 'max'; break; }
+      if (useMemory && streak >= KNOWN_STREAK_STOP) { reason = 'known'; break; }
       await this.pauseGate(run);
       const before = found.size;
-      this.setStatus(run, 'collecting', `در حال مرور نتایج: ${fa(run.items.length)} آگهی پیدا شد`);
+      const known = run.items.length - fresh;
+      this.setStatus(run, 'collecting',
+        `در حال مرور نتایج: ${fa(fresh)} آگهی جدید${known ? ` و ${fa(known)} آگهی که قبلاً دیده‌اید` : ''}`);
       await H.scrollBy(page, H.rand(600, 1400));
       await H.sleep(H.natural(500, 1600));
       if (H.chance(0.15)) { await H.scrollBy(page, -H.rand(150, 400)); await H.sleep(H.rand(400, 1000)); }
@@ -297,10 +378,17 @@ class Scanner {
       await add();
       idle = found.size === before ? idle + 1 : 0;
     }
-    run.items = Array.from(found.values()).slice(0, maxAds).map((it, i) => ({ ...it, order: i }));
-    this.control.stop = false; // «enough ads» during collection means: go read them
+    // Keep the list up to the point we stopped; new ads beyond maxNew are left for next time.
+    const items = [];
+    let fresh = 0;
+    for (const it of found.values()) {
+      if (!isKnown(it.token)) { if (fresh >= maxNew) continue; fresh++; }
+      items.push(it);
+    }
+    run.items = items.map((it, i) => ({ ...it, order: i }));
+    run.collectStop = reason || (this.control.stop ? 'user' : 'end');
+    this.control.stop = false; // «enough» during collection means: go read them
     this.store.saveRun(run, true);
-    // Back to the top of the list before opening ads, like a person starting over.
     await H.scrollBy(page, -H.rand(3000, 6000)).catch(() => {});
   }
 
@@ -399,11 +487,14 @@ class Scanner {
     run.finishedAt = Date.now();
     run.activity = '';
     run.waitUntil = null;
-    const read = Object.keys(run.posts).length;
     const errs = Object.keys(run.errors).length;
+    const st = run.stats || {};
+    const parts = [`${fa(st.newAds || 0)} آگهی جدید`];
+    if (st.priceChanged) parts.push(`${fa(st.priceChanged)} تغییر قیمت`);
+    if (st.known) parts.push(`${fa(st.known)} آگهی از قبل`);
     run.message = message || (status === 'stopped'
-      ? `متوقف شد. ${fa(read)} آگهی خوانده شد.`
-      : `تمام شد: ${fa(read)} آگهی خوانده شد${errs ? ` و ${fa(errs)} آگهی باز نشد` : ''}.`);
+      ? `متوقف شد. ${parts.join('، ')}.`
+      : `تمام شد: ${parts.join('، ')}${errs ? `؛ ${fa(errs)} آگهی باز نشد` : ''}.`);
     this.store.saveRun(run, true);
     if (this.page) this.page.close().catch(() => {});
     this.page = null;
@@ -411,4 +502,4 @@ class Scanner {
   }
 }
 
-module.exports = { Scanner, SPEEDS, DEFAULT_DAILY_LIMIT, isLoggedIn };
+module.exports = { Scanner, SPEEDS, DEFAULT_DAILY_LIMIT, KNOWN_STREAK_STOP, isLoggedIn, searchKey };

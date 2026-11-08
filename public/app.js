@@ -130,7 +130,7 @@ function historyItem(r) {
     icon('history'),
     h('div', null,
       h('b', null, describeCriteria(r.criteria) || 'جستجو'),
-      h('small', null, `${new Date(r.createdAt).toLocaleDateString('fa-IR', { month: 'long', day: 'numeric' })} · ${fa(r.read)} آگهی${ACTIVE.includes(r.status) ? ' · در حال انجام' : ''}`)));
+      h('small', null, `${new Date(r.createdAt).toLocaleDateString('fa-IR', { month: 'long', day: 'numeric' })} · ${fa(r.read)} آگهی${r.newCount ? ` (${fa(r.newCount)} جدید)` : ''}${ACTIVE.includes(r.status) ? ' · در حال انجام' : ''}`)));
 }
 
 const historyBtn = $('#historyBtn');
@@ -202,14 +202,16 @@ function renderHome() {
       h('div', { class: 'adv-grid' },
         h('label', { class: 'field' }, h('span', null, 'کلمهٔ لازم در عنوان'), h('input', { name: 'keyword', placeholder: 'مثلاً 206', value: val('keyword') }),
           h('span', { class: 'help' }, 'آگهی‌هایی که این کلمه را ندارند کنار می‌روند')),
-        h('label', { class: 'field' }, h('span', null, 'حداکثر تعداد آگهی'), h('input', { name: 'maxAds', inputmode: 'numeric', value: val('maxAds', '150') })),
+        h('label', { class: 'field' }, h('span', null, 'حداکثر آگهی جدید در هر بار'), h('input', { name: 'maxAds', inputmode: 'numeric', value: val('maxAds', '150') }),
+          h('span', { class: 'help' }, 'آگهی‌هایی که قبلاً خوانده شده‌اند دوباره باز نمی‌شوند')),
         h('label', { class: 'field' }, h('span', null, 'سرعت ربات'), speed),
         h('label', { class: 'field' }, h('span', null, 'سقف آگهی در روز'), h('input', { name: 'dailyLimit', inputmode: 'numeric', value: val('dailyLimit', String(app.dailyLimit || 300)) }),
           h('span', { class: 'help', id: 'todayHelp' }, '')),
         h('label', { class: 'field wide' }, h('span', null, 'یا لینک یک جستجوی فیلترشده در دیوار'),
           h('input', { name: 'searchUrl', dir: 'ltr', placeholder: 'https://divar.ir/s/tehran/car/peugeot/206?...', value: val('searchUrl') }),
           h('span', { class: 'help' }, 'اگر خودتان در دیوار برند، تیپ یا رنگ را فیلتر کرده‌اید، لینک صفحه را اینجا بگذارید.')),
-        h('label', { class: 'check wide' }, h('input', { type: 'checkbox', name: 'strictYear', checked: !!saved.strictYear }), 'آگهی‌هایی که سالشان معلوم نیست حذف شوند'))),
+        h('label', { class: 'check wide' }, h('input', { type: 'checkbox', name: 'strictYear', checked: !!saved.strictYear }), 'آگهی‌هایی که سالشان معلوم نیست حذف شوند'),
+        h('label', { class: 'check wide' }, h('input', { type: 'checkbox', name: 'recheckAll' }), 'این بار همهٔ آگهی‌ها دوباره باز شوند (کندتر؛ معمولاً لازم نیست)'))),
     err);
 
   form.addEventListener('submit', async (e) => {
@@ -217,7 +219,8 @@ function renderHome() {
     err.textContent = '';
     const data = Object.fromEntries(new FormData(form).entries());
     data.strictYear = form.elements.strictYear.checked;
-    store.set('noja.form', data);
+    data.recheckAll = form.elements.recheckAll.checked;
+    store.set('noja.form', { ...data, recheckAll: false });
     if (!data.query.trim() && !data.searchUrl.trim()) {
       err.textContent = 'نام خودرو را بنویسید (یا لینک جستجوی دیوار را در «تنظیمات بیشتر» بگذارید).';
       form.elements.query.focus();
@@ -237,7 +240,7 @@ function renderHome() {
 
   const steps = [
     ['دیوار را باز می‌کند', 'در کروم خودش و با حساب شما، مثل یک کاربر معمولی جستجو می‌کند.'],
-    ['آگهی‌ها را یکی‌یکی می‌خواند', 'با سرعت آدم، با مکث و استراحت، و با سقف روزانه.'],
+    ['فقط آگهی‌های جدید را می‌خواند', 'آگهی‌ای که یک بار خوانده شده دیگر باز نمی‌شود؛ مگر قیمتش عوض شده باشد.'],
     ['همه را کنار هم می‌گذارد', 'شخصی و نمایشگاهی جدا، با فیلتر، مقایسه و قیمت میانه.'],
   ];
 
@@ -299,7 +302,7 @@ function defaultFilters(c) {
     yearMin: c.yearMin ? String(c.yearMin) : '', yearMax: c.yearMax ? String(c.yearMax) : '',
     kmMax: c.mileageMax ? String(c.mileageMax) : '',
     gearbox: [], color: [],
-    bodyOk: false, engineOk: false, priced: false, fav: false,
+    bodyOk: false, engineOk: false, priced: false, fav: false, onlyNew: false,
     keyword: c.keyword || '',
     strictYear: !!c.strictYear,
   };
@@ -378,10 +381,9 @@ async function control(action) {
 
 // ---------- status strip ----------
 function etaText(run) {
-  const total = run.items.length;
-  const remaining = Math.max(0, total - run.posts.length - Object.keys(run.errors || {}).length);
-  if (!remaining) return '';
   const s = run.stats || {};
+  const remaining = Math.max(0, (run.toVisit || 0) - (s.opened || 0));
+  if (!remaining) return '';
   const per = s.opened ? s.readMs / s.opened + 3500 : 14000;
   const min = Math.max(1, Math.round((remaining * per) / 60000));
   return `حدود ${fa(min)} دقیقه مانده`;
@@ -400,8 +402,8 @@ function tick() {
 
 function renderStatus() {
   const run = R.run;
-  const total = run.items.length;
-  const done = run.posts.length + Object.keys(run.errors || {}).length;
+  const total = run.toVisit != null ? run.toVisit : run.items.length;
+  const done = run.toVisit != null ? (run.stats ? run.stats.opened : 0) : run.posts.length;
   const st = run.status;
   const btn = (label, ic, onclick, cls = '') => h('button', { class: `btn sm ${cls}`, type: 'button', onclick }, ic ? icon(ic, 'sm') : null, label);
   const focus = () => api(`/api/runs/${encodeURIComponent(R.id)}/focus`, { method: 'POST' }).catch(() => {});
@@ -417,7 +419,7 @@ function renderStatus() {
       actions = [btn('نمایش پنجرهٔ دیوار', 'external', focus), btn('وارد شدم', 'check', () => control('continue'), 'primary'), btn('لغو', null, () => control('stop'), 'ghost')];
       break;
     case 'collecting':
-      ic = 'search'; title = 'در حال مرور نتایج دیوار'; sub = run.message; meta = `${fa(total)} آگهی پیدا شد`;
+      ic = 'search'; title = 'در حال مرور نتایج دیوار'; sub = run.message;
       actions = [btn('کافیه، برو سراغ آگهی‌ها', 'right', () => control('stop'))];
       break;
     case 'reading':
@@ -439,7 +441,7 @@ function renderStatus() {
     case 'done':
     case 'stopped':
       ic = 'check'; cls = 'done'; pulse = false; title = run.message; pct = 1;
-      sub = run.stats ? `${fa(run.stats.opened)} آگهی باز شد${run.stats.cached ? ` · ${fa(run.stats.cached)} آگهی از جستجوهای قبلی` : ''}` : '';
+      sub = run.stats ? `ربات ${fa(run.stats.opened)} صفحهٔ آگهی باز کرد؛ آگهی‌هایی که قبلاً خوانده بود دوباره باز نشدند.` : '';
       actions = [btn('جستجوی دوباره', 'history', rerun)];
       break;
     case 'error':
@@ -490,6 +492,7 @@ function passes(p, f, skip) {
   if (f.bodyOk && conditionClass(p.body) !== 'good') return false;
   if (f.engineOk && (!p.engine || conditionClass(p.engine) === 'bad')) return false;
   if (f.fav && !R.favorites.has(p.token)) return false;
+  if (f.onlyNew && !p.isNew && !p.priceChange) return false;
   if (f.keyword) {
     const hay = P.normalizeText(`${p.title} ${p.brand}`);
     if (!P.normalizeText(f.keyword).split(' ').filter(Boolean).every((w) => hay.includes(w))) return false;
@@ -518,7 +521,7 @@ function renderFilters(force) {
   const box = $('#filters');
   const f = R.filters;
   const posts = R.posts;
-  const optSig = JSON.stringify([countBy(posts, 'gearbox').map((x) => x[0]), countBy(posts, 'color').map((x) => x[0]), f]);
+  const optSig = JSON.stringify([countBy(posts, 'gearbox').map((x) => x[0]), countBy(posts, 'color').map((x) => x[0]), f, posts.filter((p) => p.isNew || p.priceChange).length]);
   if (!force && optSig === R.optSig && box.childElementCount) {
     updateSellerCounts();
     return;
@@ -569,6 +572,7 @@ function renderFilters(force) {
     chipGroup('gearbox', 'گیربکس'),
     chipGroup('color', 'رنگ'),
     h('div', { class: 'fgroup' }, h('span', { class: 'label' }, 'وضعیت'),
+      toggle('onlyNew', `فقط جدیدها و تغییر قیمت‌ها (${fa(posts.filter((p) => p.isNew || p.priceChange).length)})`),
       toggle('bodyOk', 'فقط بدنهٔ سالم / بی‌رنگ'),
       toggle('engineOk', 'موتور سالم'),
       toggle('priced', 'فقط آگهی‌های قیمت‌دار'),
@@ -628,6 +632,8 @@ function renderResults() {
   const summary = [];
   if (med) summary.push(h('span', null, 'میانهٔ قیمت ', h('b', null, formatPrice(med))));
   if (prices.length) summary.push(h('span', null, ' · ارزان‌ترین ', h('b', null, formatPrice(Math.min(...prices)))));
+  const fresh = list.filter((p) => p.isNew).length;
+  if (fresh) summary.unshift(h('span', { class: 'new-pill' }, `${fa(fresh)} جدید`), ' ');
   const personal = list.filter((p) => p.seller === 'personal').length;
   if (list.length) summary.push(h('span', null, ` · ${fa(personal)} شخصی، ${fa(list.length - personal)} نمایشگاهی`));
 
@@ -702,6 +708,13 @@ function renderResults() {
   renderTray();
 }
 
+function priceChangeBadge(p) {
+  if (!p.priceChange) return null;
+  const diff = p.priceChange.to - p.priceChange.from;
+  return h('span', { class: `delta ${diff < 0 ? 'low' : 'high'}`, title: `قبلاً ${formatPrice(p.priceChange.from)} تومان` },
+    `${formatPrice(Math.abs(diff))} ${diff < 0 ? 'ارزان‌تر شد' : 'گران‌تر شد'}`);
+}
+
 function renderRow(p, d) {
   const img = safeImg((p.images || [])[0]);
   const fav = R.favorites.has(p.token);
@@ -717,7 +730,7 @@ function renderRow(p, d) {
       img ? h('img', { src: img, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }) : icon('image', 'lg'),
       p.images && p.images.length > 1 ? h('span', { class: 'count' }, icon('image', 'sm'), fa(p.images.length)) : null),
     h('div', { class: 'row-main' },
-      h('h3', null, p.title || 'بدون عنوان'),
+      h('h3', null, p.isNew ? h('span', { class: 'new-pill' }, 'جدید') : null, p.title || 'بدون عنوان'),
       p.subtitle ? h('div', { class: 'where' }, icon('pin', 'sm'), p.subtitle) : null,
       h('div', { class: 'facts' },
         p.year || p.yearText ? h('span', null, icon('calendar'), p.year ? faYear(p.year) : p.yearText) : null,
@@ -728,6 +741,7 @@ function renderRow(p, d) {
     h('div', { class: 'row-side' },
       p.price ? h('div', { class: 'price num' }, formatPrice(p.price), ' ', h('small', null, 'تومان')) : h('div', { class: 'price none' }, p.priceText || 'بدون قیمت'),
       d ? h('span', { class: `delta ${d.cls}` }, icon('trend', 'sm'), d.text) : null,
+      priceChangeBadge(p),
       sellerBadge(p),
       h('div', { class: 'row-actions' },
         h('button', { class: 'btn ghost icon-only sm star', type: 'button', 'aria-pressed': String(fav), 'aria-label': fav ? 'برداشتن نشان' : 'نشان کردن', title: fav ? 'برداشتن نشان' : 'نشان کردن',
@@ -865,7 +879,10 @@ function openDrawer(token) {
         h('div', { class: 'd-price' },
           p.price ? h('div', { class: 'price num' }, formatPrice(p.price), ' ', h('small', null, 'تومان')) : h('div', { class: 'price none' }, p.priceText || 'بدون قیمت'),
           d ? h('span', { class: `delta ${d.cls}` }, d.text) : null,
+          priceChangeBadge(p),
           sellerBadge(p)),
+        p.firstSeenAt ? h('div', { class: 'where', style: 'margin-top:6px' }, icon('clock', 'sm'),
+          `اولین بار ${new Date(p.firstSeenAt).toLocaleDateString('fa-IR', { month: 'long', day: 'numeric' })} دیده شد`) : null,
         h('div', { class: 'why' }, h('b', null, `چرا «${sellerLabel(p)}»؟ `), (p.sellerReasons || []).join('، ')),
         h('h3', { class: 'd-h' }, 'مشخصات'),
         h('div', { class: 'specs' }, specRows.map(([k, v]) => {

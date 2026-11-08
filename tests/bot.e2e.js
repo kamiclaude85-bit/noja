@@ -5,7 +5,7 @@
  *  - divar.ir is replaced by mock pages (search list with infinite scroll, ad pages
  *    in two different layouts, a captcha page, a deleted ad).
  *  - Checks: login wait, captcha wait + «ادامه», every extracted field, seller type,
- *    UI tabs, CSV, and that a second run is served from the cache.
+ *    UI, CSV, and the next day: only new ads and one price change are opened.
  *
  *   node tests/bot.e2e.js [screenshotDir]
  */
@@ -44,7 +44,9 @@ async function waitFor(fn, what, timeout = 120000) {
 }
 
 (async () => {
-  const { specs, list } = buildDataset(COUNT);
+  // 48 ads exist; on "day 1" only the 40 older ones are on Divar, on "day 2" 8 new ones appear on top.
+  const { specs, list: allAds } = buildDataset(COUNT + 8);
+  let list = allAds.slice(8);
   const captchaToken = list[3].token;
   const goneToken = list[7].token;
   let captchaShown = 0;
@@ -218,17 +220,47 @@ async function waitFor(fn, what, timeout = 120000) {
     await panel.setViewportSize({ width: 1360, height: 900 });
   }
 
-  // ---- Second run: ads are served from the cache, no ad page is opened again ----
+  // ---- Next day: 8 new ads on top, one old ad got cheaper. Only those 9 are opened. ----
+  list = allAds.slice();
+  const cheaper = list.find((it, i) => i >= 8 && specs[it.token].price != null && ![captchaToken, goneToken].includes(it.token));
+  specs[cheaper.token].price -= 25000000;
+  cheaper.price = specs[cheaper.token].price;
   const hitsBefore = adHits.length;
-  const res = await fetch(`${app.panelUrl}api/scan`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', origin: app.panelUrl.replace(/\/$/, '') },
-    body: JSON.stringify({ query: 'پژو ۲۰۶', yearMin: '97', yearMax: '97', speed: 'test', maxAds: 100 }),
+  const listBefore = listUrls.length;
+  await panel.goto(app.panelUrl);
+  await panel.waitForSelector('input[name=query]');
+  await panel.click('details.adv summary');
+  await panel.evaluate(() => {
+    const sel = document.querySelector('select[name=speed]');
+    sel.add(new Option('test', 'test'));
+    sel.value = 'test';
   });
-  const { id: run2 } = await res.json();
-  await waitFor(async () => (await (await fetch(`${app.panelUrl}api/runs/${run2}`)).json()).status === 'done', 'second run');
-  const reopened = adHits.slice(hitsBefore);
-  assert.ok(reopened.every((t) => t === goneToken), `only the failed ad is visited again (got ${reopened.length})`);
+  await panel.click('form button[type=submit]');
+  await panel.waitForURL(/#\/run\//);
+  const run2Id = panel.url().split('#/run/')[1];
+  assert.notEqual(run2Id, runId);
+  const run2 = await waitFor(async () => {
+    const r = await (await fetch(`${app.panelUrl}api/runs/${run2Id}`)).json();
+    return r.status === 'done' ? r : null;
+  }, 'second run');
+  const opened2 = adHits.slice(hitsBefore);
+  const newTokens = allAds.slice(0, 8).map((it) => it.token);
+  assert.deepEqual(new Set(opened2), new Set([...newTokens, cheaper.token]), `only new ads + the price change were opened (got ${opened2.length})`);
+  assert.equal(run2.stats.newAds, 8, 'new ads counted');
+  assert.equal(run2.stats.priceChanged, 1, 'price change counted');
+  assert.equal(run2.collectStop, 'known', 'stopped scrolling at already-seen ads');
+  assert.ok(listUrls.length > listBefore, 'went through the search again');
+  assert.equal(run2.posts.length, COUNT - 1 + 8, 'old ads are still shown, from memory');
+  const changed = run2.posts.find((p) => p.token === cheaper.token);
+  assert.deepEqual(changed.priceChange, { from: cheaper.price + 25000000, to: cheaper.price });
+  assert.equal(run2.posts.filter((p) => p.isNew).length, 8);
+  await panel.waitForSelector('#results .row');
+  await panel.waitForTimeout(400);
+  if (SHOTS) {
+    await panel.click('text=فقط جدیدها و تغییر قیمت‌ها');
+    await panel.waitForTimeout(400);
+    await panel.screenshot({ path: path.join(SHOTS, 'next-day.png') });
+  }
 
   // Cross-site requests to the local API are refused.
   const evil = await fetch(`${app.panelUrl}api/scan`, { method: 'POST', headers: { origin: 'https://evil.example' }, body: '{}' });
