@@ -122,3 +122,29 @@ test('whole mock dataset classifies as expected', () => {
   assert.equal(dealers, 16); // kinds 3 and 4 => 2 of every 5
   assert.ok(parsed.every((p) => p.year && p.mileage));
 });
+
+test('installments, guarantor, «شرایطی» … mean a dealer; negated ones do not', () => {
+  const base = { title: 'پژو ۲۰۶ مدل ۹۷', description: 'دست اول، بی رنگ', fields: {} };
+  const seller = (over) => P.classifySeller({ ...base, ...over });
+
+  assert.equal(seller({}).seller, 'personal');
+  for (const title of ['شاهین g مدل ۱۴۰۲ سانروف دار بیرنگ اقساط بدون ضامن', 'دنا پلاس شرایطی', 'تیبا ۹۹ فروش قسطی']) {
+    const p = seller({ title });
+    assert.equal(p.seller, 'dealer', title);
+    assert.equal(p.sellerConfidence, 'medium');
+    assert.match(p.sellerReasons[0], /اقساطی\/شرایطی/);
+  }
+  assert.equal(seller({ description: 'نقد و اقساط با حداقل پیش پرداخت' }).seller, 'dealer');
+  assert.equal(seller({ fields: { 'امکان خرید قسطی': 'دارد' } }).seller, 'dealer');
+  assert.equal(seller({ fields: { 'امکان خرید قسطی': 'ندارد' } }).seller, 'personal');
+  // A private seller saying "no installments":
+  assert.equal(seller({ description: 'فقط نقد، اقساط نداریم' }).seller, 'personal');
+  assert.equal(seller({ description: 'قسطی نمی‌فروشم' }).seller, 'personal');
+});
+
+test('saved ads get the new seller rule; sure dealers stay dealers', () => {
+  const old = { title: 'شاهین اقساط بدون ضامن', description: '', fields: {}, seller: 'personal', sellerConfidence: 'medium', sellerReasons: [] };
+  assert.equal(P.reclassifySaved(old).seller, 'dealer');
+  const sure = { title: 'پژو', description: '', fields: {}, seller: 'dealer', sellerConfidence: 'high', sellerReasons: ['برچسب «نمایشگاه در فردوس»'] };
+  assert.deepEqual(P.reclassifySaved({ ...sure }).sellerReasons, ['برچسب «نمایشگاه در فردوس»']);
+});

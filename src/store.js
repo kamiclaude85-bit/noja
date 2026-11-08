@@ -12,6 +12,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
 const CRM = require('./crm');
+const P = require('./parser');
 
 const MAX_RUNS = 30;
 const MAX_BACKUPS = 30;
@@ -37,9 +38,15 @@ class Store {
     this.adsFile = path.join(dataDir, 'ads.json');
     this.db = { ads: {}, searches: {}, version: 0 };
     try { this.db = { ads: {}, searches: {}, version: 0, ...JSON.parse(fs.readFileSync(this.adsFile, 'utf8')) }; } catch (_) { /* empty */ }
+    this.reclassifyAll();
 
     this.backupDir = path.join(dataDir, 'backups');
     fs.mkdirSync(this.backupDir, { recursive: true });
+  }
+
+  /** Apply the current personal/dealer rule to every saved ad (rules improve over time). */
+  reclassifyAll() {
+    for (const rec of Object.values(this.db.ads || {})) if (rec && rec.post) P.reclassifySaved(rec.post);
   }
 
   /** Bumped on every change, so the UI can ask "anything new?" cheaply. */
@@ -210,6 +217,7 @@ class Store {
     }
     this.backupNow(true);
     this.db = { ads: db.ads, searches: db.searches, version: (this.db.version || 0) + 1 };
+    this.reclassifyAll();
     this.flush();
     return Object.keys(this.db.ads).length;
   }

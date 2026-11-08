@@ -111,9 +111,11 @@ test('real dealer ad: front/rear chassis, paint, insurance; dealer from keywords
   assert.equal(p.images.length, 5);
   assert.match(p.description, /^فروش نقد و اقساط انواع خودرو/);
 
-  // The ad page itself has no dealer badge; the description gives it away…
+  // The ad page itself has no dealer badge; selling on installments gives it away…
   assert.equal(p.seller, 'dealer');
-  assert.equal(p.sellerConfidence, 'low');
+  assert.equal(p.sellerConfidence, 'medium');
+  assert.match(p.sellerReasons.join(' '), /اقساط/);
+  assert.match(p.sellerReasons.join(' '), /امکان خرید قسطی: دارد/);
   // …and the search-list card says «نمایشگاه در فردوس», which makes it certain.
   const withCard = P.extractPost(raw, 'gaYDmVII', { lines: ['پژو۲۰۶تیپ۵ مدل۹۷ نقدواقساط(اتوجلیلیان)', '۱۵۰,۰۰۰ کیلومتر', '۱,۴۵۰,۰۰۰,۰۰۰ تومان', 'نردبان شده', 'نمایشگاه در فردوس'] });
   assert.equal(withCard.seller, 'dealer');

@@ -64,7 +64,19 @@ function cleanCriteria(b) {
   };
 }
 
-function publicRun(run) {
+/**
+ * A saved search keeps its own copy of each ad from the day it ran. Show the ad as it is
+ * remembered now (re-read later, or with a newer seller rule), keeping what belongs to
+ * that search: its order, «جدید», the price change it saw, and «removed».
+ */
+function latestPost(post, store) {
+  const rec = store && store.knownAd(post.token);
+  if (!rec || !rec.post) return post;
+  const { order, isNew, priceChange, removed, firstSeenAt } = post;
+  return { ...rec.post, order, isNew, priceChange, removed, firstSeenAt };
+}
+
+function publicRun(run, store) {
   if (!run) return null;
   return {
     id: run.id,
@@ -80,7 +92,7 @@ function publicRun(run) {
     collectStop: run.collectStop || null,
     sourceUrl: run.sourceUrl,
     items: run.items,
-    posts: Object.values(run.posts),
+    posts: Object.values(run.posts).map((p) => latestPost(p, store)),
     errors: run.errors,
   };
 }
@@ -122,7 +134,7 @@ function createServer({ scanner, store, context, notifier }) {
       let m = p.match(/^\/api\/runs\/([A-Za-z0-9_-]+)$/);
       if (m && req.method === 'GET') {
         const run = scanner.current && scanner.current.id === m[1] ? scanner.current : store.loadRun(m[1]);
-        return run ? send(res, 200, publicRun(run)) : send(res, 404, { error: 'not found' });
+        return run ? send(res, 200, publicRun(run, store)) : send(res, 404, { error: 'not found' });
       }
       m = p.match(/^\/api\/runs\/([A-Za-z0-9_-]+)\/(continue|pause|resume|stop|focus)$/);
       if (m && req.method === 'POST') {

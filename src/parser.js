@@ -273,18 +273,59 @@
       if (descNorm && descNorm.includes(normalizeText(t)) && t.length > 15) continue; // part of the description
       if (STRONG_DEALER_RE.test(t)) strongDealer.push(`برچسب «${t}»`);
     }
+    classifySeller(post, { strongDealer, personalMarks });
+    return post;
+  }
+
+  // Selling on installments / with financing terms (اقساط، بدون ضامن، شرایطی…) is what car
+  // dealerships do: an ad that offers it is a dealer's ad, even without a dealership badge.
+  const INSTALLMENT_RE = /(نقد\s*و\s*)?(اقساط(ی)?|قسطی|ضامن|شرایطی|لیزینگ|پیش\s*پرداخت|تسهیلات|چک\s*صیادی|بدون\s*چک)/g;
+  // «اقساط نداریم»، «قسطی نمی‌فروشم»… mean the opposite.
+  const NEGATION_RE = /^\s*(هم\s*)?(ن(داریم|دارد|دارم|یست|میشه|می\s*شود|می\s*فروشم|می\s*دهم|میدم)|ممنوع)/;
+  // Divar's own spec row for it («امکان خرید قسطی: دارد»).
+  const INSTALLMENT_FIELD_RE = /قسط|اقساط/;
+
+  /** Installment / financing words in the title and description, ignoring negated ones. */
+  function installmentWords(text) {
+    const s = normalizeText(text);
+    const found = [];
+    let m;
+    INSTALLMENT_RE.lastIndex = 0;
+    while ((m = INSTALLMENT_RE.exec(s))) {
+      if (NEGATION_RE.test(s.slice(m.index + m[0].length, m.index + m[0].length + 20))) continue;
+      if (!found.includes(m[0])) found.push(m[0]);
+    }
+    return found;
+  }
+
+  /**
+   * Decide personal vs. dealer from what is in the post. Also used on ads saved earlier, so a
+   * new rule applies to them too (`known`: dealer marks seen when the page was read).
+   */
+  function classifySeller(post, known = {}) {
+    const strongDealer = known.strongDealer || [];
+    const personalMarks = known.personalMarks || [];
+    const descNorm = normalizeText(post.description);
 
     let score = 0;
     const weak = [];
     for (const [word, weight] of DESCRIPTION_KEYWORDS) {
       if (descNorm.includes(normalizeText(word))) { score += weight; weak.push(word); }
     }
+    const installment = installmentWords(`${post.title || ''}\n${post.description || ''}`);
+    const fields = post.fields || {};
+    const installmentField = Object.keys(fields).find((k) => INSTALLMENT_FIELD_RE.test(k) && /^\s*(دارد|بله)\s*$/.test(fields[k]));
 
     let seller;
     let confidence;
     let reasons;
     if (strongDealer.length) {
       seller = 'dealer'; confidence = 'high'; reasons = unique(strongDealer);
+    } else if (installment.length || installmentField) {
+      seller = 'dealer'; confidence = 'medium';
+      reasons = [];
+      if (installment.length) reasons.push(`فروش اقساطی/شرایطی: ${installment.join('، ')}`);
+      if (installmentField) reasons.push(`در مشخصات دیوار: «${installmentField}: ${fields[installmentField]}»`);
     } else if (personalMarks.length) {
       seller = 'personal'; confidence = 'high'; reasons = ['دیوار این آگهی را شخصی علامت زده است'];
     } else if (score >= DEALER_SCORE_THRESHOLD) {
@@ -300,6 +341,16 @@
     post.sellerReasons = reasons;
     post.dealerScore = score;
     return post;
+  }
+
+  /**
+   * Re-apply the seller rule to an ad saved earlier. A sure dealer stays a dealer (its badge
+   * is not stored); everything else is decided again from title, description and specs.
+   */
+  function reclassifySaved(post) {
+    if (!post) return post;
+    if (post.seller === 'dealer' && post.sellerConfidence === 'high') return post;
+    return classifySeller(post);
   }
 
   function unique(arr) {
@@ -357,6 +408,9 @@
     normalizeYear,
     extractTokenFromHref,
     extractPost,
+    classifySeller,
+    reclassifySaved,
+    installmentWords,
     matchesCriteria,
     buildSearchUrl,
     median,
