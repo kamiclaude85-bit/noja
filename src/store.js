@@ -30,6 +30,8 @@ class Store {
     this.runsDir = path.join(dataDir, 'runs');
     fs.mkdirSync(this.runsDir, { recursive: true });
     this.timers = new Map();
+    // What changed since the online panel last heard from us (see src/cloud.js).
+    this.changes = { ads: new Set(), crm: new Set(), searches: false, runs: new Set() };
 
     this.dailyFile = path.join(dataDir, 'daily.json');
     this.daily = { date: '', count: 0 };
@@ -46,7 +48,34 @@ class Store {
 
   /** Apply the current personal/dealer rule to every saved ad (rules improve over time). */
   reclassifyAll() {
-    for (const rec of Object.values(this.db.ads || {})) if (rec && rec.post) P.reclassifySaved(rec.post);
+    for (const [token, rec] of Object.entries(this.db.ads || {})) {
+      if (!rec || !rec.post) continue;
+      const before = `${rec.post.seller}|${rec.post.sellerConfidence}|${(rec.post.sellerReasons || []).join()}`;
+      P.reclassifySaved(rec.post);
+      if (before !== `${rec.post.seller}|${rec.post.sellerConfidence}|${(rec.post.sellerReasons || []).join()}`) this.changes.ads.add(token);
+    }
+  }
+
+  /** Mark everything as changed, so the online panel gets a full copy (first connection). */
+  markAllChanged() {
+    for (const [token, rec] of Object.entries(this.db.ads)) {
+      this.changes.ads.add(token);
+      if (rec.crm) this.changes.crm.add(token);
+    }
+    this.changes.searches = true;
+    for (const f of fs.readdirSync(this.runsDir)) if (f.endsWith('.json')) this.changes.runs.add(f.replace(/\.json$/, ''));
+  }
+
+  /** A follow-up change made in the online panel. The newer change wins. Returns true if applied. */
+  setCrmFromHost(token, crm) {
+    const rec = this.db.ads[token];
+    if (!rec || !crm) return false;
+    if (rec.crm && (rec.crm.updatedAt || 0) >= (crm.updatedAt || 0)) return false;
+    rec.crm = crm;
+    this.changes.crm.delete(token);
+    this.bump();
+    this.scheduleFlush();
+    return true;
   }
 
   /** Bumped on every change, so the UI can ask "anything new?" cheaply. */
@@ -79,6 +108,7 @@ class Store {
 
   saveRunNow(run) {
     writeJson(this.runFile(run.id), run);
+    this.changes.runs.add(run.id);
   }
 
   /** Debounced save, so a long scan does not rewrite the file after every ad. */
@@ -125,6 +155,7 @@ class Store {
     rec.lastReadAt = now;
     delete rec.removed;
     this.db.ads[post.token] = rec;
+    this.changes.ads.add(post.token);
     if (searchKey) this.addToSearch(searchKey, post.token);
     this.bump();
     this.scheduleFlush();
@@ -136,6 +167,7 @@ class Store {
     const rec = this.db.ads[token] || { firstSeenAt: Date.now(), priceHistory: [] };
     rec.removed = Date.now();
     this.db.ads[token] = rec;
+    this.changes.ads.add(token);
     if (searchKey) this.addToSearch(searchKey, token);
     this.bump();
     this.scheduleFlush();
@@ -154,6 +186,7 @@ class Store {
     const rec = this.db.ads[token];
     if (!rec || !rec.post) throw new Error('آگهی پیدا نشد');
     CRM.applyAction(rec, body);
+    this.changes.crm.add(token);
     this.bump();
     this.scheduleFlush();
     return rec;
@@ -218,13 +251,14 @@ class Store {
     this.backupNow(true);
     this.db = { ads: db.ads, searches: db.searches, version: (this.db.version || 0) + 1 };
     this.reclassifyAll();
+    this.markAllChanged();
     this.flush();
     return Object.keys(this.db.ads).length;
   }
 
   addToSearch(key, token) {
     const s = this.db.searches[key] || (this.db.searches[key] = { tokens: [], createdAt: Date.now() });
-    if (!s.tokens.includes(token)) { s.tokens.push(token); this.bump(); }
+    if (!s.tokens.includes(token)) { s.tokens.push(token); this.changes.searches = true; this.bump(); }
   }
 
   /** Every ad this saved search has found so far (newest first). */
@@ -237,6 +271,7 @@ class Store {
     const s = this.db.searches[key] || (this.db.searches[key] = { tokens: [], createdAt: Date.now() });
     s.criteria = { ...criteria, recheckAll: false };
     s.lastRunAt = Date.now();
+    this.changes.searches = true;
     this.bump();
     this.scheduleFlush();
   }

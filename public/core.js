@@ -132,8 +132,26 @@ async function api(path, opts = {}) {
     body: opts.body !== undefined ? (typeof opts.body === 'string' ? opts.body : JSON.stringify(opts.body)) : undefined,
   });
   const body = await res.json().catch(() => ({}));
+  // Online panel (on the host): not signed in yet, or the session ended.
+  if (res.status === 401 && typeof showLogin === 'function') showLogin();
+  if (res.status === 503 && body.setup) { location.href = 'setup.php'; }
   if (!res.ok) { const e = new Error(body.error || `HTTP ${res.status}`); e.body = body; e.status = res.status; throw e; }
   return body;
+}
+
+/**
+ * Start a search. On the PC the bot starts right away (→ live view). On the online panel the
+ * search goes to the bot through a queue: it starts when the PC is on.
+ */
+async function startScan(criteria) {
+  const r = await api('/api/scan', { method: 'POST', body: criteria });
+  if (r.queued) {
+    toast(App.bot.online ? 'جستجو برای ربات فرستاده شد.' : 'کامپیوتر خاموش است؛ جستجو در صف ماند و با روشن شدن ربات شروع می‌شود.');
+    await App.refreshState();
+    location.hash = '#/runs';
+  } else {
+    location.hash = `#/run/${r.id}`;
+  }
 }
 
 // ---------- toast ----------
@@ -158,6 +176,10 @@ const App = {
   meta: { stages: {}, activeStages: [], rejectReasons: [], callResults: {} },
   listeners: new Set(),
   offline: false,
+  // Online panel only: the panel runs on the host, the bot on the PC.
+  host: false,
+  bot: { online: false, lastSeenAt: null },
+  queue: [],
 };
 
 App.onChange = (fn) => { App.listeners.add(fn); return () => App.listeners.delete(fn); };
@@ -167,6 +189,11 @@ App.refreshState = async () => {
   try {
     App.state = { ...App.state, ...(await api('/api/state')) };
     App.offline = false;
+    App.host = App.state.mode === 'host';
+    if (App.host) {
+      App.bot = App.state.bot || { online: false, lastSeenAt: null };
+      App.queue = App.state.queue || [];
+    }
   } catch (_) {
     App.offline = true;
   }

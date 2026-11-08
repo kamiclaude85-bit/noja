@@ -97,7 +97,7 @@ function publicRun(run, store) {
   };
 }
 
-function createServer({ scanner, store, context, notifier }) {
+function createServer({ scanner, store, context, notifier, cloud }) {
   return http.createServer(async (req, res) => {
     try {
       // Only accept requests from the panel itself (blocks other websites poking the local API).
@@ -163,6 +163,12 @@ function createServer({ scanner, store, context, notifier }) {
         } catch (e) {
           return send(res, 400, { error: e.message });
         }
+      }
+
+      // ---- online panel connection ----
+      if (p === '/api/cloud' && req.method === 'GET') return send(res, 200, cloud ? cloud.publicSettings() : { url: '' });
+      if (p === '/api/cloud' && req.method === 'POST' && cloud) {
+        try { return send(res, 200, await cloud.configure(await readBody(req))); } catch (e) { return send(res, 400, { error: e.message }); }
       }
 
       // ---- phone reminders ----

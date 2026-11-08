@@ -210,6 +210,7 @@ class Notifier {
 
   /** Called every minute: due calls, visits soon, visits without a result. */
   async tick() {
+    if (this.forward) return 0; // connected to the online panel: the host sends the reminders
     if (!this.ready()) return 0;
     const now = this.now();
     let n = 0;
@@ -242,17 +243,21 @@ class Notifier {
 
   /** Called by the bot: needs the user, or finished a run. */
   async runEvent(run, kind) {
-    const ev = this.settings.events;
-    if (kind === 'waiting-login' && ev.needsYou) {
-      return this.notify(`run:${run.id}:login`, '🔑 ربات ردیاب منتظر شماست: در پنجرهٔ کروم وارد حساب دیوار شوید.', { urgent: true });
+    // Connected to the online panel: the host sends it, with the settings saved there.
+    const send = (event, key, text, opts = {}) => {
+      if (this.forward) return this.forward({ kind: event, key, text, urgent: !!opts.urgent });
+      return this.settings.events[event] ? this.notify(key, text, opts) : false;
+    };
+    if (kind === 'waiting-login') {
+      return send('needsYou', `run:${run.id}:login`, '🔑 ربات ردیاب منتظر شماست: در پنجرهٔ کروم وارد حساب دیوار شوید.', { urgent: true });
     }
-    if (kind === 'blocked' && ev.needsYou) {
-      return this.notify(`run:${run.id}:blocked:${Math.floor(this.now() / (10 * 60 * 1000))}`, '⚠️ دیوار تأیید (کپچا) خواسته. در پنجرهٔ کروم حلش کنید و در ردیاب «ادامه» را بزنید.', { urgent: true });
+    if (kind === 'blocked') {
+      return send('needsYou', `run:${run.id}:blocked:${Math.floor(this.now() / (10 * 60 * 1000))}`, '⚠️ دیوار تأیید (کپچا) خواسته. در پنجرهٔ کروم حلش کنید و در ردیاب «ادامه» را بزنید.', { urgent: true });
     }
-    if ((kind === 'done' || kind === 'stopped') && ev.runs) {
+    if (kind === 'done' || kind === 'stopped') {
       const st = run.stats || {};
       if (!st.newAds && !st.priceChanged && !st.sold) return false; // nothing worth a message
-      return this.notify(`run:${run.id}:done`, this.runSummary(run));
+      return send('runs', `run:${run.id}:done`, this.runSummary(run));
     }
     return false;
   }

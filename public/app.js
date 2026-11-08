@@ -42,12 +42,62 @@ function updateShell() {
   for (const el of $$('[data-live]')) el.hidden = !App.state.busy;
 
   const acc = $('#account');
+  if (App.host) {
+    // Online panel: is the bot on the PC connected right now?
+    acc.classList.toggle('on', !!App.bot.online);
+    acc.classList.add('host');
+    $('.label', acc).textContent = App.offline ? 'اینترنت قطع است'
+      : App.bot.online ? (App.state.busy ? 'ربات در حال جستجو' : 'ربات روشن است')
+        : `ربات خاموش · ${App.bot.lastSeenAt ? agoFa(App.bot.lastSeenAt) : 'هنوز وصل نشده'}`;
+    $('#todayCount').textContent = '';
+    $('#logoutBtn').hidden = false;
+    const chip = $('#botChip');
+    chip.hidden = false;
+    chip.classList.toggle('on', !!App.bot.online && !App.offline);
+    $('.label', chip).textContent = App.offline ? 'بدون اینترنت' : App.bot.online ? (App.state.busy ? 'در حال جستجو' : 'ربات روشن') : 'ربات خاموش';
+    chip.title = $('.label', acc).textContent;
+    return;
+  }
   acc.classList.toggle('on', !!App.state.loggedIn);
   $('.label', acc).textContent = App.offline ? 'ربات در دسترس نیست' : App.state.loggedIn ? 'به دیوار وصل هستید' : 'ورود به دیوار';
   $('#todayCount').textContent = App.offline ? '' : `امروز ${fa(App.state.today || 0)} آگهی باز شد`;
 }
 
-$('#account').addEventListener('click', () => { if (!App.state.loggedIn) api('/api/login', { method: 'POST' }).catch(() => {}); });
+$('#account').addEventListener('click', () => { if (!App.host && !App.state.loggedIn) api('/api/login', { method: 'POST' }).catch(() => {}); });
+$('#logoutBtn').addEventListener('click', async () => {
+  await api('/api/session', { method: 'DELETE' }).catch(() => {});
+  showLogin();
+});
+
+// ---------- online panel: sign in ----------
+let LOGIN_SHOWN = false;
+function showLogin() {
+  if (LOGIN_SHOWN) return;
+  LOGIN_SHOWN = true;
+  document.body.classList.add('signed-out');
+  const err = h('p', { class: 'form-error', role: 'alert' });
+  const btn = h('button', { class: 'btn primary lg', type: 'submit' }, 'ورود');
+  const form = h('form', { class: 'login-card', autocomplete: 'on' },
+    h('img', { src: 'icons/icon48.png', alt: '', width: 48, height: 48 }),
+    h('h1', null, 'ردیاب'),
+    h('label', { class: 'field' }, h('span', null, 'نام کاربری'), h('input', { name: 'user', autocomplete: 'username', dir: 'ltr', required: true })),
+    h('label', { class: 'field' }, h('span', null, 'رمز'), h('input', { name: 'pass', type: 'password', autocomplete: 'current-password', dir: 'ltr', required: true })),
+    err, btn);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    err.textContent = '';
+    btn.disabled = true;
+    try {
+      await api('/api/session', { method: 'POST', body: { user: form.elements.user.value.trim(), pass: form.elements.pass.value } });
+      location.reload();
+    } catch (ex) {
+      err.textContent = ex.status === 401 || ex.status === 403 ? 'نام کاربری یا رمز درست نیست.' : ex.message;
+      btn.disabled = false;
+    }
+  });
+  document.body.append(h('div', { class: 'login-screen' }, form));
+  form.elements.user.focus();
+}
 
 const bellBtn = $('#bellBtn');
 const bellPop = $('#bellPop');

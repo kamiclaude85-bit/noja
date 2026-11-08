@@ -1,0 +1,209 @@
+/*
+ * Connection to the online panel (e.g. https://radyab.nojakasht.com).
+ *
+ * Every ~20 seconds the bot on this PC checks in with the host:
+ *   - sends what changed here: ads it read (and their follow-up, if changed here),
+ *     saved searches, bot runs, its state (busy / today's count), messages for the phone;
+ *   - gets back: follow-up changes made in the online panel (the newer change wins),
+ *     searches you asked for on the phone, and run commands (stop / pause / …).
+ * The Divar account and Chrome never leave this PC.
+ */
+'use strict';
+
+const fs = require('node:fs');
+const path = require('node:path');
+const { cleanCriteria } = require('./server');
+
+const SYNC_EVERY = 20000;
+const BATCH = 150; // ads per request, so the first full upload is sent in parts
+
+class Cloud {
+  constructor({ store, scanner, context, dataDir, log = () => {}, fetchImpl = fetch }) {
+    this.store = store;
+    this.scanner = scanner;
+    this.context = context;
+    this.log = log;
+    this.fetch = fetchImpl;
+    this.file = path.join(dataDir, 'settings.json');
+    this.stateFile = path.join(dataDir, 'cloud-state.json');
+    this.cfg = { url: '', key: '' };
+    try { this.cfg = { ...this.cfg, ...(JSON.parse(fs.readFileSync(this.file, 'utf8')).cloud || {}) }; } catch (_) { /* none */ }
+    this.st = { cursor: 0, uploaded: false };
+    try { this.st = { ...this.st, ...JSON.parse(fs.readFileSync(this.stateFile, 'utf8')) }; } catch (_) { /* none */ }
+    this.events = [];   // messages for the phone, delivered by the host
+    this.pending = [];  // searches from the phone waiting for the bot to be free
+    this.status = { lastSyncAt: null, lastError: null };
+    this.timer = null;
+    this.running = false;
+  }
+
+  get enabled() { return !!(this.cfg.url && this.cfg.key); }
+
+  publicSettings() {
+    return {
+      url: this.cfg.url,
+      hasKey: !!this.cfg.key,
+      key: this.cfg.key ? `••••${this.cfg.key.slice(-4)}` : '',
+      connected: this.enabled && !!this.status.lastSyncAt && !this.status.lastError,
+      lastSyncAt: this.status.lastSyncAt,
+      lastError: this.status.lastError,
+      pending: this.pending.length,
+    };
+  }
+
+  /** Save the address and key (from the PC panel), then connect right away. */
+  async configure({ url, key }) {
+    let u = String(url == null ? this.cfg.url : url).trim();
+    if (u) {
+      if (!/^https?:\/\//i.test(u)) u = `https://${u}`;
+      let parsed;
+      try { parsed = new URL(u); } catch (_) { throw new Error('نشانی پنل درست نیست.'); }
+      const local = /^(localhost|127\.0\.0\.1)$/.test(parsed.hostname);
+      if (parsed.protocol !== 'https:' && !local) throw new Error('نشانی پنل باید با https شروع شود.');
+      u = `${parsed.origin}${parsed.pathname.replace(/\/+$/, '')}/`;
+    }
+    const k = key == null || key === '' ? this.cfg.key : String(key).trim();
+    if (k && !/^rk_[a-f0-9]{40}$/.test(k)) throw new Error('کلید ربات درست نیست؛ باید با rk_ شروع شود (از صفحهٔ راه‌اندازی پنل).');
+    const changedTarget = u !== this.cfg.url;
+    this.cfg = { url: u, key: u ? k : '' };
+    let all = {};
+    try { all = JSON.parse(fs.readFileSync(this.file, 'utf8')); } catch (_) { /* none */ }
+    all.cloud = this.cfg;
+    fs.writeFileSync(this.file, JSON.stringify(all, null, 2));
+    if (changedTarget) { this.saveState({ cursor: 0, uploaded: false }); this.markedAll = false; }
+    this.status = { lastSyncAt: null, lastError: null };
+    if (this.enabled) await this.sync();
+    this.start();
+    return this.publicSettings();
+  }
+
+  saveState(patch) {
+    this.st = { ...this.st, ...patch };
+    try { fs.writeFileSync(this.stateFile, JSON.stringify(this.st)); } catch (e) { this.log(e); }
+  }
+
+  start() {
+    clearInterval(this.timer);
+    if (!this.enabled) return;
+    this.timer = setInterval(() => { this.sync().catch(() => {}); }, SYNC_EVERY);
+    this.timer.unref();
+  }
+
+  stop() { clearInterval(this.timer); this.timer = null; }
+
+  /** A message for the phone (run finished, captcha…); the host sends it with its settings. */
+  forward(msg) {
+    if (!this.enabled) return false;
+    this.events.push(msg);
+    clearTimeout(this.soon);
+    this.soon = setTimeout(() => this.sync().catch(() => {}), 1500);
+    return true;
+  }
+
+  // ---------- one check-in ----------
+  buildPayload() {
+    const s = this.store;
+    const ch = s.changes;
+    if (!this.st.uploaded && !this.markedAll) { s.markAllChanged(); this.markedAll = true; }
+    const tokens = Array.from(new Set([...ch.ads, ...ch.crm])).slice(0, BATCH);
+    const ads = [];
+    for (const t of tokens) {
+      const rec = s.db.ads[t];
+      if (!rec) continue;
+      const a = {
+        token: t, post: rec.post || null, removed: rec.removed || null,
+        firstSeenAt: rec.firstSeenAt || null, lastReadAt: rec.lastReadAt || null, priceHistory: rec.priceHistory || [],
+      };
+      if (ch.crm.has(t) && rec.crm) a.crm = rec.crm;
+      ads.push(a);
+    }
+    const runs = [];
+    for (const id of Array.from(ch.runs).slice(0, 5)) {
+      const run = this.scanner.current && this.scanner.current.id === id ? this.scanner.current : s.loadRun(id);
+      if (run) runs.push(this.slimRun(run));
+    }
+    const busy = this.scanner.busy && this.scanner.current ? this.scanner.current.id : null;
+    return {
+      payload: {
+        since: this.st.cursor,
+        state: { busy, loggedIn: this.loggedIn == null ? null : this.loggedIn, today: s.dailyCount(), dailyLimit: this.dailyLimit || 300, pending: this.pending.length },
+        ads,
+        searches: ch.searches ? s.db.searches : undefined,
+        runs,
+        events: this.events.slice(),
+      },
+      sent: { tokens, runs: runs.map((r) => r.id), searches: ch.searches, events: this.events.length },
+    };
+  }
+
+  /** Ads in a run are sent separately; the run itself only keeps what belongs to it. */
+  slimRun(run) {
+    const posts = {};
+    for (const [t, p] of Object.entries(run.posts || {})) {
+      posts[t] = this.store.db.ads[t] && this.store.db.ads[t].post
+        ? { token: t, order: p.order, isNew: p.isNew, priceChange: p.priceChange || null, removed: p.removed || null, firstSeenAt: p.firstSeenAt || null }
+        : p;
+    }
+    return { ...run, posts };
+  }
+
+  async sync() {
+    if (!this.enabled || this.running) return false;
+    this.running = true;
+    try {
+      if (this.context) {
+        const { isLoggedIn } = require('./scanner');
+        this.loggedIn = await isLoggedIn(this.context).catch(() => null);
+      }
+      const { payload, sent } = this.buildPayload();
+      const res = await this.fetch(`${this.cfg.url}api/bot/sync`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-radyab-key': this.cfg.key },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(60000),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `پاسخ پنل: ${res.status}`);
+
+      // Only now forget what was sent (a failed request is simply sent again next time).
+      const ch = this.store.changes;
+      for (const t of sent.tokens) { ch.ads.delete(t); ch.crm.delete(t); }
+      for (const id of sent.runs) if (!(this.scanner.busy && this.scanner.current && this.scanner.current.id === id)) ch.runs.delete(id);
+      if (sent.searches) ch.searches = false;
+      this.events.splice(0, sent.events);
+      if (!ch.ads.size && !ch.crm.size && !this.st.uploaded) this.saveState({ uploaded: true });
+
+      for (const { token, crm } of body.crm || []) this.store.setCrmFromHost(token, crm);
+      for (const q of body.queue || []) this.take(q);
+      this.saveState({ cursor: body.cursor || this.st.cursor });
+      this.status = { lastSyncAt: Date.now(), lastError: null };
+      this.startPending();
+      // More to upload (first connection): continue right away.
+      if (ch.ads.size || ch.crm.size) setTimeout(() => this.sync().catch(() => {}), 500);
+      return true;
+    } catch (e) {
+      this.status = { lastSyncAt: this.status.lastSyncAt, lastError: String(e && e.message ? e.message : e) };
+      return false;
+    } finally {
+      this.running = false;
+    }
+  }
+
+  /** A search or a command from the phone. */
+  take(q) {
+    if (q.kind === 'scan') {
+      this.pending.push(cleanCriteria(q.body || {}));
+    } else if (q.kind === 'cmd') {
+      const { runId, action } = q.body || {};
+      if (this.scanner.current && this.scanner.current.id === runId && ['continue', 'pause', 'resume', 'stop'].includes(action)) this.scanner[action]();
+    }
+  }
+
+  startPending() {
+    if (!this.pending.length || this.scanner.busy) return;
+    const criteria = this.pending.shift();
+    try { this.scanner.start(criteria); } catch (e) { this.log(e); }
+  }
+}
+
+module.exports = { Cloud };

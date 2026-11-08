@@ -16,8 +16,7 @@ function allAds() { return Array.from(App.ads.values()); }
 /** Start a search again (only new ads will be opened). */
 async function rerunSearch(criteria) {
   try {
-    const { id } = await api('/api/scan', { method: 'POST', body: { ...criteria, recheckAll: false } });
-    location.hash = `#/run/${id}`;
+    await startScan({ ...criteria, recheckAll: false });
   } catch (e) {
     if (e.body && e.body.id) location.hash = `#/run/${e.body.id}`;
     else toast(e.message, 'err');
@@ -279,8 +278,7 @@ function renderSearch(view) {
     go.disabled = true;
     go.replaceChildren(icon('loader'), 'در حال شروع…');
     try {
-      const { id } = await api('/api/scan', { method: 'POST', body: data });
-      location.hash = `#/run/${id}`;
+      await startScan(data);
     } catch (ex) {
       err.textContent = ex.body && ex.body.id ? 'یک جستجو در حال انجام است.' : ex.message;
       go.disabled = false;
@@ -293,7 +291,11 @@ function renderSearch(view) {
     notices.push(h('div', { class: 'notice' }, icon('loader'), h('div', { class: 'grow' }, 'ربات در حال یک جستجوی دیگر است.'),
       h('a', { class: 'btn sm', href: `#/run/${encodeURIComponent(App.state.busy)}` }, 'دیدن پیشرفت')));
   }
-  if (App.state.loggedIn === false && !App.offline) {
+  if (App.host && !App.bot.online) {
+    notices.push(h('div', { class: 'notice' }, icon('clock'),
+      h('div', { class: 'grow' }, h('b', null, 'کامپیوتر خاموش است. '), 'جستجو در صف می‌ماند و با روشن شدن ربات شروع می‌شود.')));
+  }
+  if (App.state.loggedIn === false && !App.offline && !App.host) {
     notices.push(h('div', { class: 'notice' }, icon('login'),
       h('div', { class: 'grow' }, h('b', null, 'یک بار وارد حساب دیوار شوید. '), 'می‌توانید همین حالا جستجو را شروع کنید؛ ربات صبر می‌کند تا وارد شوید.'),
       h('button', { class: 'btn sm', type: 'button', onclick: () => api('/api/login', { method: 'POST' }).catch(() => {}) }, 'ورود به دیوار')));
@@ -318,11 +320,19 @@ function renderRuns(view) {
   const runs = App.state.runs || [];
   view.replaceChildren(h('div', { class: 'page' },
     pageHead('جستجوها', 'جستجوهای ذخیره‌شده و تاریخچهٔ اجرای ربات.', h('a', { class: 'btn primary', href: '#/search' }, icon('plus', 'sm'), 'جستجوی جدید')),
+    App.host && App.queue.length ? h('section', { class: 'card' },
+      h('div', { class: 'card-h' }, h('h2', null, icon('clock', 'sm'), 'در صف ربات')),
+      h('ul', { class: 'items' }, App.queue.map((q) => h('li', { class: 'item' },
+        h('div', { class: 'item-main' }, h('b', null, describeCriteria(q.criteria)),
+          h('small', null, `${agoFa(q.createdAt)} · ${App.bot.online ? 'الان شروع می‌شود' : 'با روشن شدن کامپیوتر شروع می‌شود'}`)),
+        h('div', { class: 'item-actions' }, h('button', { class: 'btn sm', type: 'button', onclick: async () => {
+          try { await api(`/api/queue/${encodeURIComponent(q.id)}`, { method: 'DELETE' }); await App.refreshState(); renderRuns(view); } catch (e) { toast(e.message, 'err'); }
+        } }, icon('x', 'sm'), 'لغو')))))) : null,
     App.searches.length ? h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h2', null, icon('search', 'sm'), 'جستجوهای ذخیره‌شده')),
       h('ul', { class: 'items' }, App.searches.map((s) => h('li', { class: 'item' },
         h('a', { class: 'item-main', href: `#/ads?search=${encodeURIComponent(s.key)}` }, h('b', null, describeCriteria(s.criteria)),
           h('small', null, `${fa(s.count)} آگهی${s.lastRunAt ? ` · آخرین بررسی ${agoFa(s.lastRunAt)}` : ''}`)),
-        h('div', { class: 'item-actions' }, s.criteria ? h('button', { class: 'btn sm', type: 'button', disabled: !!App.state.busy, onclick: () => rerunSearch(s.criteria) },
+        h('div', { class: 'item-actions' }, s.criteria ? h('button', { class: 'btn sm', type: 'button', disabled: !!App.state.busy && !App.host, onclick: () => rerunSearch(s.criteria) },
           icon('refresh', 'sm'), 'بررسی جدیدها') : null))))) : null,
     h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h2', null, icon('history', 'sm'), 'اجراهای ربات')),
       runs.length ? h('ul', { class: 'items' }, runs.map((r) => h('li', { class: 'item' },
@@ -529,12 +539,51 @@ async function renderBackup(view) {
 // =========================================================
 // Settings: reminders on the phone
 // =========================================================
+/** PC only: connect this bot to the online panel (address + bot key from the panel's setup page). */
+async function drawCloud(box) {
+  let c = await api('/api/cloud').catch(() => null);
+  if (!c) return;
+  const draw = () => {
+    const status = !c.url ? 'وصل نیست'
+      : c.lastError ? `خطا: ${c.lastError}`
+        : c.lastSyncAt ? `وصل است · آخرین همگام‌سازی ${agoFa(c.lastSyncAt)}` : 'در حال اتصال…';
+    const url = h('input', { name: 'url', dir: 'ltr', placeholder: 'https://radyab.nojakasht.com', value: c.url || '' });
+    const key = h('input', { name: 'key', dir: 'ltr', placeholder: c.hasKey ? c.key : 'rk_…', autocomplete: 'off' });
+    const btn = h('button', { class: 'btn primary', type: 'submit' }, icon('check', 'sm'), c.url ? 'ذخیره و همگام‌سازی' : 'وصل کن');
+    const form = h('form', { class: 'card', style: 'margin-bottom:16px' },
+      h('div', { class: 'card-h' }, h('h2', null, icon('refresh', 'sm'), 'پنل آنلاین'),
+        h('span', { class: `chip-status${c.connected ? ' on' : ''}` }, status)),
+      h('p', { class: 'muted', style: 'margin:0 0 12px' }, 'با وصل کردن، آگهی‌ها و پیگیری‌ها روی پنل آنلاین هم دیده می‌شوند و از گوشی هم می‌شود جستجو خواست. حساب دیوار روی همین کامپیوتر می‌ماند.'),
+      h('div', { class: 'search-row two' },
+        h('label', { class: 'field' }, h('span', null, 'نشانی پنل'), url),
+        h('label', { class: 'field' }, h('span', null, 'کلید ربات'), key)),
+      h('div', { style: 'display:flex;gap:8px;margin-top:12px;flex-wrap:wrap' }, btn,
+        c.url ? h('button', { class: 'btn', type: 'button', onclick: async () => {
+          if (!confirm('اتصال به پنل آنلاین قطع شود؟')) return;
+          try { c = await api('/api/cloud', { method: 'POST', body: { url: '', key: '' } }); toast('اتصال قطع شد.'); draw(); } catch (e) { toast(e.message, 'err'); }
+        } }, 'قطع اتصال') : null));
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      btn.disabled = true;
+      try {
+        c = await api('/api/cloud', { method: 'POST', body: { url: url.value, key: key.value } });
+        if (c.lastError) toast(c.lastError, 'err'); else toast('به پنل آنلاین وصل شد.');
+      } catch (ex) { toast(ex.message, 'err'); }
+      draw();
+    });
+    box.replaceChildren(form);
+  };
+  draw();
+}
+
 async function renderSettings(view) {
   let s = await api('/api/settings/notify').catch(() => null);
   if (!s) { view.replaceChildren(h('div', { class: 'page' }, h('div', { class: 'empty' }, 'ارتباط با ربات برقرار نیست.'))); return; }
   const box = h('div');
+  const cloudBox = h('div');
   view.replaceChildren(h('div', { class: 'page narrow-ish' },
-    pageHead('تنظیمات', 'یادآوری تماس‌ها، بازدیدها و آگهی‌های جدید را روی گوشی‌تان بگیرید.'), box));
+    pageHead('تنظیمات', 'یادآوری تماس‌ها، بازدیدها و آگهی‌های جدید را روی گوشی‌تان بگیرید.'), cloudBox, box));
+  if (!App.host) drawCloud(cloudBox);
 
   const save = async (patch, msg) => {
     try { s = await api('/api/settings/notify', { method: 'POST', body: patch }); if (msg) toast(msg); draw(); } catch (e) { toast(e.message, 'err'); }

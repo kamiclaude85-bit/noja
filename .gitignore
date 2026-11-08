@@ -3,3 +3,4 @@ data/
 chrome-profile/
 *.zip
 .DS_Store
+dist/

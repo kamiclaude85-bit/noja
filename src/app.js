@@ -7,6 +7,7 @@ const { Store } = require('./store');
 const { Scanner } = require('./scanner');
 const { createServer } = require('./server');
 const { Notifier } = require('./notify');
+const { Cloud } = require('./cloud');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -61,7 +62,12 @@ async function startApp(opts = {}) {
   const store = new Store(dataDir);
   const notifier = new Notifier({ store, dataDir, log, apiBases: opts.notifyApiBases });
   const scanner = new Scanner({ context, store, log, onEvent: (run, kind) => notifier.runEvent(run, kind) });
-  const server = createServer({ scanner, store, context, notifier });
+  // Online panel (optional): set up from «پنل آنلاین» in the PC panel.
+  const cloud = new Cloud({ store, scanner, context, dataDir, log, fetchImpl: opts.fetchImpl });
+  Object.defineProperty(notifier, 'forward', { get: () => (cloud.enabled ? (m) => cloud.forward(m) : null) });
+  cloud.start();
+  if (cloud.enabled) cloud.sync().catch(() => {});
+  const server = createServer({ scanner, store, context, notifier, cloud });
   const port = await listen(server, opts.port || 4777);
   const panelUrl = `http://127.0.0.1:${port}/`;
 
@@ -83,10 +89,11 @@ async function startApp(opts = {}) {
   const close = async () => {
     clearInterval(backupTimer);
     clearInterval(notifyTimer);
+    cloud.stop();
     server.close();
     store.flush();
   };
-  return { context, scanner, store, notifier, server, port, panelUrl, close };
+  return { context, scanner, store, notifier, cloud, server, port, panelUrl, close };
 }
 
 module.exports = { startApp, launchChrome };
