@@ -178,7 +178,8 @@ function searchPageHtml(list) {
   return `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><title>دیوار</title>
 <style>body{font-family:Tahoma;margin:0;padding:20px} .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
 article{border:1px solid #ddd;border-radius:8px;padding:8px;height:260px} img{width:100%;height:120px;background:#eee}</style></head>
-<body><h1>خرید و فروش پژو ۲۰۶ در تهران</h1><div class="grid" id="g"></div>
+<body><form action="" method="get" style="margin-bottom:12px"><input type="search" name="q" placeholder="جستجو در همهٔ آگهی‌ها"></form>
+<h1>خرید و فروش خودرو در تهران</h1><div class="grid" id="g"></div>
 <script>
 const ALL = ${data};
 const fa = (n) => String(n).replace(/\\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);

@@ -16,6 +16,22 @@ class Store {
     this.cache = {};
     try { this.cache = JSON.parse(fs.readFileSync(this.cacheFile, 'utf8')); } catch (_) { /* empty */ }
     this.timers = new Map();
+    this.dailyFile = path.join(dataDir, 'daily.json');
+    this.daily = { date: '', count: 0 };
+    try { this.daily = JSON.parse(fs.readFileSync(this.dailyFile, 'utf8')); } catch (_) { /* empty */ }
+  }
+
+  /** How many ad pages the bot opened today (local date). */
+  dailyCount() {
+    const today = new Date().toLocaleDateString('en-CA');
+    if (this.daily.date !== today) this.daily = { date: today, count: 0 };
+    return this.daily.count;
+  }
+
+  countView() {
+    this.dailyCount();
+    this.daily.count++;
+    fs.writeFileSync(this.dailyFile, JSON.stringify(this.daily));
   }
 
   runFile(id) {

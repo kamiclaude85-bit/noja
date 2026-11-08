@@ -6,135 +6,63 @@
   <title>نوجا</title>
   <link rel="icon" href="icons/icon32.png">
   <link rel="stylesheet" href="fonts/fonts.css">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="app.css">
 </head>
 <body>
-  <header class="top">
-    <div class="wrap top-inner">
-      <div class="brand">
-        <img src="icons/icon48.png" alt="" width="36" height="36">
-        <div>
-          <h1>نوجا</h1>
-          <p class="muted">ربات جستجوی خودرو در دیوار — با کروم و حساب خودتان</p>
-        </div>
-      </div>
-      <div class="login box" style="padding:8px 14px;box-shadow:none">
-        <span id="loginState"><span class="dot"></span>در حال بررسی ورود…</span>
-        <button id="loginBtn" type="button" class="ghost small">ورود به دیوار</button>
-      </div>
+  <!-- Icon set (Lucide-style, 24px, stroke 2) -->
+  <svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+    <symbol id="i-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 3l14 9-14 9V3z"/></symbol>
+    <symbol id="i-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/></symbol>
+    <symbol id="i-table" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></symbol>
+    <symbol id="i-compare" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+    <symbol id="i-gauge" viewBox="0 0 24 24"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+    <symbol id="i-store" viewBox="0 0 24 24"><path d="M3 9 4.5 4h15L21 9"/><path d="M4 9v11h16V9"/><path d="M3 9h18"/><path d="M9 20v-6h6v6"/></symbol>
+    <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M17 8h1a4 4 0 1 1 0 8h-1"/><path d="M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4Z"/><path d="M6 2v2M10 2v2M14 2v2"/></symbol>
+    <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+    <symbol id="i-login" viewBox="0 0 24 24"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-car" viewBox="0 0 24 24"><path d="M3 17v-4l2-5.2A2 2 0 0 1 6.9 6.5h10.2a2 2 0 0 1 1.9 1.3L21 13v4"/><path d="M3 13h18v4H3z"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="12" cy="6" r="2"/><circle cx="18" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="12" cy="18" r="2"/><path d="M6 8v8M12 8v8M18 8v4H6"/></symbol>
+    <symbol id="i-palette" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></symbol>
+    <symbol id="i-trend" viewBox="0 0 24 24"><path d="m22 17-8.5-8.5-5 5L2 7"/><path d="M16 17h6v-6"/></symbol>
+    <symbol id="i-sort" viewBox="0 0 24 24"><path d="m3 16 4 4 4-4M7 20V4M21 8l-4-4-4 4M17 4v16"/></symbol>
+    <symbol id="i-loader" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.22-8.56"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  </svg>
+
+  <header class="topbar">
+    <div class="topbar-inner">
+      <a class="logo" href="#/"><img src="icons/icon48.png" alt="" width="34" height="34">نوجا</a>
+      <div class="run-title" id="runTitle" hidden></div>
+      <div class="spacer"></div>
+      <a class="btn sm" id="newSearch" href="#/" hidden><svg class="icon sm"><use href="#i-plus"/></svg>جستجوی جدید</a>
+      <button class="btn ghost sm icon-only" id="historyBtn" aria-label="جستجوهای قبلی" aria-expanded="false"><svg class="icon"><use href="#i-history"/></svg></button>
+      <button class="account" id="account" type="button"><span class="dot"></span><span class="label">در حال بررسی…</span></button>
     </div>
+    <div class="popover" id="historyPop" hidden></div>
   </header>
 
-  <main class="wrap">
-    <div id="busy" class="banner attn" hidden>
-      <div class="msg"><b>یک جستجو در حال انجام است.</b></div>
-      <div class="btns"><a id="busyLink" class="btn-main" href="#" style="text-decoration:none">مشاهدهٔ پیشرفت</a></div>
-    </div>
-
-    <div class="panel-grid">
-      <section class="box">
-        <h2>دنبال چه ماشینی هستید؟</h2>
-        <form id="form" class="form" autocomplete="off">
-          <label class="full">
-            <span>نام خودرو</span>
-            <input name="query" placeholder="مثلاً: پژو ۲۰۶">
-          </label>
-          <label>
-            <span>شهر</span>
-            <select name="city">
-              <option value="tehran">تهران</option>
-              <option value="karaj">کرج</option>
-              <option value="mashhad">مشهد</option>
-              <option value="isfahan">اصفهان</option>
-              <option value="shiraz">شیراز</option>
-              <option value="tabriz">تبریز</option>
-              <option value="ahvaz">اهواز</option>
-              <option value="qom">قم</option>
-              <option value="rasht">رشت</option>
-              <option value="kermanshah">کرمانشاه</option>
-              <option value="urmia">ارومیه</option>
-              <option value="kerman">کرمان</option>
-              <option value="yazd">یزد</option>
-              <option value="hamedan">همدان</option>
-              <option value="qazvin">قزوین</option>
-              <option value="arak">اراک</option>
-              <option value="sari">ساری</option>
-              <option value="gorgan">گرگان</option>
-              <option value="zanjan">زنجان</option>
-              <option value="ardabil">اردبیل</option>
-              <option value="bandar-abbas">بندرعباس</option>
-              <option value="zahedan">زاهدان</option>
-              <option value="iran">سراسر ایران</option>
-            </select>
-          </label>
-          <label>
-            <span>کلمهٔ لازم در عنوان (اختیاری)</span>
-            <input name="keyword" placeholder="مثلاً: 206">
-          </label>
-          <label>
-            <span>مدل از سال</span>
-            <input name="yearMin" inputmode="numeric" placeholder="1397 یا 97">
-          </label>
-          <label>
-            <span>تا سال</span>
-            <input name="yearMax" inputmode="numeric" placeholder="1397">
-          </label>
-          <label>
-            <span>حداکثر قیمت (تومان)</span>
-            <input name="priceMax" inputmode="numeric" placeholder="اختیاری">
-          </label>
-          <label>
-            <span>حداکثر کارکرد (کیلومتر)</span>
-            <input name="mileageMax" inputmode="numeric" placeholder="اختیاری">
-          </label>
-          <label>
-            <span>حداکثر تعداد آگهی</span>
-            <input name="maxAds" inputmode="numeric" value="150">
-          </label>
-          <label>
-            <span>سرعت ربات</span>
-            <select name="speed">
-              <option value="slow">آهسته (کمترین ریسک)</option>
-              <option value="normal" selected>معمولی</option>
-              <option value="fast">سریع</option>
-            </select>
-          </label>
-          <label class="check full">
-            <input type="checkbox" name="strictYear">
-            <span>آگهی‌هایی که سالشان معلوم نیست را حذف کن</span>
-          </label>
-
-          <div class="or">یا</div>
-          <label class="full">
-            <span>لینک صفحهٔ جستجوی دیوار (اگر خودتان در دیوار فیلتر زده‌اید)</span>
-            <input name="searchUrl" dir="ltr" placeholder="https://divar.ir/s/tehran/car/peugeot/206?...">
-          </label>
-
-          <button class="go" type="submit">شروع جستجو</button>
-        </form>
-        <p id="formMsg" class="form-msg" role="status"></p>
-      </section>
-
-      <div style="display:grid;gap:20px">
-        <section class="box">
-          <h2>ربات چه کار می‌کند؟</h2>
-          <ol class="steps">
-            <li>در همین کروم یک تب دیوار باز می‌کند (اگر وارد حساب نشده باشید، اول از شما می‌خواهد وارد شوید).</li>
-            <li>نتایج جستجو را تا آخر اسکرول می‌کند و همهٔ آگهی‌ها را جمع می‌کند.</li>
-            <li>آگهی‌ها را یکی‌یکی باز می‌کند، مشخصات را از خود صفحه می‌خواند و سراغ بعدی می‌رود.</li>
-            <li>شخصی و نمایشگاهی را جدا می‌کند و همه را کنار هم نشانتان می‌دهد.</li>
-          </ol>
-          <p class="hint">در حین کار به تب دیوار دست نزنید. می‌توانید هر وقت خواستید ربات را متوقف کنید.</p>
-        </section>
-        <section class="box">
-          <h2>جستجوهای قبلی</h2>
-          <ul id="runs" class="runs"><li class="muted">هنوز جستجویی انجام نشده.</li></ul>
-        </section>
-      </div>
-    </div>
-  </main>
+  <div id="view"></div>
 
   <script src="parser.js"></script>
-  <script src="panel.js"></script>
+  <script src="app.js"></script>
 </body>
 </html>

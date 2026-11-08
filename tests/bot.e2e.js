@@ -49,6 +49,9 @@ async function waitFor(fn, what, timeout = 120000) {
   const goneToken = list[7].token;
   let captchaShown = 0;
   const adHits = [];
+  const adReferers = [];
+  const listUrls = [];
+  let newTabs = 0;
 
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'noja-bot-'));
   const context = await chromium.launchPersistentContext(path.join(tmp, 'profile'), {
@@ -62,10 +65,11 @@ async function waitFor(fn, what, timeout = 120000) {
   await context.route('https://divar.ir/**', (route) => {
     const url = new URL(route.request().url());
     const html = (body, status = 200) => route.fulfill({ status, contentType: 'text/html; charset=utf-8', body });
-    if (url.pathname.startsWith('/s/')) return html(searchPageHtml(list));
+    if (url.pathname.startsWith('/s/')) { listUrls.push(url.href); return html(searchPageHtml(list)); }
     if (url.pathname.startsWith('/v/')) {
       const token = decodeURIComponent(url.pathname.split('/').pop());
       adHits.push(token);
+      adReferers.push(route.request().headers().referer || '');
       if (token === captchaToken && captchaShown++ === 0) return html(captchaPageHtml(), 429);
       if (token === goneToken) return html('<html><body><h1>این آگهی حذف شده است</h1></body></html>', 404);
       return specs[token] ? html(adPageHtml(specs[token])) : html('not found', 404);
@@ -75,35 +79,37 @@ async function waitFor(fn, what, timeout = 120000) {
   await context.route('https://s100.divarcdn.com/**', (route) =>
     route.fulfill({ status: 200, contentType: 'image/svg+xml', body: carSvg(route.request().url()) }));
 
+  context.on('page', (pg) => { pg.waitForURL(/\/v\//, { timeout: 60000 }).then(() => { newTabs++; }).catch(() => {}); });
   const app = await startApp({ context, dataDir: path.join(tmp, 'data'), port: 4799, log: () => {} });
   const panel = context.pages().find((p) => p.url().startsWith(app.panelUrl));
   assert.ok(panel, 'control panel opened in Chrome');
-  await panel.waitForSelector('#loginState .dot');
-  assert.match(await panel.textContent('#loginState'), /نشده‌اید/);
+  await panel.waitForSelector('#account .label');
+  await waitFor(async () => /ورود/.test(await panel.textContent('#account')), 'account chip');
 
-  // ---- Fill the form in the panel ----
+  // ---- Fill the search form ----
   await panel.fill('input[name=query]', 'پژو ۲۰۶');
-  await panel.fill('input[name=keyword]', '206');
   await panel.fill('input[name=yearMin]', '97');
   await panel.fill('input[name=yearMax]', '۹۷');
+  await panel.click('details.adv summary');
+  await panel.fill('input[name=keyword]', '206');
   await panel.fill('input[name=maxAds]', '100');
   await panel.evaluate(() => document.activeElement && document.activeElement.blur());
-  if (SHOTS) await panel.screenshot({ path: path.join(SHOTS, 'panel.png') });
+  if (SHOTS) await panel.screenshot({ path: path.join(SHOTS, 'home.png') });
   await panel.evaluate(() => {
     const sel = document.querySelector('select[name=speed]');
     sel.add(new Option('test', 'test'));
     sel.value = 'test';
   });
-  await panel.click('button.go');
-  await panel.waitForURL(/results\.html\?run=/);
-  const runId = new URL(panel.url()).searchParams.get('run');
+  await panel.click('form button[type=submit]');
+  await panel.waitForURL(/#\/run\//);
+  const runId = panel.url().split('#/run/')[1];
   const getRun = async () => (await fetch(`${app.panelUrl}api/runs/${runId}`)).json();
 
   // ---- Login wait ----
   await waitFor(async () => (await getRun()).status === 'waiting-login', 'login prompt');
   await panel.bringToFront();
-  await panel.waitForSelector('#banner.attn');
-  assert.match(await panel.textContent('#banner'), /وارد حساب دیوار شوید/);
+  await panel.waitForSelector('#status.attn');
+  assert.match(await panel.textContent('#status'), /وارد حساب دیوار شوید/);
   if (SHOTS) await panel.screenshot({ path: path.join(SHOTS, 'waiting-login.png') });
   // The user logs in inside the Divar tab -> Divar sets its session cookie.
   await context.addCookies([{ name: 'token', value: 'x'.repeat(48), domain: '.divar.ir', path: '/' }]);
@@ -111,15 +117,24 @@ async function waitFor(fn, what, timeout = 120000) {
   // ---- Captcha wait, user presses «ادامه» ----
   await waitFor(async () => (await getRun()).status === 'blocked', 'captcha prompt');
   await panel.bringToFront();
-  await panel.waitForSelector('#banner.attn');
-  assert.match(await panel.textContent('#banner'), /تأیید/);
-  await panel.click('#bannerBtns .btn-main');
+  await panel.waitForSelector('#status.attn');
+  assert.match(await panel.textContent('#status'), /تأیید/);
+  if (SHOTS) await panel.screenshot({ path: path.join(SHOTS, 'captcha.png') });
+  await panel.click('#status .btn.primary');
 
   // ---- Finish ----
   const run = await waitFor(async () => { const r = await getRun(); return r.status === 'done' ? r : null; }, 'run to finish', 180000);
   assert.equal(run.items.length, COUNT, 'all ads collected by scrolling');
   assert.deepEqual(Object.keys(run.errors), [goneToken], 'only the deleted ad failed');
   assert.equal(run.posts.length, COUNT - 1);
+
+  // Behaved like a person: searched by typing, opened most ads from the list.
+  assert.ok(!new URL(listUrls[0]).searchParams.has('q'), 'started from the city page, not a ready-made search URL');
+  assert.ok(listUrls.some((u) => new URL(u).searchParams.get('q') === 'پژو ۲۰۶'), 'typed the car name into the search box');
+  const fromList = adReferers.filter((r) => /\/s\//.test(r)).length;
+  assert.ok(fromList / adReferers.length >= 0.7, `most ads opened by clicking in the list (${fromList}/${adReferers.length})`);
+  assert.ok(newTabs > 0, 'some ads were opened in a new tab');
+  assert.ok(run.stats.opened >= COUNT - 1, 'opened every ad');
 
   // Every field extracted from the rendered pages (both layouts) matches the source data.
   const P = require('../src/parser');
@@ -148,26 +163,59 @@ async function waitFor(fn, what, timeout = 120000) {
   // ---- UI ----
   await panel.bringToFront();
   await panel.reload();
-  await panel.waitForSelector('#list article.card');
+  await panel.waitForSelector('#results .row');
+  await panel.waitForTimeout(400);
   const expected = run.posts.filter((p) => P.matchesCriteria(p, run.criteria));
-  const cards = await panel.locator('#list article.card:not(:has(.err))').count();
-  assert.equal(cards, expected.length, 'matching cards rendered');
-  await panel.click('#tabs button[data-tab=dealer]');
-  assert.equal(await panel.locator('#list article.card').count(), expected.filter((p) => p.seller === 'dealer').length);
-  await panel.click('#tabs button[data-tab=personal]');
-  assert.equal(await panel.locator('#list article.card').count(), expected.filter((p) => p.seller === 'personal').length);
-  await panel.click('#tabs button[data-tab=all]');
-  const [download] = await Promise.all([panel.waitForEvent('download'), panel.click('#exportBtn')]);
+  assert.equal(await panel.locator('#results .row').count(), expected.length, 'matching rows rendered');
+  await panel.click('#sellerSeg button[data-v=dealer]');
+  assert.equal(await panel.locator('#results .row').count(), expected.filter((p) => p.seller === 'dealer').length, 'dealer filter');
+  await panel.click('#sellerSeg button[data-v=personal]');
+  assert.equal(await panel.locator('#results .row').count(), expected.filter((p) => p.seller === 'personal').length, 'personal filter');
+  await panel.click('#sellerSeg button[data-v=all]');
+  const [download] = await Promise.all([panel.waitForEvent('download'), panel.click('button[aria-label="خروجی اکسل"]')]);
   const csv = fs.readFileSync(await download.path(), 'utf8');
   assert.equal(csv.trim().split(/\r\n/).length, expected.length + 1, 'CSV rows');
 
+  // Drawer
+  await panel.locator('#results .row').first().click();
+  await panel.waitForSelector('.drawer');
+  assert.equal((await panel.textContent('.drawer .d-title')).trim(), expected.sort((a, b) => a.order - b.order)[0].title);
   if (SHOTS) {
-    await panel.locator('#list article.card .fav').nth(1).click();
+    await panel.waitForTimeout(400);
+    await panel.screenshot({ path: path.join(SHOTS, 'drawer.png') });
+  }
+  await panel.keyboard.press('Escape');
+  assert.equal(await panel.locator('.drawer').count(), 0, 'drawer closes with Escape');
+
+  // Compare
+  await panel.locator('#results .row .cmp-toggle').nth(0).click();
+  await panel.locator('#results .row .cmp-toggle').nth(2).click();
+  await panel.locator('#results .row .star').nth(1).click();
+  await panel.waitForSelector('.tray');
+  if (SHOTS) {
     await panel.evaluate(() => window.scrollTo(0, 0));
-    await panel.screenshot({ path: path.join(SHOTS, 'results-cards.png') });
-    await panel.click('.seg button[data-view=table]');
-    await panel.screenshot({ path: path.join(SHOTS, 'results-table.png') });
-    await panel.click('.seg button[data-view=cards]');
+    await panel.waitForTimeout(300);
+    await panel.screenshot({ path: path.join(SHOTS, 'results.png') });
+  }
+  await panel.click('.tray .btn.primary');
+  await panel.waitForSelector('.modal table.compare');
+  assert.equal(await panel.locator('.modal table.compare tr').first().locator('td').count(), 2, 'two ads compared');
+  if (SHOTS) { await panel.waitForTimeout(400); await panel.screenshot({ path: path.join(SHOTS, 'compare.png') }); }
+  await panel.keyboard.press('Escape');
+
+  if (SHOTS) {
+    await panel.click('button[aria-label="نمایش جدولی"]');
+    await panel.waitForTimeout(300);
+    await panel.screenshot({ path: path.join(SHOTS, 'table.png') });
+    await panel.click('button[aria-label="نمایش فهرستی"]');
+    await panel.setViewportSize({ width: 390, height: 844 });
+    await panel.waitForTimeout(300);
+    await panel.screenshot({ path: path.join(SHOTS, 'mobile.png') });
+    await panel.click('.filters-toggle');
+    await panel.waitForTimeout(300);
+    await panel.screenshot({ path: path.join(SHOTS, 'mobile-filters.png') });
+    await panel.click('.filters-done');
+    await panel.setViewportSize({ width: 1360, height: 900 });
   }
 
   // ---- Second run: ads are served from the cache, no ad page is opened again ----

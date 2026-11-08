@@ -5,7 +5,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const P = require('./parser');
-const { isLoggedIn } = require('./scanner');
+const { isLoggedIn, DEFAULT_DAILY_LIMIT } = require('./scanner');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
 const TYPES = {
@@ -54,6 +54,7 @@ function cleanCriteria(b) {
     maxAds: Math.min(Math.max(num(b.maxAds) || 150, 1), 1000),
     strictYear: !!b.strictYear,
     speed: ['slow', 'normal', 'fast', 'test'].includes(b.speed) ? b.speed : 'normal',
+    dailyLimit: Math.min(Math.max(num(b.dailyLimit) || DEFAULT_DAILY_LIMIT, 1), 2000),
     requireLogin: b.requireLogin !== false,
     searchUrl,
   };
@@ -68,6 +69,9 @@ function publicRun(run) {
     criteria: run.criteria,
     status: run.status,
     message: run.message,
+    activity: run.activity || '',
+    waitUntil: run.waitUntil || null,
+    stats: run.stats || null,
     sourceUrl: run.sourceUrl,
     items: run.items,
     posts: Object.values(run.posts),
@@ -89,6 +93,8 @@ function createServer({ scanner, store, context }) {
         return send(res, 200, {
           busy: scanner.busy ? scanner.current.id : null,
           loggedIn: await isLoggedIn(context).catch(() => false),
+          today: store.dailyCount(),
+          dailyLimit: DEFAULT_DAILY_LIMIT,
           runs: store.listRuns(),
         });
       }
@@ -110,7 +116,7 @@ function createServer({ scanner, store, context }) {
         const run = scanner.current && scanner.current.id === m[1] ? scanner.current : store.loadRun(m[1]);
         return run ? send(res, 200, publicRun(run)) : send(res, 404, { error: 'not found' });
       }
-      m = p.match(/^\/api\/runs\/([A-Za-z0-9_-]+)\/(continue|pause|resume|stop)$/);
+      m = p.match(/^\/api\/runs\/([A-Za-z0-9_-]+)\/(continue|pause|resume|stop|focus)$/);
       if (m && req.method === 'POST') {
         if (!scanner.current || scanner.current.id !== m[1]) return send(res, 409, { error: 'این جستجو فعال نیست.' });
         scanner[m[2]]();
