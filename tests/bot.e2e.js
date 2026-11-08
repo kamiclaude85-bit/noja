@@ -316,6 +316,33 @@ const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350)
   await ui.waitForSelector('#results .row');
   await shot(ui, 'next-day');
 
+  // ---- Price-range search (no model name) ----
+  const r3 = await postJson('api/scan', { priceMin: 450e6, priceMax: 500e6, speed: 'test', maxAds: 50 });
+  const run3 = await waitFor(async () => { const r = await getRun(r3.id); return r.status === 'done' ? r : null; }, 'price-range run');
+  assert.equal(new URL(listUrls[listUrls.length - 1]).searchParams.get('price'), '450000000-500000000', 'price filter applied on Divar');
+  await ui.goto(`${app.panelUrl}#/run/${r3.id}`);
+  await ui.waitForSelector('#results .row');
+  const inRange = run3.posts.filter((p) => P.matchesCriteria(p, run3.criteria));
+  assert.ok(inRange.length > 0 && inRange.length < run3.posts.length, 'price range filters the ads');
+  assert.equal(await ui.locator('#results .row').count(), inRange.length, 'only ads in the price range are shown');
+
+  // ---- Special offers ----
+  const D = require('../src/deals');
+  const mem = (await getJson('api/ads')).ads;
+  const dealMap = D.computeDeals(mem.map((a) => ({ ...a.post, removed: a.removed })));
+  const expectedDeals = mem.filter((a) => dealMap.get(a.token) && dealMap.get(a.token).deal && !a.removed && a.crm?.stage !== 'rejected');
+  assert.ok(expectedDeals.length > 0, 'the mock market has some special offers');
+  await ui.goto(`${app.panelUrl}#/deals`);
+  await ui.waitForSelector('#results .row');
+  assert.equal(await ui.locator('#results .row').count(), expectedDeals.length, 'special offers listed');
+  assert.ok(await ui.locator('#results .row .deal-badge').count() >= expectedDeals.length);
+  await shot(ui, 'deals');
+  await ui.locator('#results .row').first().click();
+  await ui.waitForSelector('.drawer .deal-box');
+  assert.match(await ui.textContent('.drawer .deal-box'), /ارزان‌تر از قیمت معمول/);
+  await shot(ui, 'deal-drawer');
+  await ui.keyboard.press('Escape');
+
   // Sold mark + alerts
   await ui.goto(`${app.panelUrl}#/ads?view=sold`);
   await ui.waitForSelector('#results .row.sold');

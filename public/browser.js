@@ -9,7 +9,7 @@ let B = null;
 function defaultFilters(c = {}) {
   return {
     seller: 'all',
-    priceMin: '', priceMax: c.priceMax ? String(Math.round(c.priceMax / 1e6)) : '',
+    priceMin: c.priceMin ? String(Math.round(c.priceMin / 1e6)) : '', priceMax: c.priceMax ? String(Math.round(c.priceMax / 1e6)) : '',
     yearMin: c.yearMin ? String(c.yearMin) : '', yearMax: c.yearMax ? String(c.yearMax) : '',
     kmMax: c.mileageMax ? String(c.mileageMax) : '',
     gearbox: [], color: [],
@@ -211,6 +211,7 @@ function sortList(list) {
     case 'price-desc': return list.sort(by((p) => p.price, -1));
     case 'km-asc': return list.sort(by((p) => p.mileage, 1));
     case 'year-desc': return list.sort(by((p) => p.year, -1));
+    case 'deal': return list.sort(by((p) => (p._deal ? p._deal.score : null), -1));
     case 'next-call': return list.sort(by((p) => (p._ad && p._ad.crm && p._ad.crm.nextCallAt) || null, 1));
     case 'updated': return list.sort(by((p) => (p._ad && p._ad.crm && p._ad.crm.updatedAt) || (p._ad && p._ad.firstSeenAt) || null, -1));
     default: return list.sort((a, b) => (a.order || 0) - (b.order || 0));
@@ -218,6 +219,13 @@ function sortList(list) {
 }
 
 function delta(p, med) {
+  // Prefer the usual price of the same model+year (special-offer analysis) over the list median.
+  if (p._deal && p._deal.expected && p.price) {
+    const r = p.price / p._deal.expected;
+    if (r <= 0.95) return { cls: 'low', text: `${fa(Math.round((1 - r) * 100))}٪ زیر قیمت معمول` };
+    if (r >= 1.05) return { cls: 'high', text: `${fa(Math.round((r - 1) * 100))}٪ بالای قیمت معمول` };
+    return null;
+  }
   if (!med || !p.price) return null;
   const r = p.price / med;
   if (r <= 0.92) return { cls: 'low', text: `${fa(Math.round((1 - r) * 100))}٪ زیر میانه` };
@@ -257,7 +265,7 @@ function renderResults() {
   if (list.length) summary.push(h('span', null, ` · ${fa(personal)} شخصی، ${fa(list.length - personal)} نمایشگاهی`));
 
   const sortOpts = [['default', 'جدیدترین در دیوار'], ['price-asc', 'ارزان‌ترین'], ['price-desc', 'گران‌ترین'], ['km-asc', 'کم‌کارکردترین'], ['year-desc', 'جدیدترین مدل'],
-    ['updated', 'آخرین پیگیری'], ['next-call', 'نزدیک‌ترین تماس']];
+    ['deal', 'بهترین پیشنهاد'], ['updated', 'آخرین پیگیری'], ['next-call', 'نزدیک‌ترین تماس']];
   const sortSel = h('select', { 'aria-label': 'مرتب‌سازی', onchange: (e) => { B.sort = e.target.value; prefs.set('noja.sort', B.sort); renderResults(); } },
     sortOpts.map(([v, t]) => h('option', { value: v, selected: B.sort === v }, t)));
   const viewBtn = (v, ic, label) => h('button', { type: 'button', 'aria-pressed': String(B.view === v), 'aria-label': label, title: label,
@@ -294,7 +302,7 @@ function renderResults() {
     list.forEach((p, i) => {
       const d = delta(p, med);
       const c = (p._ad && p._ad.crm) || {};
-      const sig = `${B.compare.has(p.token)}|${d ? d.text : ''}|${c.updatedAt || 0}|${p._f.sold}|${p._f.callDue}|${p.price}`;
+      const sig = `${B.compare.has(p.token)}|${d ? d.text : ''}|${c.updatedAt || 0}|${p._f.sold}|${p._f.callDue}|${p.price}|${p._deal ? `${p._deal.level}${p._deal.discount.toFixed(3)}` : ''}`;
       let entry = B.rows.get(p.token);
       if (!entry || entry.sig !== sig) {
         const el = renderRow(p, d);
@@ -357,6 +365,7 @@ function renderRow(p, d) {
       h('div', { class: 'conds' }, follow.length ? follow : [cond('بدنه', p.body), cond('موتور', p.engine), conditionClass(p.chassis) === 'bad' ? cond('شاسی', p.chassis) : null])),
     h('div', { class: 'row-side' },
       p.price ? h('div', { class: 'price num' }, formatPrice(p.price), ' ', h('small', null, 'تومان')) : h('div', { class: 'price none' }, p.priceText || 'بدون قیمت'),
+      dealBadge(p._deal),
       d ? h('span', { class: `delta ${d.cls}` }, icon('trend', 'sm'), d.text) : null,
       priceChangeBadge(p),
       sellerBadge(p),
@@ -564,6 +573,17 @@ function crmSection(p) {
       timeline(c)));
 }
 
+function dealBox(deal) {
+  if (!deal || (!deal.level && !deal.reasons.length)) return null;
+  const title = deal.level === 'caution' ? 'با احتیاط' : deal.deal ? 'چرا پیشنهاد ویژه است؟' : 'مقایسه با آگهی‌های مشابه';
+  return h('div', { class: `deal-box ${deal.level || 'plain'}` },
+    h('div', { class: 'deal-box-h' }, icon(deal.level === 'caution' ? 'alert' : 'flame', 'sm'), title),
+    h('ul', null,
+      deal.reasons.map((r) => h('li', { class: 'ok' }, icon('check', 'sm'), r)),
+      deal.warnings.map((w) => h('li', { class: 'warn' }, icon('alert', 'sm'), w))),
+    h('small', null, `قیمت معمول این مدل و سال با این کارکرد: ${formatPrice(deal.expected)} تومان`));
+}
+
 function timeline(c) {
   const items = (c.notes || []).slice().reverse();
   if (!items.length) return null;
@@ -630,6 +650,7 @@ function openDrawer(token, keepScroll) {
         ph.length > 1 ? h('div', { class: 'where', style: 'margin-top:6px' }, icon('trend', 'sm'),
           `تاریخچهٔ قیمت: ${ph.map((x) => formatPrice(x.price)).join(' ← ')}`) : null,
         p._ad && p._ad.firstSeenAt ? h('div', { class: 'where', style: 'margin-top:4px' }, icon('clock', 'sm'), `اولین بار ${agoFa(p._ad.firstSeenAt)} دیده شد`) : null,
+        dealBox(p._deal),
         h('h3', { class: 'd-h' }, 'پیگیری'),
         crmSection(p),
         h('div', { class: 'why' }, h('b', null, `چرا «${sellerLabel(p)}»؟ `), (p.sellerReasons || []).join('، ')),

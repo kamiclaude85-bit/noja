@@ -31,6 +31,9 @@ function updateShell() {
   }
   const badge = (id, n, cls) => { for (const el of $$(`[data-badge="${id}"]`)) { el.textContent = n ? fa(n) : ''; el.className = `nav-badge${cls ? ` ${cls}` : ''}`; el.hidden = !n; } };
   badge('new', newCount);
+  let dealCount = 0;
+  for (const [token, d] of App.deals) { const a = App.ads.get(token); if (d.deal && a && !a.removed && stageOf(a) === 'new') dealCount++; }
+  badge('deals', dealCount, 'deal');
   badge('calls', due, 'red');
   const al = alerts();
   const bellN = $('#bellCount');
@@ -78,7 +81,7 @@ function parseRoute() {
   const params = new URLSearchParams(query || '');
   const m = path.match(/^\/run\/([A-Za-z0-9_-]+)/);
   if (m) return { name: 'run', id: m[1], params };
-  const name = { '/': 'dash', '': 'dash', '/ads': 'ads', '/search': 'search', '/runs': 'runs', '/backup': 'backup', '/settings': 'settings' }[path] || 'dash';
+  const name = { '/': 'dash', '': 'dash', '/ads': 'ads', '/search': 'search', '/runs': 'runs', '/backup': 'backup', '/settings': 'settings', '/deals': 'deals' }[path] || 'dash';
   return { name, params };
 }
 
@@ -102,6 +105,11 @@ function render() {
       setTitle('پیگیری آگهی‌ها');
       renderAds(view, route.params);
       PAGE.update = () => refreshAdsPage(route.params);
+      break;
+    case 'deals':
+      setTitle('پیشنهاد ویژه');
+      renderDeals(view, route.params);
+      PAGE.update = () => refreshBrowser();
       break;
     case 'search': setTitle('جستجوی جدید'); renderSearch(view); break;
     case 'runs': setTitle('جستجوها'); renderRuns(view); PAGE.update = () => renderRuns(view); break;
@@ -136,7 +144,7 @@ function userIsTyping() {
 App.onChange((what) => {
   updateShell();
   if (!PAGE.update) return;
-  if (what === 'ads' && PAGE.name === 'ads') { PAGE.update(); return; }
+  if (what === 'ads' && (PAGE.name === 'ads' || PAGE.name === 'deals')) { PAGE.update(); return; }
   if (overlay || userIsTyping()) return; // do not yank the page while the user works
   if (what === 'ads' || (what === 'state' && PAGE.name !== 'ads')) PAGE.update();
 });

@@ -107,8 +107,13 @@ function describeCriteria(c) {
   const parts = [];
   if (c.query) parts.push(c.query);
   else if (c.searchUrl) parts.push('جستجوی دیوار');
+  else if (c.priceMin || c.priceMax) parts.push('همهٔ خودروها');
   if (c.yearMin || c.yearMax) {
     parts.push(c.yearMin === c.yearMax ? `مدل ${faYear(c.yearMin)}` : `مدل ${c.yearMin ? faYear(c.yearMin) : '…'} تا ${c.yearMax ? faYear(c.yearMax) : '…'}`);
+  }
+  if (c.priceMin || c.priceMax) {
+    parts.push(c.priceMin && c.priceMax ? `${formatPrice(c.priceMin)} تا ${formatPrice(c.priceMax)}`
+      : c.priceMin ? `از ${formatPrice(c.priceMin)}` : `تا ${formatPrice(c.priceMax)}`);
   }
   return parts.join('، ') || 'جستجو';
 }
@@ -148,6 +153,7 @@ const App = {
   state: { loggedIn: null, runs: [], busy: null, today: 0, dailyLimit: 300 },
   version: 0,
   ads: new Map(), // token -> { token, post, crm, removed, firstSeenAt, lastReadAt, priceHistory, searches }
+  deals: new Map(), // token -> special-offer analysis (see src/deals.js)
   searches: [],
   meta: { stages: {}, activeStages: [], rejectReasons: [], callResults: {} },
   listeners: new Set(),
@@ -175,6 +181,7 @@ App.refreshAds = async (force) => {
     App.ads = new Map(r.ads.map((a) => [a.token, a]));
     App.searches = r.searches.sort((a, b) => (b.lastRunAt || 0) - (a.lastRunAt || 0));
     App.meta = { stages: r.stages, activeStages: r.activeStages, rejectReasons: r.rejectReasons, callResults: r.callResults };
+    App.deals = globalThis.NojaDeals.computeDeals(r.ads.map((a) => ({ ...a.post, removed: a.removed })));
     App.emit('ads');
     return true;
   } catch (_) {
@@ -231,7 +238,18 @@ function adFlags(ad) {
 /** Post enriched with its follow-up data, for lists. */
 function enrich(post) {
   const ad = App.ads.get(post.token);
-  return { ...post, _ad: ad || null, _f: adFlags(ad) };
+  return { ...post, _ad: ad || null, _f: adFlags(ad), _deal: App.deals.get(post.token) || null };
+}
+
+/** «پیشنهاد ویژه» / «با احتیاط» badge for an ad, or null. */
+function dealBadge(deal, long) {
+  if (!deal || !deal.level) return null;
+  const pct = fa(Math.round(deal.discount * 100));
+  if (deal.level === 'caution') {
+    return h('span', { class: 'deal-badge caution', title: deal.warnings.join('\n') }, icon('alert', 'sm'), long ? `${pct}٪ ارزان‌تر — با احتیاط` : 'با احتیاط');
+  }
+  return h('span', { class: `deal-badge ${deal.level}`, title: deal.reasons.join('\n') }, icon('flame', 'sm'),
+    long ? `پیشنهاد ویژه — ${pct}٪ زیر قیمت معمول` : 'پیشنهاد ویژه');
 }
 
 function stageChip(stage, extra) {

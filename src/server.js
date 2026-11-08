@@ -50,6 +50,7 @@ function cleanCriteria(b) {
     keyword: String(b.keyword || '').trim().slice(0, 50),
     yearMin: year(b.yearMin),
     yearMax: year(b.yearMax),
+    priceMin: num(b.priceMin),
     priceMax: num(b.priceMax),
     mileageMax: num(b.mileageMax),
     maxAds: Math.min(Math.max(num(b.maxAds) || 150, 1), 1000),
@@ -105,7 +106,9 @@ function createServer({ scanner, store, context, notifier }) {
       }
       if (p === '/api/scan' && req.method === 'POST') {
         const criteria = cleanCriteria(await readBody(req));
-        if (!criteria.query && !criteria.searchUrl) return send(res, 400, { error: 'نام خودرو یا لینک جستجوی دیوار را وارد کنید.' });
+        if (!criteria.query && !criteria.searchUrl && !criteria.priceMin && !criteria.priceMax) {
+          return send(res, 400, { error: 'نام خودرو یا محدودهٔ قیمت (یا لینک جستجوی دیوار) را وارد کنید.' });
+        }
         if (scanner.busy) return send(res, 409, { error: 'یک جستجو در حال انجام است.', id: scanner.current.id });
         const run = scanner.start(criteria);
         return send(res, 200, { id: run.id });
@@ -192,8 +195,9 @@ function createServer({ scanner, store, context, notifier }) {
       let file;
       if (p === '/' || p === '/index.html') file = path.join(PUBLIC, 'index.html');
       else if (p === '/parser.js') file = path.join(__dirname, 'parser.js');
+      else if (p === '/deals.js') file = path.join(__dirname, 'deals.js');
       else file = path.join(PUBLIC, path.normalize(decodeURIComponent(p)).replace(/^([/\\])+/, ''));
-      if (!file.startsWith(PUBLIC) && file !== path.join(__dirname, 'parser.js')) return send(res, 403, 'forbidden', 'text/plain');
+      if (!file.startsWith(PUBLIC) && ![path.join(__dirname, 'parser.js'), path.join(__dirname, 'deals.js')].includes(file)) return send(res, 403, 'forbidden', 'text/plain');
       fs.readFile(file, (err, buf) => {
         if (err) return send(res, 404, 'not found', 'text/plain');
         send(res, 200, buf, TYPES[path.extname(file)] || 'application/octet-stream');

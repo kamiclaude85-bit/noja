@@ -98,6 +98,16 @@ function renderDashboard(view) {
         h('small', null, `${formatPrice(x.f.priceDrop.from)} ← ${formatPrice(x.f.priceDrop.to)} · ${agoFa(x.f.priceDrop.t)}`)),
       h('div', { class: 'item-actions' }, h('span', { class: 'delta low' }, `${formatPrice(x.f.priceDrop.from - x.f.priceDrop.to)} ارزان‌تر`)));
   };
+  const deals = ads.filter((x) => { const d = App.deals.get(x.a.token); return d && d.deal && !x.f.sold && x.f.stage !== 'rejected'; })
+    .sort((x, y) => App.deals.get(y.a.token).score - App.deals.get(x.a.token).score);
+  const dealItem = (x) => {
+    const p = x.a.post;
+    const d = App.deals.get(p.token);
+    return h('li', { class: 'item' },
+      h('a', { class: 'item-main', href: `#/deals?open=${p.token}` }, h('b', null, p.title),
+        h('small', null, `${formatPrice(p.price)} · معمولاً ${formatPrice(d.expected)}${p.mileage != null ? ` · ${fa(p.mileage)} کیلومتر` : ''}`)),
+      h('div', { class: 'item-actions' }, dealBadge(d, false), h('span', { class: 'delta low' }, `${fa(Math.round(d.discount * 100))}٪ ارزان‌تر`)));
+  };
   const listCard = (title, ic, items, renderItem, emptyText, href) => h('section', { class: 'card' },
     h('div', { class: 'card-h' }, h('h2', null, icon(ic, 'sm'), title, items.length ? h('span', { class: 'count-pill' }, fa(items.length)) : null),
       href ? h('a', { class: 'link', href }, 'همه') : null),
@@ -129,6 +139,7 @@ function renderDashboard(view) {
       kpi('کاهش قیمت', drops.length, 'در ۷ روز گذشته', '#/ads?view=drops', drops.length ? 'green' : '', 'trend'),
       kpi('در حال پیگیری', tracking.length, soldTracked.length ? `${fa(soldTracked.length)} تا از دیوار حذف شد` : 'فهرست کوتاه تا بازدید', '#/ads?stage=active', '', 'star')),
     h('div', { class: 'dash-grid' },
+      listCard('پیشنهادهای ویژه', 'flame', deals, dealItem, 'فعلاً آگهی‌ای خیلی زیر قیمت معمول نیست. با آگهی‌های بیشتر دقیق‌تر می‌شود.', '#/deals'),
       listCard('تماس‌های امروز', 'phone', calls, quickCall, 'برای امروز تماسی برنامه‌ریزی نشده.', '#/ads?view=calls'),
       listCard('قرارهای بازدید', 'calendar', visits, visitItem, 'قرار بازدیدی ندارید.', '#/ads?stage=visit'),
       listCard('کاهش قیمت‌ها', 'trend', drops, dropItem, 'در این هفته قیمتی کم نشده.', '#/ads?view=drops'),
@@ -221,12 +232,15 @@ function renderSearch(view) {
   const form = h('form', { class: 'search-card', autocomplete: 'off', novalidate: true },
     h('div', { class: 'search-main' },
       h('label', { class: 'field-big' }, h('span', { class: 'sr-only' }, 'نام خودرو'), icon('car', 'lg'),
-        h('input', { name: 'query', placeholder: 'چه ماشینی؟ مثلاً پژو ۲۰۶', value: val('query'), autofocus: true })),
+        h('input', { name: 'query', placeholder: 'چه ماشینی؟ مثلاً پژو ۲۰۶ (یا خالی، فقط با محدودهٔ قیمت)', value: val('query'), autofocus: true })),
       go),
     h('div', { class: 'search-row' },
       h('label', { class: 'field' }, h('span', null, 'شهر'), select),
       h('label', { class: 'field' }, h('span', null, 'مدل از سال'), h('input', { name: 'yearMin', inputmode: 'numeric', placeholder: 'مثلاً ۹۷', value: val('yearMin') })),
       h('label', { class: 'field' }, h('span', null, 'تا سال'), h('input', { name: 'yearMax', inputmode: 'numeric', placeholder: 'مثلاً ۹۷', value: val('yearMax') }))),
+    h('div', { class: 'search-row two' },
+      h('label', { class: 'field' }, h('span', null, 'قیمت از (میلیون تومان)'), h('input', { name: 'priceMinM', inputmode: 'numeric', placeholder: 'مثلاً ۴۰۰', value: val('priceMinM') })),
+      h('label', { class: 'field' }, h('span', null, 'قیمت تا (میلیون تومان)'), h('input', { name: 'priceMaxM', inputmode: 'numeric', placeholder: 'مثلاً ۵۰۰', value: val('priceMaxM') }))),
     h('details', { class: 'adv' },
       h('summary', null, icon('sliders', 'sm'), 'تنظیمات بیشتر', icon('down', 'sm')),
       h('div', { class: 'adv-grid' },
@@ -251,8 +265,14 @@ function renderSearch(view) {
     data.strictYear = form.elements.strictYear.checked;
     data.recheckAll = form.elements.recheckAll.checked;
     prefs.set('noja.form', { ...data, recheckAll: false });
-    if (!data.query.trim() && !data.searchUrl.trim()) {
-      err.textContent = 'نام خودرو را بنویسید (یا لینک جستجوی دیوار را در «تنظیمات بیشتر» بگذارید).';
+    // Prices are typed in millions; a big number is taken as toman.
+    const toToman = (v) => { const n = P.parseNumber(v); return n == null ? null : (n < 100000 ? n * 1e6 : n); };
+    data.priceMin = toToman(data.priceMinM);
+    data.priceMax = toToman(data.priceMaxM);
+    delete data.priceMinM; delete data.priceMaxM;
+    if (data.priceMin && data.priceMax && data.priceMin > data.priceMax) { err.textContent = 'قیمت «از» بیشتر از «تا» است.'; return; }
+    if (!data.query.trim() && !data.searchUrl.trim() && !data.priceMin && !data.priceMax) {
+      err.textContent = 'نام خودرو یا محدودهٔ قیمت را بنویسید (یا لینک جستجوی دیوار را در «تنظیمات بیشتر» بگذارید).';
       form.elements.query.focus();
       return;
     }
@@ -589,4 +609,49 @@ async function renderSettings(view) {
         h('p', { class: 'muted', style: 'font-size:13px' }, 'یادآوری بازدید و «ربات منتظر شماست» همیشه فوری فرستاده می‌شوند.')));
   }
   draw();
+}
+
+
+// =========================================================
+// Special offers
+// =========================================================
+function renderDeals(view, params) {
+  const caution = params.get('view') === 'caution';
+  const searchKey = params.get('search') || '';
+  const inSearch = (a) => !searchKey || a.searches.includes(searchKey);
+  const pick = (a) => {
+    const d = App.deals.get(a.token);
+    if (!d || !inSearch(a) || a.removed || stageOf(a) === 'rejected') return false;
+    return caution ? d.level === 'caution' : d.deal;
+  };
+  const count = (c) => allAds().filter((a) => { const d = App.deals.get(a.token); return d && inSearch(a) && !a.removed && stageOf(a) !== 'rejected' && (c ? d.level === 'caution' : d.deal); }).length;
+  const nav = (patch) => { const q = new URLSearchParams({ ...(searchKey ? { search: searchKey } : {}), ...patch }); location.hash = `#/deals?${q}`; };
+  const tabs = h('div', { class: 'stage-tabs', role: 'tablist' },
+    h('button', { role: 'tab', type: 'button', 'aria-selected': String(!caution), onclick: () => nav({}) }, icon('flame', 'sm'), 'پیشنهاد ویژه', h('small', { class: 'num' }, fa(count(false)))),
+    h('button', { role: 'tab', type: 'button', 'aria-selected': String(caution), onclick: () => nav({ view: 'caution' }) }, icon('alert', 'sm'), 'خیلی ارزان — با احتیاط', h('small', { class: 'num' }, fa(count(true)))));
+  const searchSel = App.searches.length > 1 ? h('select', { class: 'search-sel', 'aria-label': 'جستجو', onchange: (e) => {
+    const q = new URLSearchParams(params); if (e.target.value) q.set('search', e.target.value); else q.delete('search'); location.hash = `#/deals?${q}`;
+  } }, h('option', { value: '' }, 'همهٔ جستجوها'), App.searches.map((s) => h('option', { value: s.key, selected: s.key === searchKey }, describeCriteria(s.criteria)))) : null;
+  const box = h('div');
+  view.replaceChildren(h('div', { class: 'page wide' },
+    pageHead('پیشنهاد ویژه', caution
+      ? 'این آگهی‌ها خیلی ارزان‌تر از بقیه‌اند یا قیمتشان احتمالاً پیش‌پرداخت/اقساطی است. قبل از هر کاری با دقت بررسی کنید.'
+      : 'آگهی‌هایی که از ماشین‌های هم‌مدل و هم‌سال (با در نظر گرفتن کارکرد و سلامت بدنه و موتور) ارزان‌ترند.', [searchSel]),
+    tabs,
+    h('div', { class: 'notice soft' }, icon('shield'), h('div', { class: 'grow' },
+      'هر آگهی فقط با آگهی‌های همان مدل و همان سال مقایسه می‌شود (حداقل ۳ آگهی مشابه). هرچه آگهی بیشتری جمع شود، پیشنهادها دقیق‌تر می‌شوند.')),
+    box));
+  mountBrowser({
+    root: box,
+    key: `deals.${searchKey || 'all'}`,
+    criteria: {},
+    getPosts: () => allAds().filter(pick).map((a, i) => ({ ...a.post, isNew: false, priceChange: null, order: i })),
+    title: (n) => `${caution ? 'با احتیاط' : 'پیشنهاد ویژه'} — ${fa(n)} آگهی`,
+    emptyTitle: caution ? 'آگهی مشکوکی نیست' : 'فعلاً پیشنهاد ویژه‌ای نیست',
+    emptyText: 'وقتی آگهی‌ای از هم‌مدل‌هایش ارزان‌تر باشد، اینجا می‌آید.',
+  });
+  B.sort = 'deal';
+  renderResults();
+  const open = params.get('open');
+  if (open) setTimeout(() => openDrawer(open), 50);
 }

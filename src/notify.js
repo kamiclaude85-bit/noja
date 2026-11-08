@@ -13,6 +13,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const P = require('./parser');
+const D = require('./deals');
 
 const HOUR = 60 * 60 * 1000;
 const DEFAULT_SETTINGS = {
@@ -267,7 +268,16 @@ class Notifier {
     if (st.priceChanged) parts.push(`${fa(st.priceChanged)} تغییر قیمت`);
     if (st.sold) parts.push(`${fa(st.sold)} آگهی پیگیری‌شده فروخته شد`);
     lines.push(parts.join('، '));
-    const cheapest = fresh.filter((p) => p.price).sort((a, b) => a.price - b.price).slice(0, 3);
+    // Special offers among the new ads (compared with every ad of the same model+year in memory).
+    const all = Object.values(this.store.db.ads).filter((r) => r.post).map((r) => ({ ...r.post, removed: r.removed }));
+    const deals = D.computeDeals(all);
+    const hot = fresh.filter((p) => deals.get(p.token) && deals.get(p.token).deal)
+      .sort((a, b) => deals.get(b.token).score - deals.get(a.token).score).slice(0, 3);
+    if (hot.length) {
+      lines.push('', '🔥 پیشنهاد ویژه:');
+      for (const p of hot) lines.push(`• ${p.title} — ${priceFa(p.price)} (${fa(Math.round(deals.get(p.token).discount * 100))}٪ زیر قیمت معمول)\n${p.url}`);
+    }
+    const cheapest = hot.length ? [] : fresh.filter((p) => p.price).sort((a, b) => a.price - b.price).slice(0, 3);
     if (cheapest.length) {
       lines.push('', 'ارزان‌ترین آگهی‌های جدید:');
       for (const p of cheapest) lines.push(`• ${p.title} — ${priceFa(p.price)}${p.seller === 'dealer' ? ' (نمایشگاهی)' : ''}\n${p.url}`);

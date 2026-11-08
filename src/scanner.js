@@ -31,7 +31,9 @@ const KNOWN_STREAK_STOP = 20;
 /** Identifies a saved search, so its ads can be remembered across runs. */
 function searchKey(c) {
   if (c.searchUrl) return `url:${c.searchUrl}`;
-  return ['q', c.city || 'tehran', P.normalizeText(c.query || ''), c.yearMin || '', c.yearMax || ''].join('|');
+  const key = ['q', c.city || 'tehran', P.normalizeText(c.query || ''), c.yearMin || '', c.yearMax || ''];
+  if (c.priceMin || c.priceMax) key.push(`p${c.priceMin || ''}-${c.priceMax || ''}`);
+  return key.join('|');
 }
 
 /** Price shown on the search-list card (e.g. «۴۸۵٬۰۰۰٬۰۰۰ تومان»), or null. */
@@ -328,14 +330,15 @@ class Scanner {
       }
     }
 
-    // Year filter (and the query, if typing did not work), like ticking a filter.
+    // Year / price filters (and the query, if typing did not work), like ticking filters on Divar.
     const want = new URL(target);
     const now = new URL(page.url());
-    const needYear = want.searchParams.get('production-year') && now.searchParams.get('production-year') !== want.searchParams.get('production-year');
-    if (!typed || needYear) {
-      if (typed) {
-        now.searchParams.set('production-year', want.searchParams.get('production-year'));
-      }
+    let needFilters = false;
+    for (const k of ['production-year', 'price']) {
+      const v = want.searchParams.get(k);
+      if (v && now.searchParams.get(k) !== v) { now.searchParams.set(k, v); needFilters = true; }
+    }
+    if (!typed || needFilters) {
       const next = typed ? now.href : target;
       await H.sleep(H.natural(800, 2000));
       let r = await page.goto(next, { waitUntil: 'domcontentloaded', timeout: 60000 });

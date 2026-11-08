@@ -336,6 +336,9 @@
     const yMin = c && c.yearMin ? normalizeYear(c.yearMin) : null;
     const yMax = c && c.yearMax ? normalizeYear(c.yearMax) : null;
     if (yMin || yMax) params.set('production-year', `${yMin || ''}-${yMax || ''}`);
+    const pMin = c && c.priceMin ? Number(c.priceMin) : null;
+    const pMax = c && c.priceMax ? Number(c.priceMax) : null;
+    if (pMin || pMax) params.set('price', `${pMin || ''}-${pMax || ''}`);
     const qs = params.toString();
     return `https://divar.ir/s/${encodeURIComponent(city)}/car${qs ? `?${qs}` : ''}`;
   }

@@ -118,3 +118,20 @@ test('run summary lists the cheapest new ads; login prompt is urgent', async () 
   assert.equal(await n.runEvent({ ...run, id: 'r2', stats: { newAds: 0 } }, 'done'), false, 'no message when nothing new');
   f.server.close();
 });
+
+test('run summary highlights special offers', async () => {
+  const f = await fakeServer();
+  const now = { t: new Date(2026, 10, 9, 10, 0).getTime() };
+  const { store, n } = setup(f.base, now);
+  n.update({ channel: 'sms', sms: { apiKey: 'KEY', line: '30001234', mobile: '09121234567' } });
+  const mk = (t, price) => ({ token: t, title: `پژو ۲۰۶ ${t}`, brand: 'پژو 206 تیپ ۲', year: 1397, mileage: 100000, price: price * 1e6,
+    body: 'سالم', engine: 'سالم', seller: 'personal', url: `https://divar.ir/v/${t}`, fields: { a: 1 } });
+  for (const [t, pr] of [['a', 500], ['b', 505], ['c', 495], ['d', 510]]) store.rememberAd(mk(t, pr), 'k');
+  const deal = { ...mk('z', 430), isNew: true };
+  store.rememberAd(deal, 'k');
+  const run = { id: 'r9', criteria: { query: 'پژو ۲۰۶' }, stats: { newAds: 1 }, posts: { z: deal } };
+  await n.runEvent(run, 'done');
+  assert.match(f.sent[0].messageText, /🔥 پیشنهاد ویژه/);
+  assert.match(f.sent[0].messageText, /زیر قیمت معمول/);
+  f.server.close();
+});
