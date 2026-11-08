@@ -43,6 +43,18 @@ function clickLoadMore() {
   return false;
 }
 
+/**
+ * Divar's result list ends with a «بعدی» link to the next page (24 ads per page).
+ * Returns { href, visible } or null when there is no next page.
+ */
+function nextPageLink() {
+  const links = Array.from(document.querySelectorAll('a[rel="next"], a[href*="page="]'));
+  const a = links.find((x) => (x.innerText || x.textContent || '').trim() === 'بعدی') || document.querySelector('a[rel="next"]');
+  if (!a || !a.href) return null;
+  const r = a.getBoundingClientRect();
+  return { href: a.href, visible: !!(a.offsetParent && r.width > 0 && r.height > 0) };
+}
+
 /** True when Divar shows a captcha / "too many requests" page instead of content. */
 function detectBlock() {
   if (document.querySelector('iframe[src*="captcha"], iframe[src*="recaptcha"], [class*="captcha"]')) return true;
@@ -64,11 +76,15 @@ function extractAdPage() {
   const h1 = document.querySelector('h1');
   const firstRow = document.querySelector('table, [class*="row__title"], [class*="item__title"]');
 
-  // The ad's own column: smallest ancestor of the title that also holds the spec rows.
-  // Keeps the site header/footer (which link to "businesses" etc.) out of the analysis.
-  let root = h1;
-  if (root && firstRow) {
-    while (root.parentElement && !root.contains(firstRow)) root = root.parentElement;
+  // The ad itself. On real Divar it is the <article> around the title: it holds the spec rows,
+  // the description and the photo gallery, but not the site header/footer or "similar ads".
+  // Otherwise: smallest ancestor of the title that also holds the spec rows.
+  let root = h1 && h1.closest('article');
+  if (!root) {
+    root = h1;
+    if (root && firstRow) {
+      while (root.parentElement && !root.contains(firstRow)) root = root.parentElement;
+    }
   }
   if (!root || root === document.documentElement) root = document.querySelector('main') || document.body;
 
@@ -83,16 +99,28 @@ function extractAdPage() {
     }
   }
 
-  // 2) Title/value rows identified by class names.
+  // 2) Title/value rows identified by class names. The value is looked up only inside the
+  //    title's own row box (e.g. `kt-base-row`), never in a neighbouring row. Real Divar shows
+  //    the seller's assessment (موتور، بدنه، شاسی…) as `kt-score-row` with the value in
+  //    `kt-score-row__score`.
+  const VALUE_SEL = '[class*="row__value"], [class*="item__value"], [class*="row__score"]';
+  const isRowBox = (el) => Array.from(el.classList || []).some((c) => /-row$/.test(c) && !c.includes('__'));
+  const seenTitles = new Set();
   for (const t of root.querySelectorAll('[class*="row__title"], [class*="item__title"]')) {
     if (t.closest('table')) continue;
     let v = null;
     for (let el = t.parentElement, depth = 0; el && el !== root && depth < 4 && !v; el = el.parentElement, depth++) {
-      v = el.querySelector('[class*="row__value"], [class*="item__value"]');
+      v = Array.from(el.querySelectorAll(VALUE_SEL)).find((x) => x !== t && !x.contains(t) && !t.contains(x)) || null;
+      if (isRowBox(el)) break; // reached the row's own box: do not look any further up
     }
-    if (v && v !== t && !v.contains(t)) {
-      widgets.push({ widget_type: 'UNEXPANDABLE_ROW', data: { title: clean(t.textContent), value: clean(v.textContent) } });
-    }
+    const title = clean(t.textContent);
+    const value = v ? clean(v.textContent) : '';
+    if (!title || !value) continue;
+    // The assessment repeats a spec label («گیربکس»: دنده‌ای, then «گیربکس»: سالم و پلمپ).
+    const isScore = !!t.closest('[class*="score-row"]');
+    const label = isScore && seenTitles.has(title) && !/^وضعیت/.test(title) ? `وضعیت ${title}` : title;
+    seenTitles.add(title);
+    widgets.push({ widget_type: 'UNEXPANDABLE_ROW', data: { title: label, value } });
   }
 
   // 3) Plain-text fallback, independent of class names.
@@ -113,11 +141,27 @@ function extractAdPage() {
   }
   const lines = rawLines.map(clean);
 
-  // Description: longest description-like block, else the text after the «توضیحات» heading.
+  // Description: the block under the «توضیحات» heading; else the longest description-like
+  // block (but not the hidden «انتشار آگهی: …» dates inside the time/place row);
+  // else the plain text after the heading.
   let description = '';
-  for (const el of root.querySelectorAll('[class*="description"]')) {
-    const txt = (el.innerText || '').trim();
-    if (txt.length > description.length) description = txt;
+  const descHeading = Array.from(root.querySelectorAll('h2, h3, [class*="title-row__title"]'))
+    .find((el) => clean(el.textContent) === 'توضیحات');
+  for (let el = descHeading && descHeading.parentElement, depth = 0; el && el !== root && depth < 5 && !description; el = el.parentElement, depth++) {
+    const box = el.querySelector('[class*="description-row__text"], [class*="description"] p');
+    if (box && !box.closest('[class*="info-row"]')) {
+      // Divar keeps line breaks as "\n" in the text (shown with CSS); keep them either way.
+      const shown = box.innerText || '';
+      const raw = box.textContent || '';
+      description = (shown.includes('\n') || !raw.includes('\n') ? shown : raw).trim();
+    }
+  }
+  if (!description) {
+    for (const el of root.querySelectorAll('[class*="description"]')) {
+      if (el.closest('[class*="info-row"]')) continue;
+      const txt = (el.innerText || '').trim();
+      if (txt.length > description.length) description = txt;
+    }
   }
   if (!description) {
     const i = lines.findIndex((l) => l === 'توضیحات');
@@ -133,7 +177,8 @@ function extractAdPage() {
 
   const title = clean(h1 && h1.textContent);
   let subtitle = '';
-  const subEl = root.querySelector('[class*="subtitle"]');
+  // «۲ ساعت پیش در تهران، شهرری» is the first info row on real Divar.
+  const subEl = root.querySelector('[class*="subtitle"], [class*="info-row__title"]');
   if (subEl) subtitle = clean(subEl.textContent);
   else if (title) {
     const i = lines.indexOf(title);
@@ -141,10 +186,22 @@ function extractAdPage() {
   }
   if (title) widgets.push({ widget_type: 'LEGEND_TITLE_ROW', data: { title, subtitle } });
 
+  // Photos: the gallery shows each photo large (webp_post) and as a thumbnail (webp_thumbnail),
+  // both ending in the same file name. Large photos load lazily, so a thumbnail stands in until
+  // its large version is there. The map snapshot (mapimage…) and icons are not photos.
   const images = [];
+  const byFile = new Map();
   for (const img of root.querySelectorAll('img')) {
     const src = img.currentSrc || img.getAttribute('src') || '';
-    if (/divarcdn/.test(src) && !/\.svg(\?|$)|\/icons?\//i.test(src) && !images.includes(src)) images.push(src);
+    if (!/divarcdn/.test(src) || /\.svg(\?|$)|\/icons?\/|mapimage|\/static\/imgs\//i.test(src)) continue;
+    const file = src.split('?')[0].split('/').pop();
+    const thumb = /thumbnail/i.test(src);
+    if (!byFile.has(file)) {
+      byFile.set(file, images.length);
+      images.push(src);
+    } else if (!thumb && /thumbnail/i.test(images[byFile.get(file)])) {
+      images[byFile.get(file)] = src;
+    }
   }
 
   // Short labels near the ad (badges like «نمایشگاه …»), excluding description text.
@@ -165,4 +222,4 @@ function extractAdPage() {
   return result;
 }
 
-module.exports = { collectListItems, clickLoadMore, detectBlock, extractAdPage };
+module.exports = { collectListItems, clickLoadMore, nextPageLink, detectBlock, extractAdPage };

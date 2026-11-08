@@ -6,7 +6,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "test": "node --test tests/parser.test.js tests/notify.test.js tests/deals.test.js",
+    "test": "node --test tests/parser.test.js tests/notify.test.js tests/deals.test.js tests/real-pages.test.js",
     "test:e2e": "node tests/bot.e2e.js"
   },
   "dependencies": {

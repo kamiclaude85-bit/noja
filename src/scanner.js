@@ -27,6 +27,8 @@ const SPEEDS = {
 const DEFAULT_DAILY_LIMIT = 300;
 /** Divar lists newest ads first: after this many already-known ads in a row, the rest is old. */
 const KNOWN_STREAK_STOP = 20;
+/** At most this many result pages (24 ads each on Divar) per search. */
+const MAX_LIST_PAGES = 15;
 
 /** Identifies a saved search, so its ads can be remembered across runs. */
 function searchKey(c) {
@@ -315,7 +317,14 @@ class Scanner {
 
     let typed = false;
     if (c.query) {
-      const box = await page.$('input[type="search"], input[placeholder*="جستجو"], input[name="q"]');
+      // Real Divar: the header box `input[name="search"]` («جستجو در سواری و وانت»).
+      // The price filter boxes are also type="search", so they must never be picked.
+      let box = null;
+      for (const sel of ['input[name="search"]', 'input[name="q"]', 'input[placeholder*="جستجو"]:not([id*="price"])', 'input[type="search"]:not([id*="price"]):not([inputmode="numeric"])']) {
+        box = await page.$(sel).catch(() => null);
+        if (box && (await box.isVisible().catch(() => false))) break;
+        box = null;
+      }
       if (box) {
         try {
           await H.clickElement(page, box);
@@ -365,9 +374,11 @@ class Scanner {
     const found = new Map();
     let reason = '';
     const add = async () => {
-      for (const it of await page.evaluate(S.collectListItems)) if (!found.has(it.token)) found.set(it.token, it);
+      const listUrl = page.url(); // results come in pages; remember on which page each ad is
+      for (const it of await page.evaluate(S.collectListItems)) if (!found.has(it.token)) found.set(it.token, { ...it, listUrl });
       run.items = Array.from(found.values());
     };
+    let pages = 1;
     const counts = () => {
       let fresh = 0;
       let streak = 0;
@@ -399,6 +410,33 @@ class Scanner {
       }
       await add();
       idle = found.size === before ? idle + 1 : 0;
+
+      // Real Divar shows 24 ads per page and a «بعدی» link at the bottom instead of loading more.
+      if (idle >= 2 && pages < MAX_LIST_PAGES) {
+        const next = await page.evaluate(S.nextPageLink).catch(() => null);
+        if (next && next.href !== page.url()) {
+          await H.sleep(H.natural(800, 2000));
+          let response = null;
+          const link = next.visible ? await page.$('a:text-is("بعدی")').catch(() => null) : null;
+          if (link) {
+            await H.clickElement(page, link).catch(() => {});
+            const wantPage = new URL(next.href).searchParams.get('page');
+            await page.waitForURL((u) => u.searchParams.get('page') === wantPage, { timeout: 20000 }).catch(() => {});
+          }
+          if (!link || new URL(page.url()).searchParams.get('page') !== new URL(next.href).searchParams.get('page')) {
+            response = await page.goto(next.href, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => null);
+          }
+          while (await this.handleBlock(run, page, response)) {
+            if (this.control.stop) break;
+            response = await page.goto(next.href, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => null);
+          }
+          await page.waitForSelector('a[href*="/v/"]', { timeout: 20000 }).catch(() => {});
+          await H.sleep(H.natural(900, 1800));
+          pages++;
+          idle = 0;
+          await add();
+        }
+      }
     }
     // Keep the list up to the point we stopped; new ads beyond maxNew are left for next time.
     const items = [];
@@ -416,9 +454,17 @@ class Scanner {
 
   /** Make sure the list page is showing (go back to it if needed). */
   async ensureList(page, listUrl) {
-    if (page.url() === listUrl || /\/s\//.test(new URL(page.url()).pathname)) return;
-    await page.goBack({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => null);
-    if (!/\/s\//.test(new URL(page.url()).pathname)) {
+    // Which result page a URL shows («page=2» …), or null when it is not a result list.
+    const pageNo = (u) => {
+      try {
+        const x = new URL(u);
+        return /\/s\//.test(x.pathname) ? (x.searchParams.get('page') || '0') : null;
+      } catch (_) { return null; }
+    };
+    const want = pageNo(listUrl);
+    if (pageNo(page.url()) !== null && pageNo(page.url()) === want) return;
+    if (pageNo(page.url()) === null) await page.goBack({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => null);
+    if (pageNo(page.url()) !== want) {
       await page.goto(listUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
     }
     await page.waitForSelector('a[href*="/v/"]', { timeout: 15000 }).catch(() => {});
@@ -450,7 +496,7 @@ class Scanner {
       let viaNewTab = false;
       try {
         let response = null;
-        if (!item.direct) await this.ensureList(page, listUrl).catch(() => {});
+        if (!item.direct) await this.ensureList(page, item.listUrl || listUrl).catch(() => {});
         const card = attempt === 1 && !item.direct ? await this.findCard(page, item.token) : null;
         if (card && H.chance(0.25)) {
           // Open in a new tab (middle click), read there, close it.
