@@ -5,9 +5,9 @@
 const { startApp } = require('./app');
 
 (async () => {
-  console.log('Noja: opening Google Chrome…');
+  console.log('Radyab: opening Google Chrome…');
   const app = await startApp();
-  console.log(`Noja is running. Control panel: ${app.panelUrl}`);
+  console.log(`Radyab is running. Control panel: ${app.panelUrl}`);
   console.log('Close the Chrome window (or press Ctrl+C here) to quit.');
   const quit = async () => {
     await app.close().catch(() => {});

@@ -5,7 +5,7 @@
 
 let PAGE = { name: '', update: null };
 
-function setTitle(text) { $('#pageTitle').textContent = text; document.title = text === 'پیشخوان' ? 'نوجا' : `نوجا — ${text}`; }
+function setTitle(text) { $('#pageTitle').textContent = text; document.title = text === 'پیشخوان' ? 'ردیاب' : `ردیاب — ${text}`; }
 
 // ---------- counters & notifications ----------
 function alerts() {

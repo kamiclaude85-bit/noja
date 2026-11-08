@@ -1,6 +1,6 @@
 'use strict';
 /* =========================================================
-   Noja — shared helpers and app data (loaded first)
+   Radyab — shared helpers and app data (loaded first)
    ========================================================= */
 
 const P = globalThis.NojaParser;

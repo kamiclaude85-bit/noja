@@ -11,7 +11,7 @@ const { Notifier } = require('./notify');
 const ROOT = path.join(__dirname, '..');
 
 /**
- * Open Google Chrome with Noja's own profile. Logging in to Divar once in this
+ * Open Google Chrome with Radyab's own profile. Logging in to Divar once in this
  * window is remembered for next time (the profile is kept in ./chrome-profile).
  */
 async function launchChrome({ profileDir, executablePath }) {

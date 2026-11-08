@@ -305,7 +305,7 @@ function renderSearch(view) {
   ];
   view.replaceChildren(h('div', { class: 'page narrow' },
     h('h1', { class: 'hero-title' }, 'همهٔ آگهی‌های ماشینِ موردنظرت، یک‌جا'),
-    h('p', { class: 'lead' }, 'نوجا در دیوار می‌گردد، آگهی‌ها را باز می‌کند و مشخصات را برایت مرتب می‌کند. تو فقط انتخاب کن.'),
+    h('p', { class: 'lead' }, 'ردیاب در دیوار می‌گردد، آگهی‌ها را باز می‌کند و مشخصات را برایت مرتب می‌کند. تو فقط انتخاب کن.'),
     form, ...notices,
     h('div', { class: 'steps' }, steps.map(([t, s], i) => h('div', { class: 'step' }, h('span', { class: 'n' }, fa(i + 1)), h('div', null, h('b', null, t), h('span', null, s)))))));
 }
@@ -562,7 +562,7 @@ async function renderSettings(view) {
           save({ channel: ch, [ch]: { token: token.value.trim() } }, 'توکن ذخیره شد.');
         } }, 'ذخیره'))),
       step(2, 'به بات خودتان پیام بدهید', h('p', null, `بات تازه را در ${app} باز کنید و یک پیام (مثلاً «سلام») بفرستید.`)),
-      step(3, 'وصل کنید', h('p', null, cfg.chatId ? ['وصل است به: ', h('b', null, cfg.chatName || cfg.chatId)] : 'نوجا پیام شما را پیدا می‌کند و از این به بعد یادآوری‌ها را برایتان می‌فرستد.'),
+      step(3, 'وصل کنید', h('p', null, cfg.chatId ? ['وصل است به: ', h('b', null, cfg.chatName || cfg.chatId)] : 'ردیاب پیام شما را پیدا می‌کند و از این به بعد یادآوری‌ها را برایتان می‌فرستد.'),
         h('div', { class: 'crm-row' }, connectBtn)),
       step(4, 'امتحان کنید', h('div', { class: 'crm-row' }, testBtn)));
   }
@@ -595,7 +595,7 @@ async function renderSettings(view) {
         s.lastError ? h('div', { class: 'crm-alert' }, icon('alert'), `آخرین ارسال ناموفق بود: ${s.lastError}`) : null,
         h('div', { class: 'seg chan', role: 'group', 'aria-label': 'روش ارسال' }, chans.map(([v, t, sub]) =>
           h('button', { type: 'button', 'aria-pressed': String(ch === v), onclick: () => save({ channel: v }) }, t, sub ? h('small', null, sub) : null))),
-        ch === 'bale' || ch === 'telegram' ? botPanel(ch) : ch === 'sms' ? smsPanel() : h('p', { class: 'muted' }, 'یادآوری فقط داخل نوجا (زنگوله) نشان داده می‌شود.')),
+        ch === 'bale' || ch === 'telegram' ? botPanel(ch) : ch === 'sms' ? smsPanel() : h('p', { class: 'muted' }, 'یادآوری فقط داخل ردیاب (زنگوله) نشان داده می‌شود.')),
       h('section', { class: 'card' },
         h('div', { class: 'card-h' }, h('h2', null, 'چه چیزهایی فرستاده شود؟')),
         evToggle('calls', 'وقتی وقت تماس با فروشنده رسیده (با شماره و لینک آگهی)'),

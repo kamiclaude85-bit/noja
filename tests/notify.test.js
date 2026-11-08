@@ -34,7 +34,7 @@ function fakeServer() {
 }
 
 function setup(base, now) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'noja-notify-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'radyab-notify-'));
   const store = new Store(dir);
   const n = new Notifier({ store, dataDir: dir, apiBases: { bale: base, telegram: base, sms: base }, now: () => now.t });
   return { dir, store, n };

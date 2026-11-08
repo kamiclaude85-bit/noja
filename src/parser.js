@@ -1,5 +1,5 @@
 /*
- * Noja — Divar car-ad parser.
+ * Radyab — Divar car-ad parser.
  *
  * Divar changes its JSON shape from time to time, so instead of depending on
  * exact paths this parser walks the whole response and picks up anything that

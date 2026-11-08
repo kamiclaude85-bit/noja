@@ -169,7 +169,7 @@ class Notifier {
   }
 
   async test() {
-    await this.deliver('✅ نوجا وصل شد. یادآوری‌های تماس، بازدید و آگهی‌های جدید اینجا می‌آیند.');
+    await this.deliver('✅ ردیاب وصل شد. یادآوری‌های تماس، بازدید و آگهی‌های جدید اینجا می‌آیند.');
     this.lastError = null;
     return true;
   }
@@ -233,7 +233,7 @@ class Notifier {
         if (until > 0 && until <= HOUR) {
           if (await this.notify(`visit1h:${token}:${c.visitAt}`, `🚗 بازدید ساعت ${timeFa(c.visitAt)}: ${p.title}${p.subtitle ? `\n${p.subtitle}` : ''}${phone}${link}`, { urgent: true })) n++;
         } else if (until < -2 * HOUR && until > -36 * HOUR) {
-          if (await this.notify(`visitover:${token}:${c.visitAt}`, `📝 نتیجهٔ بازدید «${p.title}» را در نوجا ثبت کنید.`)) n++;
+          if (await this.notify(`visitover:${token}:${c.visitAt}`, `📝 نتیجهٔ بازدید «${p.title}» را در ردیاب ثبت کنید.`)) n++;
         }
       }
     }
@@ -244,10 +244,10 @@ class Notifier {
   async runEvent(run, kind) {
     const ev = this.settings.events;
     if (kind === 'waiting-login' && ev.needsYou) {
-      return this.notify(`run:${run.id}:login`, '🔑 ربات نوجا منتظر شماست: در پنجرهٔ کروم وارد حساب دیوار شوید.', { urgent: true });
+      return this.notify(`run:${run.id}:login`, '🔑 ربات ردیاب منتظر شماست: در پنجرهٔ کروم وارد حساب دیوار شوید.', { urgent: true });
     }
     if (kind === 'blocked' && ev.needsYou) {
-      return this.notify(`run:${run.id}:blocked:${Math.floor(this.now() / (10 * 60 * 1000))}`, '⚠️ دیوار تأیید (کپچا) خواسته. در پنجرهٔ کروم حلش کنید و در نوجا «ادامه» را بزنید.', { urgent: true });
+      return this.notify(`run:${run.id}:blocked:${Math.floor(this.now() / (10 * 60 * 1000))}`, '⚠️ دیوار تأیید (کپچا) خواسته. در پنجرهٔ کروم حلش کنید و در ردیاب «ادامه» را بزنید.', { urgent: true });
     }
     if ((kind === 'done' || kind === 'stopped') && ev.runs) {
       const st = run.stats || {};
@@ -263,7 +263,7 @@ class Notifier {
     const fresh = posts.filter((p) => p.isNew && P.matchesCriteria(p, run.criteria));
     const drops = posts.filter((p) => p.priceChange && p.priceChange.to < p.priceChange.from);
     const what = run.criteria && run.criteria.query ? run.criteria.query : 'جستجو';
-    const lines = [`🔎 نوجا — بررسی «${what}» تمام شد`];
+    const lines = [`🔎 ردیاب — بررسی «${what}» تمام شد`];
     const parts = [`${fa(st.newAds || 0)} آگهی جدید`];
     if (st.priceChanged) parts.push(`${fa(st.priceChanged)} تغییر قیمت`);
     if (st.sold) parts.push(`${fa(st.sold)} آگهی پیگیری‌شده فروخته شد`);

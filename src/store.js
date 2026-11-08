@@ -15,6 +15,8 @@ const CRM = require('./crm');
 
 const MAX_RUNS = 30;
 const MAX_BACKUPS = 30;
+/** Backup files: radyab-YYYY-MM-DD(-n).json.gz; older ones from before the rename are noja-…. */
+const BACKUP_NAME_RE = /^(radyab|noja)-\d{4}-\d{2}-\d{2}(-\d+)?\.json\.gz$/;
 
 function writeJson(file, data) {
   fs.writeFileSync(`${file}.tmp`, JSON.stringify(data));
@@ -176,25 +178,25 @@ class Store {
 
   // ---------- backups ----------
   listBackups() {
-    return fs.readdirSync(this.backupDir).filter((f) => /^noja-\d{4}-\d{2}-\d{2}(-\d+)?\.json\.gz$/.test(f))
+    return fs.readdirSync(this.backupDir).filter((f) => BACKUP_NAME_RE.test(f))
       .map((name) => { const st = fs.statSync(path.join(this.backupDir, name)); return { name, size: st.size, t: st.mtimeMs }; })
       .sort((a, b) => b.t - a.t || (a.name < b.name ? 1 : -1));
   }
 
   backupPath(name) {
-    if (!/^noja-\d{4}-\d{2}-\d{2}(-\d+)?\.json\.gz$/.test(name)) throw new Error('نام پشتیبان نامعتبر');
+    if (!BACKUP_NAME_RE.test(name)) throw new Error('نام پشتیبان نامعتبر');
     return path.join(this.backupDir, name);
   }
 
   /** Write a compressed backup. `force` makes an extra one even if today's exists. */
   backupNow(force) {
     const day = new Date().toLocaleDateString('en-CA');
-    let name = `noja-${day}.json.gz`;
+    let name = `radyab-${day}.json.gz`;
     if (fs.existsSync(path.join(this.backupDir, name))) {
       if (!force) return null;
-      name = `noja-${day}-${Date.now() % 100000}.json.gz`;
+      name = `radyab-${day}-${Date.now() % 100000}.json.gz`;
     }
-    const payload = JSON.stringify({ app: 'noja', kind: 'backup', createdAt: Date.now(), db: this.db });
+    const payload = JSON.stringify({ app: 'radyab', kind: 'backup', createdAt: Date.now(), db: this.db });
     fs.writeFileSync(path.join(this.backupDir, name), zlib.gzipSync(payload));
     for (const old of this.listBackups().slice(MAX_BACKUPS)) fs.rmSync(path.join(this.backupDir, old.name), { force: true });
     return name;
@@ -204,7 +206,7 @@ class Store {
   restore(obj) {
     const db = obj && obj.db;
     if (!db || typeof db !== 'object' || typeof db.ads !== 'object' || typeof db.searches !== 'object') {
-      throw new Error('این فایل پشتیبان نوجا نیست');
+      throw new Error('این فایل پشتیبان ردیاب نیست');
     }
     this.backupNow(true);
     this.db = { ads: db.ads, searches: db.searches, version: (this.db.version || 0) + 1 };

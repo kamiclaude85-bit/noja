@@ -1,5 +1,5 @@
 /*
- * End-to-end test of Noja against a mocked Divar website.
+ * End-to-end test of Radyab against a mocked Divar website.
  *
  *  - Chromium is driven exactly as in real use (the bot browses pages; no API).
  *  - divar.ir is replaced by mock pages (search list with infinite scroll, ad pages
@@ -66,7 +66,7 @@ const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350)
   const listUrls = [];
   let newTabs = 0;
 
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'noja-bot-'));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'radyab-bot-'));
   const context = await chromium.launchPersistentContext(path.join(tmp, 'profile'), {
     headless: true,
     viewport: { width: 1440, height: 900 },
@@ -110,7 +110,7 @@ const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350)
   context.on('page', (pg) => { pg.waitForURL(/\/v\//, { timeout: 60000 }).then(() => { newTabs++; }).catch(() => {}); });
   const app = await startApp({ context, dataDir: path.join(tmp, 'data'), port: 4799, log: () => {}, notifyApiBases: { bale: baleBase } });
   const ui = context.pages().find((p) => p.url().startsWith(app.panelUrl));
-  assert.ok(ui, 'Noja opened in Chrome');
+  assert.ok(ui, 'Radyab opened in Chrome');
   const getJson = async (p) => (await fetch(`${app.panelUrl}${p}`)).json();
   const postJson = (p, body) => fetch(`${app.panelUrl}${p}`, {
     method: 'POST', headers: { 'content-type': 'application/json', origin: app.panelUrl.replace(/\/$/, '') }, body: JSON.stringify(body),

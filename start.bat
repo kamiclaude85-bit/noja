@@ -10,7 +10,7 @@ if errorlevel 1 (
   exit /b 1
 )
 if not exist node_modules (
-  echo Installing Noja for the first time...
+  echo Installing Radyab for the first time...
   call npm install --omit=dev
 )
 node src\index.js
