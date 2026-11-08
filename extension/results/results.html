@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>نتایج نوجا</title>
+  <link rel="icon" href="../icons/icon32.png">
+  <link rel="stylesheet" href="../fonts/fonts.css">
+  <link rel="stylesheet" href="results.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-inner">
+      <div class="brand">
+        <img src="../icons/icon48.png" alt="" width="36" height="36">
+        <div>
+          <h1 id="heading">نتایج نوجا</h1>
+          <p id="criteria" class="muted"></p>
+        </div>
+      </div>
+      <div class="progress-box">
+        <div class="progress-text"><span id="progressText">در حال آماده‌سازی…</span>
+          <button id="pauseBtn" type="button" class="ghost small" hidden>توقف</button>
+          <button id="retryBtn" type="button" class="ghost small" hidden>تلاش دوباره برای خطاها</button>
+        </div>
+        <div class="bar"><div id="bar"></div></div>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section id="stats" class="stats" aria-label="خلاصه"></section>
+
+    <section class="toolbar" aria-label="فیلترها">
+      <div class="tabs" role="tablist" id="tabs">
+        <button role="tab" data-tab="all" aria-selected="true">همه <b data-count="all"></b></button>
+        <button role="tab" data-tab="personal">شخصی <b data-count="personal"></b></button>
+        <button role="tab" data-tab="dealer">نمایشگاهی <b data-count="dealer"></b></button>
+        <button role="tab" data-tab="fav">نشان‌شده‌ها <b data-count="fav"></b></button>
+      </div>
+      <div class="controls">
+        <input id="search" type="search" placeholder="جستجو در نتایج (رنگ، محله، تیپ…)">
+        <select id="sort" aria-label="مرتب‌سازی">
+          <option value="default">ترتیب دیوار (جدیدترین)</option>
+          <option value="price-asc">ارزان‌ترین</option>
+          <option value="price-desc">گران‌ترین</option>
+          <option value="km-asc">کم‌کارکردترین</option>
+          <option value="year-desc">جدیدترین مدل</option>
+        </select>
+        <div class="seg" role="group" aria-label="نمایش">
+          <button type="button" data-view="cards" aria-pressed="true">کارت</button>
+          <button type="button" data-view="table" aria-pressed="false">جدول</button>
+        </div>
+        <button id="exportBtn" type="button" class="ghost">خروجی اکسل (CSV)</button>
+      </div>
+    </section>
+
+    <p id="filteredNote" class="note" hidden></p>
+    <section id="list" class="cards" aria-live="polite"></section>
+    <p id="empty" class="empty" hidden>هنوز آگهی‌ای برای نمایش نیست.</p>
+  </main>
+
+  <footer class="wrap muted foot">
+    نوجا فقط اطلاعات عمومی آگهی‌ها را می‌خواند و با سرعت کم درخواست می‌فرستد. شمارهٔ تماس جمع‌آوری نمی‌شود.
+  </footer>
+
+  <script src="../src/parser.js"></script>
+  <script src="results.js"></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "name": "noja",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension that scans Divar car ads, separates personal and dealer listings and compares specs.",
+  "scripts": {
+    "test": "node --test tests/parser.test.js",
+    "test:e2e": "node tests/e2e.js"
+  },
+  "license": "MIT"
+}
