@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const P = require('./parser');
 const { isLoggedIn, DEFAULT_DAILY_LIMIT } = require('./scanner');
+const CRM = require('./crm');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
 const TYPES = {
@@ -23,10 +24,10 @@ function send(res, code, body, type) {
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 }
 
-function readBody(req) {
+function readBody(req, limit = 1e6) {
   return new Promise((resolve, reject) => {
     let data = '';
-    req.on('data', (c) => { data += c; if (data.length > 1e6) req.destroy(); });
+    req.on('data', (c) => { data += c; if (data.length > limit) req.destroy(); });
     req.on('end', () => { try { resolve(data ? JSON.parse(data) : {}); } catch (e) { reject(e); } });
     req.on('error', reject);
   });
@@ -57,6 +58,7 @@ function cleanCriteria(b) {
     dailyLimit: Math.min(Math.max(num(b.dailyLimit) || DEFAULT_DAILY_LIMIT, 1), 2000),
     requireLogin: b.requireLogin !== false,
     recheckAll: !!b.recheckAll,
+    trackRecheckHours: b.trackRecheckHours != null && Number(b.trackRecheckHours) >= 0 ? Number(b.trackRecheckHours) : 20,
     searchUrl,
   };
 }
@@ -124,6 +126,54 @@ function createServer({ scanner, store, context }) {
         if (!scanner.current || scanner.current.id !== m[1]) return send(res, 409, { error: 'این جستجو فعال نیست.' });
         scanner[m[2]]();
         return send(res, 200, { ok: true });
+      }
+
+      // ---- ads + follow-up ----
+      if (p === '/api/ads' && req.method === 'GET') {
+        const since = Number(url.searchParams.get('since'));
+        if (since && since === store.version) return send(res, 200, { unchanged: true, version: since });
+        return send(res, 200, {
+          ...store.exportAds(),
+          stages: CRM.STAGES,
+          activeStages: CRM.ACTIVE_STAGES,
+          rejectReasons: CRM.REJECT_REASONS,
+          callResults: CRM.CALL_RESULTS,
+        });
+      }
+      m = p.match(/^\/api\/ads\/([A-Za-z0-9_-]+)\/crm$/);
+      if (m && req.method === 'POST') {
+        try {
+          const rec = store.applyCrm(m[1], await readBody(req));
+          return send(res, 200, { ok: true, version: store.version, crm: rec.crm });
+        } catch (e) {
+          return send(res, 400, { error: e.message });
+        }
+      }
+
+      // ---- backups ----
+      if (p === '/api/backups' && req.method === 'GET') return send(res, 200, { backups: store.listBackups() });
+      if (p === '/api/backups' && req.method === 'POST') {
+        const name = store.backupNow(true);
+        return send(res, 200, { ok: true, name, backups: store.listBackups() });
+      }
+      if (p === '/api/backups/restore' && req.method === 'POST') {
+        if (scanner.busy) return send(res, 409, { error: 'وقتی ربات در حال کار است نمی‌شود پشتیبان را برگرداند.' });
+        try {
+          const count = store.restore(await readBody(req, 200e6));
+          return send(res, 200, { ok: true, count });
+        } catch (e) {
+          return send(res, 400, { error: e.message });
+        }
+      }
+      m = p.match(/^\/api\/backups\/([A-Za-z0-9._-]+)$/);
+      if (m && req.method === 'GET') {
+        let file;
+        try { file = store.backupPath(m[1]); } catch (e) { return send(res, 400, { error: e.message }); }
+        return fs.readFile(file, (err, buf) => {
+          if (err) return send(res, 404, { error: 'not found' });
+          res.writeHead(200, { 'content-type': 'application/gzip', 'content-disposition': `attachment; filename="${m[1]}"`, 'cache-control': 'no-store' });
+          res.end(buf);
+        });
       }
 
       // Static files

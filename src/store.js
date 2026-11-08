@@ -4,13 +4,17 @@
  *   ads.json        permanent memory of every ad ever read (never reopened unless its price changes),
  *                   plus which saved search each ad belongs to
  *   daily.json      how many ad pages were opened today
+ *   backups/        one compressed copy of ads.json per day (kept 30 days)
  */
 'use strict';
 
 const fs = require('node:fs');
 const path = require('node:path');
+const zlib = require('node:zlib');
+const CRM = require('./crm');
 
 const MAX_RUNS = 30;
+const MAX_BACKUPS = 30;
 
 function writeJson(file, data) {
   fs.writeFileSync(`${file}.tmp`, JSON.stringify(data));
@@ -29,9 +33,16 @@ class Store {
     try { this.daily = JSON.parse(fs.readFileSync(this.dailyFile, 'utf8')); } catch (_) { /* empty */ }
 
     this.adsFile = path.join(dataDir, 'ads.json');
-    this.db = { ads: {}, searches: {} };
-    try { this.db = { ads: {}, searches: {}, ...JSON.parse(fs.readFileSync(this.adsFile, 'utf8')) }; } catch (_) { /* empty */ }
+    this.db = { ads: {}, searches: {}, version: 0 };
+    try { this.db = { ads: {}, searches: {}, version: 0, ...JSON.parse(fs.readFileSync(this.adsFile, 'utf8')) }; } catch (_) { /* empty */ }
+
+    this.backupDir = path.join(dataDir, 'backups');
+    fs.mkdirSync(this.backupDir, { recursive: true });
   }
+
+  /** Bumped on every change, so the UI can ask "anything new?" cheaply. */
+  get version() { return this.db.version || 0; }
+  bump() { this.db.version = (this.db.version || 0) + 1; }
 
   // ---------- daily counter ----------
   /** How many ad pages the bot opened today (local date). */
@@ -106,6 +117,7 @@ class Store {
     delete rec.removed;
     this.db.ads[post.token] = rec;
     if (searchKey) this.addToSearch(searchKey, post.token);
+    this.bump();
     this.scheduleFlush();
     return rec;
   }
@@ -116,12 +128,93 @@ class Store {
     rec.removed = Date.now();
     this.db.ads[token] = rec;
     if (searchKey) this.addToSearch(searchKey, token);
+    this.bump();
     this.scheduleFlush();
+  }
+
+  /** Ads this search is still following up (active stages), for the daily re-check. */
+  trackedTokens(key) {
+    return this.searchTokens(key).filter((t) => {
+      const rec = this.db.ads[t];
+      return rec && rec.post && !rec.removed && rec.crm && CRM.ACTIVE_STAGES.includes(rec.crm.stage);
+    });
+  }
+
+  // ---------- follow-up ----------
+  applyCrm(token, body) {
+    const rec = this.db.ads[token];
+    if (!rec || !rec.post) throw new Error('آگهی پیدا نشد');
+    CRM.applyAction(rec, body);
+    this.bump();
+    this.scheduleFlush();
+    return rec;
+  }
+
+  /** Everything the UI needs: every ad with its follow-up data, and the saved searches. */
+  exportAds() {
+    const bySearch = {};
+    for (const [key, s] of Object.entries(this.db.searches)) for (const t of s.tokens) (bySearch[t] || (bySearch[t] = [])).push(key);
+    const ads = [];
+    for (const [token, rec] of Object.entries(this.db.ads)) {
+      if (!rec.post) continue;
+      ads.push({
+        token,
+        post: rec.post,
+        crm: rec.crm || null,
+        removed: rec.removed || null,
+        firstSeenAt: rec.firstSeenAt,
+        lastReadAt: rec.lastReadAt,
+        priceHistory: rec.priceHistory || [],
+        searches: bySearch[token] || [],
+      });
+    }
+    const searches = Object.entries(this.db.searches).map(([key, s]) => ({
+      key, criteria: s.criteria || null, lastRunAt: s.lastRunAt || null, createdAt: s.createdAt, count: s.tokens.length,
+    }));
+    return { version: this.version, ads, searches };
+  }
+
+  // ---------- backups ----------
+  listBackups() {
+    return fs.readdirSync(this.backupDir).filter((f) => /^noja-\d{4}-\d{2}-\d{2}(-\d+)?\.json\.gz$/.test(f))
+      .map((name) => { const st = fs.statSync(path.join(this.backupDir, name)); return { name, size: st.size, t: st.mtimeMs }; })
+      .sort((a, b) => b.t - a.t || (a.name < b.name ? 1 : -1));
+  }
+
+  backupPath(name) {
+    if (!/^noja-\d{4}-\d{2}-\d{2}(-\d+)?\.json\.gz$/.test(name)) throw new Error('نام پشتیبان نامعتبر');
+    return path.join(this.backupDir, name);
+  }
+
+  /** Write a compressed backup. `force` makes an extra one even if today's exists. */
+  backupNow(force) {
+    const day = new Date().toLocaleDateString('en-CA');
+    let name = `noja-${day}.json.gz`;
+    if (fs.existsSync(path.join(this.backupDir, name))) {
+      if (!force) return null;
+      name = `noja-${day}-${Date.now() % 100000}.json.gz`;
+    }
+    const payload = JSON.stringify({ app: 'noja', kind: 'backup', createdAt: Date.now(), db: this.db });
+    fs.writeFileSync(path.join(this.backupDir, name), zlib.gzipSync(payload));
+    for (const old of this.listBackups().slice(MAX_BACKUPS)) fs.rmSync(path.join(this.backupDir, old.name), { force: true });
+    return name;
+  }
+
+  /** Replace all ad data with a backup (takes a fresh backup of the current data first). */
+  restore(obj) {
+    const db = obj && obj.db;
+    if (!db || typeof db !== 'object' || typeof db.ads !== 'object' || typeof db.searches !== 'object') {
+      throw new Error('این فایل پشتیبان نوجا نیست');
+    }
+    this.backupNow(true);
+    this.db = { ads: db.ads, searches: db.searches, version: (this.db.version || 0) + 1 };
+    this.flush();
+    return Object.keys(this.db.ads).length;
   }
 
   addToSearch(key, token) {
     const s = this.db.searches[key] || (this.db.searches[key] = { tokens: [], createdAt: Date.now() });
-    if (!s.tokens.includes(token)) s.tokens.push(token);
+    if (!s.tokens.includes(token)) { s.tokens.push(token); this.bump(); }
   }
 
   /** Every ad this saved search has found so far (newest first). */
@@ -132,8 +225,9 @@ class Store {
 
   touchSearch(key, criteria) {
     const s = this.db.searches[key] || (this.db.searches[key] = { tokens: [], createdAt: Date.now() });
-    s.criteria = criteria;
+    s.criteria = { ...criteria, recheckAll: false };
     s.lastRunAt = Date.now();
+    this.bump();
     this.scheduleFlush();
   }
 

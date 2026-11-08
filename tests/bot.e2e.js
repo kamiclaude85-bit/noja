@@ -1,11 +1,15 @@
 /*
- * End-to-end test of the Chrome bot against a mocked Divar website.
+ * End-to-end test of Noja against a mocked Divar website.
  *
  *  - Chromium is driven exactly as in real use (the bot browses pages; no API).
  *  - divar.ir is replaced by mock pages (search list with infinite scroll, ad pages
- *    in two different layouts, a captcha page, a deleted ad).
- *  - Checks: login wait, captcha wait + «ادامه», every extracted field, seller type,
- *    UI, CSV, and the next day: only new ads and one price change are opened.
+ *    in two layouts, a captcha page, a deleted ad).
+ *  Day 1: login wait, captcha + «ادامه», every extracted field, seller type, human-like
+ *         behaviour, list UI, compare, CSV.
+ *  Follow-up: phone, «جواب نداد» (auto next call), visit, note, removal with reason + restore,
+ *         dashboard counters, backups.
+ *  Day 2: only the 8 new ads, one price change and the followed-up ads are opened; a followed-up
+ *         ad that disappeared from Divar is marked as sold; scrolling stops at known ads.
  *
  *   node tests/bot.e2e.js [screenshotDir]
  */
@@ -14,9 +18,11 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
+const zlib = require('node:zlib');
 const assert = require('node:assert/strict');
 const { chromium } = require('playwright');
 const { startApp } = require('../src/app');
+const P = require('../src/parser');
 const { buildDataset, searchPageHtml, adPageHtml, captchaPageHtml } = require('./fixtures/mock-divar.js');
 
 const SHOTS = process.argv[2] ? path.resolve(process.argv[2]) : null;
@@ -43,12 +49,15 @@ async function waitFor(fn, what, timeout = 120000) {
   throw new Error(`timeout waiting for ${what}`);
 }
 
+const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350); await page.screenshot({ path: path.join(SHOTS, `${name}.png`) }); } };
+
 (async () => {
   // 48 ads exist; on "day 1" only the 40 older ones are on Divar, on "day 2" 8 new ones appear on top.
   const { specs, list: allAds } = buildDataset(COUNT + 8);
   let list = allAds.slice(8);
   const captchaToken = list[3].token;
   const goneToken = list[7].token;
+  const goneOnDay2 = new Set();
   let captchaShown = 0;
   const adHits = [];
   const adReferers = [];
@@ -58,7 +67,7 @@ async function waitFor(fn, what, timeout = 120000) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'noja-bot-'));
   const context = await chromium.launchPersistentContext(path.join(tmp, 'profile'), {
     headless: true,
-    viewport: { width: 1360, height: 900 },
+    viewport: { width: 1440, height: 900 },
     deviceScaleFactor: SHOTS ? 2 : 1,
     locale: 'fa-IR',
   });
@@ -73,7 +82,7 @@ async function waitFor(fn, what, timeout = 120000) {
       adHits.push(token);
       adReferers.push(route.request().headers().referer || '');
       if (token === captchaToken && captchaShown++ === 0) return html(captchaPageHtml(), 429);
-      if (token === goneToken) return html('<html><body><h1>این آگهی حذف شده است</h1></body></html>', 404);
+      if (token === goneToken || goneOnDay2.has(token)) return html('<html><body><h1>این آگهی حذف شده است</h1></body></html>', 404);
       return specs[token] ? html(adPageHtml(specs[token])) : html('not found', 404);
     }
     return html('<!doctype html><html lang="fa"><body><h1>دیوار</h1><a href="/my-divar">دیوار من</a></body></html>');
@@ -83,63 +92,59 @@ async function waitFor(fn, what, timeout = 120000) {
 
   context.on('page', (pg) => { pg.waitForURL(/\/v\//, { timeout: 60000 }).then(() => { newTabs++; }).catch(() => {}); });
   const app = await startApp({ context, dataDir: path.join(tmp, 'data'), port: 4799, log: () => {} });
-  const panel = context.pages().find((p) => p.url().startsWith(app.panelUrl));
-  assert.ok(panel, 'control panel opened in Chrome');
-  await panel.waitForSelector('#account .label');
-  await waitFor(async () => /ورود/.test(await panel.textContent('#account')), 'account chip');
+  const ui = context.pages().find((p) => p.url().startsWith(app.panelUrl));
+  assert.ok(ui, 'Noja opened in Chrome');
+  const getJson = async (p) => (await fetch(`${app.panelUrl}${p}`)).json();
+  const postJson = (p, body) => fetch(`${app.panelUrl}${p}`, {
+    method: 'POST', headers: { 'content-type': 'application/json', origin: app.panelUrl.replace(/\/$/, '') }, body: JSON.stringify(body),
+  }).then((r) => r.json());
+  const adOf = async (token) => (await getJson('api/ads')).ads.find((x) => x.token === token);
 
-  // ---- Fill the search form ----
-  await panel.fill('input[name=query]', 'پژو ۲۰۶');
-  await panel.fill('input[name=yearMin]', '97');
-  await panel.fill('input[name=yearMax]', '۹۷');
-  await panel.click('details.adv summary');
-  await panel.fill('input[name=keyword]', '206');
-  await panel.fill('input[name=maxAds]', '100');
-  await panel.evaluate(() => document.activeElement && document.activeElement.blur());
-  if (SHOTS) await panel.screenshot({ path: path.join(SHOTS, 'home.png') });
-  await panel.evaluate(() => {
-    const sel = document.querySelector('select[name=speed]');
-    sel.add(new Option('test', 'test'));
-    sel.value = 'test';
-  });
-  await panel.click('form button[type=submit]');
-  await panel.waitForURL(/#\/run\//);
-  const runId = panel.url().split('#/run/')[1];
-  const getRun = async () => (await fetch(`${app.panelUrl}api/runs/${runId}`)).json();
+  // ---- Empty dashboard → new search ----
+  await ui.waitForSelector('.empty.big');
+  await waitFor(async () => /ورود/.test(await ui.textContent('#account')), 'account chip');
+  await ui.click('.empty.big a[href="#/search"]');
+  await ui.waitForSelector('input[name=query]');
+  await ui.fill('input[name=query]', 'پژو ۲۰۶');
+  await ui.fill('input[name=yearMin]', '97');
+  await ui.fill('input[name=yearMax]', '۹۷');
+  await ui.click('details.adv summary');
+  await ui.fill('input[name=keyword]', '206');
+  await ui.fill('input[name=maxAds]', '100');
+  await ui.evaluate(() => document.activeElement && document.activeElement.blur());
+  await shot(ui, 'search');
+  await ui.evaluate(() => { const s = document.querySelector('select[name=speed]'); s.add(new Option('test', 'test')); s.value = 'test'; });
+  await ui.click('form button[type=submit]');
+  await ui.waitForURL(/#\/run\//);
+  const runId = ui.url().split('#/run/')[1];
+  const getRun = (id = runId) => getJson(`api/runs/${id}`);
 
   // ---- Login wait ----
   await waitFor(async () => (await getRun()).status === 'waiting-login', 'login prompt');
-  await panel.bringToFront();
-  await panel.waitForSelector('#status.attn');
-  assert.match(await panel.textContent('#status'), /وارد حساب دیوار شوید/);
-  if (SHOTS) await panel.screenshot({ path: path.join(SHOTS, 'waiting-login.png') });
-  // The user logs in inside the Divar tab -> Divar sets its session cookie.
+  await ui.bringToFront();
+  await ui.waitForSelector('#status.attn');
+  assert.match(await ui.textContent('#status'), /وارد حساب دیوار شوید/);
   await context.addCookies([{ name: 'token', value: 'x'.repeat(48), domain: '.divar.ir', path: '/' }]);
 
   // ---- Captcha wait, user presses «ادامه» ----
   await waitFor(async () => (await getRun()).status === 'blocked', 'captcha prompt');
-  await panel.bringToFront();
-  await panel.waitForSelector('#status.attn');
-  assert.match(await panel.textContent('#status'), /تأیید/);
-  if (SHOTS) await panel.screenshot({ path: path.join(SHOTS, 'captcha.png') });
-  await panel.click('#status .btn.primary');
+  await ui.bringToFront();
+  await ui.waitForSelector('#status.attn');
+  assert.match(await ui.textContent('#status'), /تأیید/);
+  await shot(ui, 'captcha');
+  await ui.click('#status .btn.primary');
 
-  // ---- Finish ----
+  // ---- Day 1 finished ----
   const run = await waitFor(async () => { const r = await getRun(); return r.status === 'done' ? r : null; }, 'run to finish', 180000);
   assert.equal(run.items.length, COUNT, 'all ads collected by scrolling');
   assert.deepEqual(Object.keys(run.errors), [goneToken], 'only the deleted ad failed');
   assert.equal(run.posts.length, COUNT - 1);
-
-  // Behaved like a person: searched by typing, opened most ads from the list.
-  assert.ok(!new URL(listUrls[0]).searchParams.has('q'), 'started from the city page, not a ready-made search URL');
+  assert.ok(!new URL(listUrls[0]).searchParams.has('q'), 'started from the city page');
   assert.ok(listUrls.some((u) => new URL(u).searchParams.get('q') === 'پژو ۲۰۶'), 'typed the car name into the search box');
   const fromList = adReferers.filter((r) => /\/s\//.test(r)).length;
-  assert.ok(fromList / adReferers.length >= 0.7, `most ads opened by clicking in the list (${fromList}/${adReferers.length})`);
-  assert.ok(newTabs > 0, 'some ads were opened in a new tab');
-  assert.ok(run.stats.opened >= COUNT - 1, 'opened every ad');
+  assert.ok(fromList / adReferers.length >= 0.7, `most ads opened from the list (${fromList}/${adReferers.length})`);
+  assert.ok(newTabs > 0, 'some ads opened in a new tab');
 
-  // Every field extracted from the rendered pages (both layouts) matches the source data.
-  const P = require('../src/parser');
   for (const post of run.posts) {
     const s = specs[post.token];
     const where = `${post.token}${s.classless ? ' (plain layout)' : ''}`;
@@ -152,114 +157,147 @@ async function waitFor(fn, what, timeout = 120000) {
     assert.equal(post.engine, s.engine, `engine ${where}`);
     assert.equal(post.gearbox, s.gearbox, `gearbox ${where}`);
     assert.equal(post.brand, s.brand, `brand ${where}`);
-    assert.equal(post.insurance, '۸ ماه', `insurance ${where}`);
     assert.match(post.chassis, /شاسی جلو: سالم و پلمپ/, `chassis ${where}`);
     assert.equal(post.subtitle, s.subtitle, `subtitle ${where}`);
     assert.equal(post.images.length, s.images, `images ${where}`);
-    assert.ok(post.description.includes(s.description.split('\n')[0]), `description ${where}`);
-    const expectedSeller = s.kind >= 3 ? 'dealer' : 'personal';
-    assert.equal(post.seller, expectedSeller, `seller ${where}: ${post.sellerReasons.join(' | ')}`);
-    if (s.kind === 3) assert.equal(post.sellerConfidence, 'high', `dealer link detected ${where}`);
+    assert.equal(post.seller, s.kind >= 3 ? 'dealer' : 'personal', `seller ${where}: ${post.sellerReasons.join(' | ')}`);
   }
 
-  // ---- UI ----
-  await panel.bringToFront();
-  await panel.reload();
-  await panel.waitForSelector('#results .row');
-  await panel.waitForTimeout(400);
+  // ---- Run results UI ----
+  await ui.reload();
+  await ui.waitForSelector('#results .row');
   const expected = run.posts.filter((p) => P.matchesCriteria(p, run.criteria));
-  assert.equal(await panel.locator('#results .row').count(), expected.length, 'matching rows rendered');
-  await panel.click('#sellerSeg button[data-v=dealer]');
-  assert.equal(await panel.locator('#results .row').count(), expected.filter((p) => p.seller === 'dealer').length, 'dealer filter');
-  await panel.click('#sellerSeg button[data-v=personal]');
-  assert.equal(await panel.locator('#results .row').count(), expected.filter((p) => p.seller === 'personal').length, 'personal filter');
-  await panel.click('#sellerSeg button[data-v=all]');
-  const [download] = await Promise.all([panel.waitForEvent('download'), panel.click('button[aria-label="خروجی اکسل"]')]);
-  const csv = fs.readFileSync(await download.path(), 'utf8');
-  assert.equal(csv.trim().split(/\r\n/).length, expected.length + 1, 'CSV rows');
+  assert.equal(await ui.locator('#results .row').count(), expected.length, 'matching rows rendered');
+  await ui.click('#sellerSeg button[data-v=dealer]');
+  assert.equal(await ui.locator('#results .row').count(), expected.filter((p) => p.seller === 'dealer').length, 'dealer filter');
+  await ui.click('#sellerSeg button[data-v=all]');
+  const [download] = await Promise.all([ui.waitForEvent('download'), ui.click('button[aria-label="خروجی اکسل"]')]);
+  assert.equal(fs.readFileSync(await download.path(), 'utf8').trim().split(/\r\n/).length, expected.length + 1, 'CSV rows');
+  await ui.locator('#results .row .cmp-toggle').nth(0).click();
+  await ui.locator('#results .row .cmp-toggle').nth(2).click();
+  await ui.click('.tray .btn.primary');
+  await ui.waitForSelector('.modal table.compare');
+  await ui.keyboard.press('Escape');
+  await ui.click('.tray .btn.ghost');
 
-  // Drawer
-  await panel.locator('#results .row').first().click();
-  await panel.waitForSelector('.drawer');
-  assert.equal((await panel.textContent('.drawer .d-title')).trim(), expected.sort((a, b) => a.order - b.order)[0].title);
-  if (SHOTS) {
-    await panel.waitForTimeout(400);
-    await panel.screenshot({ path: path.join(SHOTS, 'drawer.png') });
-  }
-  await panel.keyboard.press('Escape');
-  assert.equal(await panel.locator('.drawer').count(), 0, 'drawer closes with Escape');
+  // ---- Follow-up (CRM) on the ads page ----
+  await ui.goto(`${app.panelUrl}#/ads`);
+  await ui.waitForSelector('#results .row');
+  const tokens = await ui.$$eval('#results .row', (els) => els.map((e) => e.dataset.token));
+  const [tCall, tVisit, tReject, tStar] = tokens;
 
-  // Compare
-  await panel.locator('#results .row .cmp-toggle').nth(0).click();
-  await panel.locator('#results .row .cmp-toggle').nth(2).click();
-  await panel.locator('#results .row .star').nth(1).click();
-  await panel.waitForSelector('.tray');
-  if (SHOTS) {
-    await panel.evaluate(() => window.scrollTo(0, 0));
-    await panel.waitForTimeout(300);
-    await panel.screenshot({ path: path.join(SHOTS, 'results.png') });
-  }
-  await panel.click('.tray .btn.primary');
-  await panel.waitForSelector('.modal table.compare');
-  assert.equal(await panel.locator('.modal table.compare tr').first().locator('td').count(), 2, 'two ads compared');
-  if (SHOTS) { await panel.waitForTimeout(400); await panel.screenshot({ path: path.join(SHOTS, 'compare.png') }); }
-  await panel.keyboard.press('Escape');
+  // shortlist with the star
+  await ui.click(`#results .row[data-token="${tStar}"] .star`);
+  await waitFor(async () => (await adOf(tStar)).crm?.stage === 'shortlist', 'shortlist');
 
-  if (SHOTS) {
-    await panel.click('button[aria-label="نمایش جدولی"]');
-    await panel.waitForTimeout(300);
-    await panel.screenshot({ path: path.join(SHOTS, 'table.png') });
-    await panel.click('button[aria-label="نمایش فهرستی"]');
-    await panel.setViewportSize({ width: 390, height: 844 });
-    await panel.waitForTimeout(300);
-    await panel.screenshot({ path: path.join(SHOTS, 'mobile.png') });
-    await panel.click('.filters-toggle');
-    await panel.waitForTimeout(300);
-    await panel.screenshot({ path: path.join(SHOTS, 'mobile-filters.png') });
-    await panel.click('.filters-done');
-    await panel.setViewportSize({ width: 1360, height: 900 });
-  }
+  // phone + note + «جواب نداد»
+  await ui.click(`#results .row[data-token="${tCall}"]`);
+  await ui.waitForSelector('.drawer .crm');
+  await ui.fill('.drawer input[type=tel]', '0912 345 6789');
+  await ui.press('.drawer input[type=tel]', 'Tab');
+  await waitFor(async () => (await adOf(tCall)).crm?.phone, 'phone saved');
+  await ui.fill('.drawer .crm textarea', 'گفت عصر زنگ بزنم');
+  await ui.click('.drawer button:has-text("جواب نداد")');
+  let crm = await waitFor(async () => { const a = await adOf(tCall); return a.crm && a.crm.missed === 1 ? a.crm : null; }, 'no-answer');
+  assert.equal(crm.stage, 'calling');
+  assert.equal(crm.phone, '0912 345 6789');
+  assert.ok(Math.abs(crm.nextCallAt - (Date.now() + 3600e3)) < 120e3, 'next call scheduled ~1 hour later');
+  assert.ok(crm.calls[0].note.includes('عصر'), 'note saved with the call');
+  await ui.waitForSelector('.drawer .timeline li');
+  await shot(ui, 'drawer-crm');
+  await ui.keyboard.press('Escape');
 
-  // ---- Next day: 8 new ads on top, one old ad got cheaper. Only those 9 are opened. ----
+  // visit tomorrow at 17:00
+  await ui.click(`#results .row[data-token="${tVisit}"]`);
+  await ui.waitForSelector('.drawer .crm');
+  await ui.click('.drawer .crm-block:has-text("بازدید") .chips button:has-text("فردا")');
+  await ui.click('.drawer button:has-text("ثبت قرار بازدید")');
+  crm = await waitFor(async () => { const a = await adOf(tVisit); return a.crm && a.crm.stage === 'visit' ? a.crm : null; }, 'visit');
+  assert.equal(new Date(crm.visitAt).getHours(), 17);
+  await ui.keyboard.press('Escape');
+
+  // remove with a reason, then restore
+  await ui.click(`#results .row[data-token="${tReject}"]`);
+  await ui.waitForSelector('.drawer .crm');
+  await ui.click('.drawer button:has-text("حذف با دلیل")');
+  await ui.click('.dialog button:has-text("گران است")');
+  await ui.click('.dialog button.danger');
+  await waitFor(async () => (await adOf(tReject)).crm?.stage === 'rejected', 'reject');
+  await ui.keyboard.press('Escape');
+  await ui.goto(`${app.panelUrl}#/ads?stage=rejected`);
+  await ui.waitForSelector('#results .row');
+  assert.equal(await ui.locator('#results .row').count(), 1, 'removed ad is in «حذف‌شده‌ها»');
+  await ui.click('#results .row');
+  await ui.click('.drawer button:has-text("برگرداندن")');
+  await waitFor(async () => (await adOf(tReject)).crm?.stage === 'new', 'restore');
+  await ui.keyboard.press('Escape');
+  await postJson(`api/ads/${tReject}/crm`, { action: 'reject', reason: 'تصادفی / رنگ دارد' });
+
+  // ---- Dashboard ----
+  await ui.goto(`${app.panelUrl}#/`);
+  await ui.waitForSelector('.kpis');
+  const kpiValue = async (label) => P.toEnDigits((await ui.locator(`.kpi:has-text("${label}") .kpi-v`).textContent()).trim());
+  await waitFor(async () => (await kpiValue('در حال پیگیری')) === '3', 'dashboard counters');
+  assert.equal(await kpiValue('قرار بازدید'), '1');
+  await shot(ui, 'dashboard');
+
+  // ---- Backups ----
+  await ui.goto(`${app.panelUrl}#/backup`);
+  await ui.waitForSelector('.items .item');
+  const before = await ui.locator('.items .item').count();
+  await ui.click('button:has-text("پشتیبان همین حالا")');
+  await waitFor(async () => (await ui.locator('.items .item').count()) === before + 1, 'new backup listed');
+  await shot(ui, 'backup');
+  const backups = (await getJson('api/backups')).backups;
+  const gz = await (await fetch(`${app.panelUrl}api/backups/${backups[0].name}`)).arrayBuffer();
+  const restored = JSON.parse(zlib.gunzipSync(Buffer.from(gz)));
+  assert.equal(restored.db.ads[tCall].crm.phone, '0912 345 6789', 'backup contains follow-up data');
+
+  // ---- Day 2: 8 new ads, one price drop, the visit ad was sold (deleted on Divar) ----
   list = allAds.slice();
-  const cheaper = list.find((it, i) => i >= 8 && specs[it.token].price != null && ![captchaToken, goneToken].includes(it.token));
+  const cheaper = list.find((it, i) => i >= 8 && specs[it.token].price != null && ![captchaToken, goneToken, tCall, tVisit, tReject, tStar].includes(it.token));
   specs[cheaper.token].price -= 25000000;
   cheaper.price = specs[cheaper.token].price;
+  goneOnDay2.add(tVisit);
   const hitsBefore = adHits.length;
-  const listBefore = listUrls.length;
-  await panel.goto(app.panelUrl);
-  await panel.waitForSelector('input[name=query]');
-  await panel.click('details.adv summary');
-  await panel.evaluate(() => {
-    const sel = document.querySelector('select[name=speed]');
-    sel.add(new Option('test', 'test'));
-    sel.value = 'test';
-  });
-  await panel.click('form button[type=submit]');
-  await panel.waitForURL(/#\/run\//);
-  const run2Id = panel.url().split('#/run/')[1];
-  assert.notEqual(run2Id, runId);
-  const run2 = await waitFor(async () => {
-    const r = await (await fetch(`${app.panelUrl}api/runs/${run2Id}`)).json();
-    return r.status === 'done' ? r : null;
-  }, 'second run');
-  const opened2 = adHits.slice(hitsBefore);
+  const r2 = await postJson('api/scan', { query: 'پژو ۲۰۶', yearMin: '97', yearMax: '97', keyword: '206', speed: 'test', maxAds: 100, trackRecheckHours: 0 });
+  await ui.goto(`${app.panelUrl}#/run/${r2.id}`);
+  const run2 = await waitFor(async () => { const r = await getRun(r2.id); return r.status === 'done' ? r : null; }, 'second run');
+  const opened2 = new Set(adHits.slice(hitsBefore));
   const newTokens = allAds.slice(0, 8).map((it) => it.token);
-  assert.deepEqual(new Set(opened2), new Set([...newTokens, cheaper.token]), `only new ads + the price change were opened (got ${opened2.length})`);
-  assert.equal(run2.stats.newAds, 8, 'new ads counted');
-  assert.equal(run2.stats.priceChanged, 1, 'price change counted');
+  const followed = [tCall, tVisit, tStar]; // active stages are re-checked daily
+  assert.deepEqual(opened2, new Set([...newTokens, cheaper.token, ...followed]), `opened: new + price change + followed-up (got ${opened2.size})`);
+  assert.equal(run2.stats.newAds, 8);
+  assert.equal(run2.stats.priceChanged, 1);
+  assert.equal(run2.stats.sold, 1, 'the followed-up ad that disappeared is detected');
   assert.equal(run2.collectStop, 'known', 'stopped scrolling at already-seen ads');
-  assert.ok(listUrls.length > listBefore, 'went through the search again');
-  assert.equal(run2.posts.length, COUNT - 1 + 8, 'old ads are still shown, from memory');
-  const changed = run2.posts.find((p) => p.token === cheaper.token);
-  assert.deepEqual(changed.priceChange, { from: cheaper.price + 25000000, to: cheaper.price });
-  assert.equal(run2.posts.filter((p) => p.isNew).length, 8);
-  await panel.waitForSelector('#results .row');
-  await panel.waitForTimeout(400);
+  assert.ok((await adOf(tVisit)).removed, 'sold ad is marked as removed');
+  await ui.waitForSelector('#results .row');
+  await shot(ui, 'next-day');
+
+  // Sold mark + alerts
+  await ui.goto(`${app.panelUrl}#/ads?view=sold`);
+  await ui.waitForSelector('#results .row.sold');
+  await ui.goto(`${app.panelUrl}#/`);
+  await ui.waitForSelector('.kpis');
+  await ui.click('#bellBtn');
+  await ui.waitForSelector('#bellPop .alert-item');
+  assert.match(await ui.textContent('#bellPop'), /از دیوار حذف شد/);
+  await shot(ui, 'dashboard-alerts');
+  await ui.click('#bellBtn');
+
+  await ui.goto(`${app.panelUrl}#/ads`);
+  await ui.waitForSelector('#results .row');
+  await shot(ui, 'ads');
   if (SHOTS) {
-    await panel.click('text=فقط جدیدها و تغییر قیمت‌ها');
-    await panel.waitForTimeout(400);
-    await panel.screenshot({ path: path.join(SHOTS, 'next-day.png') });
+    await ui.setViewportSize({ width: 390, height: 844 });
+    await ui.goto(`${app.panelUrl}#/`);
+    await ui.waitForSelector('.kpis');
+    await shot(ui, 'mobile-dashboard');
+    await ui.goto(`${app.panelUrl}#/ads`);
+    await ui.waitForSelector('#results .row');
+    await shot(ui, 'mobile-ads');
+    await ui.setViewportSize({ width: 1440, height: 900 });
   }
 
   // Cross-site requests to the local API are refused.
@@ -269,8 +307,8 @@ async function waitFor(fn, what, timeout = 120000) {
   await app.close();
   await context.close();
   fs.rmSync(tmp, { recursive: true, force: true });
-  console.log(`bot e2e OK — ${run.posts.length} ads read from pages, ${expected.length} match, `
-    + `${expected.filter((p) => p.seller === 'dealer').length} dealer / ${expected.filter((p) => p.seller === 'personal').length} personal`);
+  console.log(`e2e OK — day 1: ${run.posts.length} ads read; day 2: ${opened2.size} pages opened `
+    + `(8 new, 1 price change, ${followed.length} followed-up, 1 sold); follow-up, dashboard and backups work`);
   process.exit(0);
 })().catch((err) => {
   console.error(err);

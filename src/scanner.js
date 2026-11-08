@@ -200,6 +200,16 @@ class Scanner {
         run.posts[token] = { ...rec.post, order, isNew: false, firstSeenAt: rec.firstSeenAt };
         run.stats.known++;
       }
+      // Ads you are following up: re-check once a day (still on Divar? price changed?).
+      const recheckMs = (c.trackRecheckHours != null ? Number(c.trackRecheckHours) : 20) * 60 * 60 * 1000;
+      const queued = new Set(toVisit.map((it) => it.token));
+      for (const token of this.store.trackedTokens(key)) {
+        const rec = this.store.knownAd(token);
+        if (queued.has(token) || Date.now() - (rec.lastReadAt || 0) < recheckMs) continue;
+        const it = run.items.find((x) => x.token === token) || { token, href: rec.post.url, title: rec.post.title, order: run.items.length };
+        toVisit.push({ ...it, direct: !inList.has(token), priceFrom: rec.post.price, tracked: true });
+        queued.add(token);
+      }
       run.toVisit = toVisit.length;
       this.store.saveRun(run, true);
 
@@ -230,8 +240,8 @@ class Scanner {
           if (post) {
             const rec = this.store.rememberAd(post, key);
             post.firstSeenAt = rec.firstSeenAt;
-            if (item.priceFrom != null) {
-              if (post.price != null && post.price !== item.priceFrom) {
+            if (item.priceFrom != null || item.tracked) {
+              if (item.priceFrom != null && post.price != null && post.price !== item.priceFrom) {
                 post.priceChange = { from: item.priceFrom, to: post.price };
                 run.stats.priceChanged++;
               }
@@ -245,7 +255,14 @@ class Scanner {
           }
         } catch (err) {
           const msg = String(err && err.message ? err.message : err).slice(0, 200);
-          if (/حذف شده/.test(msg)) this.store.markRemoved(item.token, key);
+          if (/حذف شده/.test(msg)) {
+            this.store.markRemoved(item.token, key);
+            if (item.tracked) {
+              run.stats.sold = (run.stats.sold || 0) + 1;
+              if (run.posts[item.token]) run.posts[item.token].removed = Date.now();
+              continue;
+            }
+          }
           run.errors[item.token] = msg;
         }
         run.stats.opened++;
@@ -428,8 +445,8 @@ class Scanner {
       let viaNewTab = false;
       try {
         let response = null;
-        await this.ensureList(page, listUrl).catch(() => {});
-        const card = attempt === 1 ? await this.findCard(page, item.token) : null;
+        if (!item.direct) await this.ensureList(page, listUrl).catch(() => {});
+        const card = attempt === 1 && !item.direct ? await this.findCard(page, item.token) : null;
         if (card && H.chance(0.25)) {
           // Open in a new tab (middle click), read there, close it.
           const opened = this.context.waitForEvent('page', { timeout: 15000 });
@@ -491,6 +508,7 @@ class Scanner {
     const st = run.stats || {};
     const parts = [`${fa(st.newAds || 0)} آگهی جدید`];
     if (st.priceChanged) parts.push(`${fa(st.priceChanged)} تغییر قیمت`);
+    if (st.sold) parts.push(`${fa(st.sold)} آگهی پیگیری‌شده از دیوار حذف شد`);
     if (st.known) parts.push(`${fa(st.known)} آگهی از قبل`);
     run.message = message || (status === 'stopped'
       ? `متوقف شد. ${parts.join('، ')}.`

@@ -68,7 +68,13 @@ async function startApp(opts = {}) {
     await page.goto(panelUrl);
   }
 
+  // Daily backup of the ad memory and follow-up notes (like Noja's daily backup).
+  try { store.backupNow(false); } catch (e) { (opts.log || console.error)(e); }
+  const backupTimer = setInterval(() => { try { store.backupNow(false); } catch (_) { /* retry next hour */ } }, 60 * 60 * 1000);
+  backupTimer.unref();
+
   const close = async () => {
+    clearInterval(backupTimer);
     server.close();
     store.flush();
   };
