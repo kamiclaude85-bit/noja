@@ -1,0 +1,136 @@
+/* Small local web server (127.0.0.1 only) that serves the control panel and talks to the bot. */
+'use strict';
+
+const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
+const P = require('./parser');
+const { isLoggedIn } = require('./scanner');
+
+const PUBLIC = path.join(__dirname, '..', 'public');
+const TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.png': 'image/png',
+  '.woff2': 'font/woff2',
+  '.json': 'application/json; charset=utf-8',
+  '.txt': 'text/plain; charset=utf-8',
+};
+
+function send(res, code, body, type) {
+  res.writeHead(code, { 'content-type': type || 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+  res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', (c) => { data += c; if (data.length > 1e6) req.destroy(); });
+    req.on('end', () => { try { resolve(data ? JSON.parse(data) : {}); } catch (e) { reject(e); } });
+    req.on('error', reject);
+  });
+}
+
+function cleanCriteria(b) {
+  const num = (v) => { const n = P.parseNumber(v); return n == null ? null : n; };
+  const year = (v) => { const n = num(v); return n == null ? null : P.normalizeYear(n); };
+  let searchUrl = String(b.searchUrl || '').trim();
+  if (searchUrl) {
+    try {
+      const u = new URL(searchUrl);
+      if (u.protocol !== 'https:' || !/(^|\.)divar\.ir$/.test(u.hostname) || !u.pathname.startsWith('/s/')) searchUrl = '';
+      else searchUrl = u.href;
+    } catch (_) { searchUrl = ''; }
+  }
+  return {
+    query: String(b.query || '').trim().slice(0, 100),
+    city: /^[a-z-]{2,30}$/.test(b.city || '') ? b.city : 'tehran',
+    keyword: String(b.keyword || '').trim().slice(0, 50),
+    yearMin: year(b.yearMin),
+    yearMax: year(b.yearMax),
+    priceMax: num(b.priceMax),
+    mileageMax: num(b.mileageMax),
+    maxAds: Math.min(Math.max(num(b.maxAds) || 150, 1), 1000),
+    strictYear: !!b.strictYear,
+    speed: ['slow', 'normal', 'fast', 'test'].includes(b.speed) ? b.speed : 'normal',
+    requireLogin: b.requireLogin !== false,
+    searchUrl,
+  };
+}
+
+function publicRun(run) {
+  if (!run) return null;
+  return {
+    id: run.id,
+    createdAt: run.createdAt,
+    finishedAt: run.finishedAt,
+    criteria: run.criteria,
+    status: run.status,
+    message: run.message,
+    sourceUrl: run.sourceUrl,
+    items: run.items,
+    posts: Object.values(run.posts),
+    errors: run.errors,
+  };
+}
+
+function createServer({ scanner, store, context }) {
+  return http.createServer(async (req, res) => {
+    try {
+      // Only accept requests from the panel itself (blocks other websites poking the local API).
+      const origin = req.headers.origin;
+      if (origin && !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)) return send(res, 403, { error: 'forbidden' });
+
+      const url = new URL(req.url, 'http://127.0.0.1');
+      const p = url.pathname;
+
+      if (p === '/api/state' && req.method === 'GET') {
+        return send(res, 200, {
+          busy: scanner.busy ? scanner.current.id : null,
+          loggedIn: await isLoggedIn(context).catch(() => false),
+          runs: store.listRuns(),
+        });
+      }
+      if (p === '/api/scan' && req.method === 'POST') {
+        const criteria = cleanCriteria(await readBody(req));
+        if (!criteria.query && !criteria.searchUrl) return send(res, 400, { error: 'نام خودرو یا لینک جستجوی دیوار را وارد کنید.' });
+        if (scanner.busy) return send(res, 409, { error: 'یک جستجو در حال انجام است.', id: scanner.current.id });
+        const run = scanner.start(criteria);
+        return send(res, 200, { id: run.id });
+      }
+      if (p === '/api/login' && req.method === 'POST') {
+        const page = await context.newPage();
+        await page.goto('https://divar.ir/', { waitUntil: 'domcontentloaded' }).catch(() => {});
+        await page.bringToFront().catch(() => {});
+        return send(res, 200, { ok: true });
+      }
+      let m = p.match(/^\/api\/runs\/([A-Za-z0-9_-]+)$/);
+      if (m && req.method === 'GET') {
+        const run = scanner.current && scanner.current.id === m[1] ? scanner.current : store.loadRun(m[1]);
+        return run ? send(res, 200, publicRun(run)) : send(res, 404, { error: 'not found' });
+      }
+      m = p.match(/^\/api\/runs\/([A-Za-z0-9_-]+)\/(continue|pause|resume|stop)$/);
+      if (m && req.method === 'POST') {
+        if (!scanner.current || scanner.current.id !== m[1]) return send(res, 409, { error: 'این جستجو فعال نیست.' });
+        scanner[m[2]]();
+        return send(res, 200, { ok: true });
+      }
+
+      // Static files
+      let file;
+      if (p === '/' || p === '/index.html') file = path.join(PUBLIC, 'index.html');
+      else if (p === '/parser.js') file = path.join(__dirname, 'parser.js');
+      else file = path.join(PUBLIC, path.normalize(decodeURIComponent(p)).replace(/^([/\\])+/, ''));
+      if (!file.startsWith(PUBLIC) && file !== path.join(__dirname, 'parser.js')) return send(res, 403, 'forbidden', 'text/plain');
+      fs.readFile(file, (err, buf) => {
+        if (err) return send(res, 404, 'not found', 'text/plain');
+        send(res, 200, buf, TYPES[path.extname(file)] || 'application/octet-stream');
+      });
+    } catch (err) {
+      send(res, 500, { error: String(err && err.message ? err.message : err) });
+    }
+  });
+}
+
+module.exports = { createServer, cleanCriteria };

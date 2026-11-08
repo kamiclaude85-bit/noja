@@ -85,6 +85,7 @@ const AREAS = ['پونک', 'تهرانپارس', 'سعادت‌آباد', 'نا�
 /** Build a deterministic set of mock ads. */
 function buildDataset(count = 40) {
   const posts = {};
+  const specs = {};
   const list = [];
   for (let i = 0; i < count; i++) {
     const token = `Qm${String(i).padStart(3, '0')}xYz`;
@@ -106,15 +107,69 @@ function buildDataset(count = 40) {
     }
     if (kind === 4) description = 'نمایشگاه خودرو آرمان\nخرید و فروش انواع خودروهای صفر و کارکرده\nساعات کاری ۹ تا ۲۱';
     const body = i % 7 === 3 ? 'دو لکه رنگ‌شدگی' : (i % 7 === 5 ? 'خط و خش جزیی' : 'سالم و بی‌خط و خش');
-    posts[token] = postJson({
+    const spec = {
       title, subtitle, km, year, color: COLORS[i % COLORS.length], price: i % 13 === 12 ? null : price,
       description, businessType, extraWidgets, body, seed: token,
       brand: i % 9 === 8 ? 'پژو 207 دنده‌ای' : 'پژو 206 تیپ ۲', gearbox: i % 8 === 7 ? 'اتوماتیک' : 'دنده‌ای',
       engine: i % 10 === 6 ? 'نیاز به تعمیر' : 'سالم', images: (i % 4) + 1,
-    });
+      // How the rendered ad page looks: Divar-like class names, or plain markup (tests the text fallback).
+      classless: i % 6 === 1,
+      dealerLink: kind === 3 ? 'نمایشگاه اتوگالری ستاره' : null,
+      kind,
+    };
+    if (kind === 3) spec.subtitle = `${fa((i % 11) + 1)} ساعت پیش در تهران، ${area}`;
+    specs[token] = spec;
+    posts[token] = postJson(spec);
     list.push({ token, title, price, km, year, area, image: PHOTO(`${token}-0`) });
   }
-  return { posts, list };
+  return { posts, specs, list };
+}
+
+const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+/**
+ * A rendered Divar ad page (what Chrome shows), built from a spec.
+ * The site header deliberately contains «نمایشگاه» and «/business» links,
+ * which must NOT make every ad look like a dealer.
+ */
+function adPageHtml(spec) {
+  const priceText = spec.price == null ? 'توافقی' : `${faNum(spec.price)} تومان`;
+  const groups = [
+    [['کارکرد', faNum(spec.km)], ['مدل (سال تولید)', fa(spec.year)], ['رنگ', spec.color]],
+  ];
+  const rows = [
+    ['برند و تیپ', spec.brand], ['نوع سوخت', spec.fuel || 'بنزینی'], ['موتور', spec.engine || 'سالم'],
+    ['شاسی جلو', 'سالم و پلمپ'], ['شاسی عقب', 'سالم و پلمپ'], ['بدنه', spec.body], ['مهلت بیمهٔ شخص ثالث', '۸ ماه'],
+    ['گیربکس', spec.gearbox || 'دنده‌ای'], ['قیمت پایه', priceText],
+  ];
+  const imgs = Array.from({ length: spec.images }, (_, i) => `<img src="${PHOTO(`${spec.seed}-${i}`)}" alt="">`).join('');
+  const header = `<header class="site-header"><a href="/">دیوار</a> <a href="/s/tehran/car-dealership">نمایشگاه‌های خودرو</a>
+    <a href="https://divar.ir/business">دیوار برای کسب‌وکارها</a> <a href="/my-divar">دیوار من</a></header>`;
+  const footer = '<footer>درباره دیوار — پشتیبانی — نمایشگاه‌ها و فروشگاه‌ها</footer>';
+  const dealer = spec.dealerLink ? `<a class="kt-base-row business-row" href="/business/abc123">${esc(spec.dealerLink)}</a>` : '';
+  let main;
+  if (!spec.classless) {
+    const table = groups.map((g) => `<table class="kt-group-row"><thead><tr>${g.map(([t]) => `<th class="kt-group-row-item__title">${esc(t)}</th>`).join('')}</tr></thead>
+      <tbody><tr>${g.map(([, v]) => `<td class="kt-group-row-item__value">${esc(v)}</td>`).join('')}</tr></tbody></table>`).join('');
+    const unexp = rows.map(([t, v]) => `<div class="kt-base-row kt-unexpandable-row"><div class="kt-base-row__start"><p class="kt-base-row__title kt-unexpandable-row__title">${esc(t)}</p></div>
+      <div class="kt-base-row__end"><p class="kt-unexpandable-row__value">${esc(v)}</p></div></div>`).join('');
+    main = `<div class="kt-page-title"><h1 class="kt-page-title__title">${esc(spec.title)}</h1><div class="kt-page-title__subtitle">${esc(spec.subtitle)}</div></div>
+      ${dealer}<div class="kt-image-block">${imgs}</div>${table}${unexp}
+      <div class="kt-description-row"><p class="kt-description-row__text">${esc(spec.description).replace(/\n/g, '<br>')}</p></div>`;
+  } else {
+    const table = groups.map((g) => `<table><tr>${g.map(([t]) => `<th>${esc(t)}</th>`).join('')}</tr><tr>${g.map(([, v]) => `<td>${esc(v)}</td>`).join('')}</tr></table>`).join('');
+    const plain = rows.map(([t, v]) => `<div><div>${esc(t)}</div><div>${esc(v)}</div></div>`).join('');
+    main = `<div><h1>${esc(spec.title)}</h1><div>${esc(spec.subtitle)}</div></div>${dealer}<div>${imgs}</div>${table}${plain}
+      <div><h3>توضیحات</h3><p>${esc(spec.description).replace(/\n/g, '<br>')}</p></div><div>یادداشت شما</div>`;
+  }
+  return `<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><title>${esc(spec.title)} - دیوار</title>
+<style>body{font-family:Tahoma;margin:0} main{max-width:900px;margin:auto;padding:20px} img{width:200px;height:120px} table{border-collapse:collapse} th,td{padding:4px 12px}</style>
+</head><body>${header}<main><div class="post-page"><section class="post-col">${main}</section><aside>آگهی‌های مشابه</aside></div></main>${footer}</body></html>`;
+}
+
+/** Divar's page when it suspects a bot. */
+function captchaPageHtml() {
+  return '<!doctype html><html lang="fa"><head><meta charset="utf-8"></head><body><h2>لطفاً تأیید کنید که ربات نیستید</h2><p>من ربات نیستم</p></body></html>';
 }
 
 /** A fake Divar search page with infinite scroll (adds 12 cards per scroll). */
@@ -145,4 +200,4 @@ window.addEventListener('scroll', () => {
 </script></body></html>`;
 }
 
-module.exports = { postJson, buildDataset, searchPageHtml, fa, faNum };
+module.exports = { postJson, buildDataset, searchPageHtml, adPageHtml, captchaPageHtml, fa, faNum };

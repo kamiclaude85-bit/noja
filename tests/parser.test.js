@@ -2,7 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const P = require('../extension/src/parser.js');
+const P = require('../src/parser.js');
 const { postJson, buildDataset } = require('./fixtures/mock-divar.js');
 
 test('digit and number parsing', () => {

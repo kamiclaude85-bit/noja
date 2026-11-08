@@ -1,11 +1,19 @@
 {
   "name": "noja",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Chrome extension that scans Divar car ads, separates personal and dealer listings and compares specs.",
+  "description": "A bot that drives Google Chrome through Divar car ads (with your own logged-in account), separates personal and dealer listings and compares specs.",
+  "main": "src/index.js",
   "scripts": {
+    "start": "node src/index.js",
     "test": "node --test tests/parser.test.js",
-    "test:e2e": "node tests/e2e.js"
+    "test:e2e": "node tests/bot.e2e.js"
+  },
+  "dependencies": {
+    "playwright-core": "1.63.0"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "license": "MIT"
 }

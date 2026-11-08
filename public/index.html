@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>نوجا</title>
+  <link rel="icon" href="icons/icon32.png">
+  <link rel="stylesheet" href="fonts/fonts.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-inner">
+      <div class="brand">
+        <img src="icons/icon48.png" alt="" width="36" height="36">
+        <div>
+          <h1>نوجا</h1>
+          <p class="muted">ربات جستجوی خودرو در دیوار — با کروم و حساب خودتان</p>
+        </div>
+      </div>
+      <div class="login box" style="padding:8px 14px;box-shadow:none">
+        <span id="loginState"><span class="dot"></span>در حال بررسی ورود…</span>
+        <button id="loginBtn" type="button" class="ghost small">ورود به دیوار</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div id="busy" class="banner attn" hidden>
+      <div class="msg"><b>یک جستجو در حال انجام است.</b></div>
+      <div class="btns"><a id="busyLink" class="btn-main" href="#" style="text-decoration:none">مشاهدهٔ پیشرفت</a></div>
+    </div>
+
+    <div class="panel-grid">
+      <section class="box">
+        <h2>دنبال چه ماشینی هستید؟</h2>
+        <form id="form" class="form" autocomplete="off">
+          <label class="full">
+            <span>نام خودرو</span>
+            <input name="query" placeholder="مثلاً: پژو ۲۰۶">
+          </label>
+          <label>
+            <span>شهر</span>
+            <select name="city">
+              <option value="tehran">تهران</option>
+              <option value="karaj">کرج</option>
+              <option value="mashhad">مشهد</option>
+              <option value="isfahan">اصفهان</option>
+              <option value="shiraz">شیراز</option>
+              <option value="tabriz">تبریز</option>
+              <option value="ahvaz">اهواز</option>
+              <option value="qom">قم</option>
+              <option value="rasht">رشت</option>
+              <option value="kermanshah">کرمانشاه</option>
+              <option value="urmia">ارومیه</option>
+              <option value="kerman">کرمان</option>
+              <option value="yazd">یزد</option>
+              <option value="hamedan">همدان</option>
+              <option value="qazvin">قزوین</option>
+              <option value="arak">اراک</option>
+              <option value="sari">ساری</option>
+              <option value="gorgan">گرگان</option>
+              <option value="zanjan">زنجان</option>
+              <option value="ardabil">اردبیل</option>
+              <option value="bandar-abbas">بندرعباس</option>
+              <option value="zahedan">زاهدان</option>
+              <option value="iran">سراسر ایران</option>
+            </select>
+          </label>
+          <label>
+            <span>کلمهٔ لازم در عنوان (اختیاری)</span>
+            <input name="keyword" placeholder="مثلاً: 206">
+          </label>
+          <label>
+            <span>مدل از سال</span>
+            <input name="yearMin" inputmode="numeric" placeholder="1397 یا 97">
+          </label>
+          <label>
+            <span>تا سال</span>
+            <input name="yearMax" inputmode="numeric" placeholder="1397">
+          </label>
+          <label>
+            <span>حداکثر قیمت (تومان)</span>
+            <input name="priceMax" inputmode="numeric" placeholder="اختیاری">
+          </label>
+          <label>
+            <span>حداکثر کارکرد (کیلومتر)</span>
+            <input name="mileageMax" inputmode="numeric" placeholder="اختیاری">
+          </label>
+          <label>
+            <span>حداکثر تعداد آگهی</span>
+            <input name="maxAds" inputmode="numeric" value="150">
+          </label>
+          <label>
+            <span>سرعت ربات</span>
+            <select name="speed">
+              <option value="slow">آهسته (کمترین ریسک)</option>
+              <option value="normal" selected>معمولی</option>
+              <option value="fast">سریع</option>
+            </select>
+          </label>
+          <label class="check full">
+            <input type="checkbox" name="strictYear">
+            <span>آگهی‌هایی که سالشان معلوم نیست را حذف کن</span>
+          </label>
+
+          <div class="or">یا</div>
+          <label class="full">
+            <span>لینک صفحهٔ جستجوی دیوار (اگر خودتان در دیوار فیلتر زده‌اید)</span>
+            <input name="searchUrl" dir="ltr" placeholder="https://divar.ir/s/tehran/car/peugeot/206?...">
+          </label>
+
+          <button class="go" type="submit">شروع جستجو</button>
+        </form>
+        <p id="formMsg" class="form-msg" role="status"></p>
+      </section>
+
+      <div style="display:grid;gap:20px">
+        <section class="box">
+          <h2>ربات چه کار می‌کند؟</h2>
+          <ol class="steps">
+            <li>در همین کروم یک تب دیوار باز می‌کند (اگر وارد حساب نشده باشید، اول از شما می‌خواهد وارد شوید).</li>
+            <li>نتایج جستجو را تا آخر اسکرول می‌کند و همهٔ آگهی‌ها را جمع می‌کند.</li>
+            <li>آگهی‌ها را یکی‌یکی باز می‌کند، مشخصات را از خود صفحه می‌خواند و سراغ بعدی می‌رود.</li>
+            <li>شخصی و نمایشگاهی را جدا می‌کند و همه را کنار هم نشانتان می‌دهد.</li>
+          </ol>
+          <p class="hint">در حین کار به تب دیوار دست نزنید. می‌توانید هر وقت خواستید ربات را متوقف کنید.</p>
+        </section>
+        <section class="box">
+          <h2>جستجوهای قبلی</h2>
+          <ul id="runs" class="runs"><li class="muted">هنوز جستجویی انجام نشده.</li></ul>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <script src="parser.js"></script>
+  <script src="panel.js"></script>
+</body>
+</html>

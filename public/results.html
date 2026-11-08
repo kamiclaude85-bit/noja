@@ -4,24 +4,23 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>نتایج نوجا</title>
-  <link rel="icon" href="../icons/icon32.png">
-  <link rel="stylesheet" href="../fonts/fonts.css">
-  <link rel="stylesheet" href="results.css">
+  <link rel="icon" href="icons/icon32.png">
+  <link rel="stylesheet" href="fonts/fonts.css">
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <header class="top">
     <div class="wrap top-inner">
       <div class="brand">
-        <img src="../icons/icon48.png" alt="" width="36" height="36">
+        <a href="/" title="جستجوی جدید"><img src="icons/icon48.png" alt="نوجا" width="36" height="36"></a>
         <div>
           <h1 id="heading">نتایج نوجا</h1>
           <p id="criteria" class="muted"></p>
         </div>
       </div>
       <div class="progress-box">
-        <div class="progress-text"><span id="progressText">در حال آماده‌سازی…</span>
-          <button id="pauseBtn" type="button" class="ghost small" hidden>توقف</button>
-          <button id="retryBtn" type="button" class="ghost small" hidden>تلاش دوباره برای خطاها</button>
+        <div class="progress-text"><span id="progressText">در حال بارگذاری…</span>
+          <a href="/" class="ghost small" style="text-decoration:none">جستجوی جدید</a>
         </div>
         <div class="bar"><div id="bar"></div></div>
       </div>
@@ -29,6 +28,11 @@
   </header>
 
   <main class="wrap">
+    <div id="banner" class="banner" hidden>
+      <div class="msg" id="bannerMsg"></div>
+      <div class="btns" id="bannerBtns"></div>
+    </div>
+
     <section id="stats" class="stats" aria-label="خلاصه"></section>
 
     <section class="toolbar" aria-label="فیلترها">
@@ -57,14 +61,14 @@
 
     <p id="filteredNote" class="note" hidden></p>
     <section id="list" class="cards" aria-live="polite"></section>
-    <p id="empty" class="empty" hidden>هنوز آگهی‌ای برای نمایش نیست.</p>
+    <p id="empty" class="empty" hidden></p>
   </main>
 
   <footer class="wrap muted foot">
-    نوجا فقط اطلاعات عمومی آگهی‌ها را می‌خواند و با سرعت کم درخواست می‌فرستد. شمارهٔ تماس جمع‌آوری نمی‌شود.
+    نوجا فقط اطلاعاتی را می‌خواند که در صفحهٔ آگهی دیده می‌شود و شمارهٔ تماس جمع نمی‌کند.
   </footer>
 
-  <script src="../src/parser.js"></script>
+  <script src="parser.js"></script>
   <script src="results.js"></script>
 </body>
 </html>
