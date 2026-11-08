@@ -505,3 +505,88 @@ async function renderBackup(view) {
     h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h2', null, icon('database', 'sm'), 'پشتیبان‌ها')), list)));
   load().catch((e) => toast(e.message, 'err'));
 }
+
+// =========================================================
+// Settings: reminders on the phone
+// =========================================================
+async function renderSettings(view) {
+  let s = await api('/api/settings/notify').catch(() => null);
+  if (!s) { view.replaceChildren(h('div', { class: 'page' }, h('div', { class: 'empty' }, 'ارتباط با ربات برقرار نیست.'))); return; }
+  const box = h('div');
+  view.replaceChildren(h('div', { class: 'page narrow-ish' },
+    pageHead('تنظیمات', 'یادآوری تماس‌ها، بازدیدها و آگهی‌های جدید را روی گوشی‌تان بگیرید.'), box));
+
+  const save = async (patch, msg) => {
+    try { s = await api('/api/settings/notify', { method: 'POST', body: patch }); if (msg) toast(msg); draw(); } catch (e) { toast(e.message, 'err'); }
+  };
+  const run = async (path, okMsg, btn) => {
+    if (btn) btn.disabled = true;
+    try { const r = await api(path, { method: 'POST', body: {} }); if (r && r.channel !== undefined) s = r; toast(okMsg); draw(); } catch (e) { toast(e.message, 'err'); }
+    if (btn) btn.disabled = false;
+  };
+
+  function botPanel(ch) {
+    const app = ch === 'bale' ? 'بله' : 'تلگرام';
+    const cfg = s[ch];
+    const token = h('input', { dir: 'ltr', placeholder: cfg.hasToken ? `${cfg.token} (ذخیره شده)` : '123456789:AAH…', autocomplete: 'off', 'aria-label': 'توکن بات' });
+    const connectBtn = h('button', { class: 'btn', type: 'button', disabled: !cfg.hasToken, onclick: (e) => run('/api/notify/find-chat', 'وصل شد.', e.currentTarget) }, icon('check', 'sm'), 'اتصال');
+    const testBtn = h('button', { class: 'btn primary', type: 'button', disabled: !s.ready, onclick: (e) => run('/api/notify/test', `پیام آزمایشی به ${app} فرستاده شد.`, e.currentTarget) }, icon('bell', 'sm'), 'پیام آزمایشی');
+    const step = (n, title, ...body) => h('li', { class: `setup-step${n === 1 && cfg.hasToken ? ' done' : ''}${n === 3 && cfg.chatId ? ' done' : ''}` },
+      h('span', { class: 'n' }, fa(n)), h('div', null, h('b', null, title), ...body));
+    return h('ol', { class: 'setup-steps' },
+      step(1, `در ${app} یک بات بسازید`,
+        h('p', null, `در ${app} به `, h('code', { dir: 'ltr' }, '@BotFather'), ' پیام بدهید، ', h('code', { dir: 'ltr' }, '/newbot'),
+          ' را بزنید و یک اسم و نام کاربری بدهید. توکنی را که می‌دهد اینجا بچسبانید.'),
+        h('div', { class: 'crm-row' }, token, h('button', { class: 'btn', type: 'button', onclick: () => {
+          if (!token.value.trim()) { toast('توکن را وارد کنید.', 'err'); return; }
+          save({ channel: ch, [ch]: { token: token.value.trim() } }, 'توکن ذخیره شد.');
+        } }, 'ذخیره'))),
+      step(2, 'به بات خودتان پیام بدهید', h('p', null, `بات تازه را در ${app} باز کنید و یک پیام (مثلاً «سلام») بفرستید.`)),
+      step(3, 'وصل کنید', h('p', null, cfg.chatId ? ['وصل است به: ', h('b', null, cfg.chatName || cfg.chatId)] : 'نوجا پیام شما را پیدا می‌کند و از این به بعد یادآوری‌ها را برایتان می‌فرستد.'),
+        h('div', { class: 'crm-row' }, connectBtn)),
+      step(4, 'امتحان کنید', h('div', { class: 'crm-row' }, testBtn)));
+  }
+
+  function smsPanel() {
+    const key = h('input', { dir: 'ltr', placeholder: s.sms.hasKey ? `${s.sms.apiKey} (ذخیره شده)` : 'کلید API از پنل sms.ir', autocomplete: 'off' });
+    const line = h('input', { dir: 'ltr', inputmode: 'numeric', placeholder: 'شمارهٔ خط، مثلاً 3000xxxx', value: s.sms.line });
+    const mobile = h('input', { dir: 'ltr', inputmode: 'tel', placeholder: '09xxxxxxxxx', value: s.sms.mobile });
+    return h('div', { class: 'sms-grid' },
+      h('p', { class: 'muted', style: 'margin:0' }, 'همان سرویس sms.ir که در نوژا دارید. هر پیامک هزینهٔ معمول خودش را دارد.'),
+      h('label', { class: 'field' }, h('span', null, 'کلید API'), key),
+      h('label', { class: 'field' }, h('span', null, 'شمارهٔ خط'), line),
+      h('label', { class: 'field' }, h('span', null, 'موبایل شما'), mobile),
+      h('div', { class: 'crm-row' },
+        h('button', { class: 'btn', type: 'button', onclick: () => save({ channel: 'sms', sms: { apiKey: key.value.trim(), line: line.value, mobile: mobile.value } }, 'ذخیره شد.') }, 'ذخیره'),
+        h('button', { class: 'btn primary', type: 'button', disabled: !s.ready, onclick: (e) => run('/api/notify/test', 'پیامک آزمایشی فرستاده شد.', e.currentTarget) }, icon('bell', 'sm'), 'پیامک آزمایشی')));
+  }
+
+  function draw() {
+    const ch = s.channel;
+    const chans = [['bale', 'بله', 'پیشنهادی؛ بدون فیلتر'], ['telegram', 'تلگرام', ''], ['sms', 'پیامک', 'sms.ir'], ['', 'خاموش', '']];
+    const ev = s.events;
+    const evToggle = (k, label) => h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: !!ev[k], onchange: (e) => save({ events: { [k]: e.target.checked } }) }), label);
+    const hours = (k) => h('select', { 'aria-label': k === 'from' ? 'از ساعت' : 'تا ساعت', onchange: (e) => save({ quiet: { [k]: Number(e.target.value) } }) },
+      Array.from({ length: 24 }, (_, i) => h('option', { value: i, selected: s.quiet[k] === i }, `ساعت ${faDigits(i)}`)));
+    box.replaceChildren(
+      h('section', { class: 'card' },
+        h('div', { class: 'card-h' }, h('h2', null, icon('bell', 'sm'), 'یادآوری روی گوشی'),
+          s.ready ? h('span', { class: 'stage s-bought' }, icon('check', 'sm'), 'فعال') : h('span', { class: 'stage' }, 'غیرفعال')),
+        s.lastError ? h('div', { class: 'crm-alert' }, icon('alert'), `آخرین ارسال ناموفق بود: ${s.lastError}`) : null,
+        h('div', { class: 'seg chan', role: 'group', 'aria-label': 'روش ارسال' }, chans.map(([v, t, sub]) =>
+          h('button', { type: 'button', 'aria-pressed': String(ch === v), onclick: () => save({ channel: v }) }, t, sub ? h('small', null, sub) : null))),
+        ch === 'bale' || ch === 'telegram' ? botPanel(ch) : ch === 'sms' ? smsPanel() : h('p', { class: 'muted' }, 'یادآوری فقط داخل نوجا (زنگوله) نشان داده می‌شود.')),
+      h('section', { class: 'card' },
+        h('div', { class: 'card-h' }, h('h2', null, 'چه چیزهایی فرستاده شود؟')),
+        evToggle('calls', 'وقتی وقت تماس با فروشنده رسیده (با شماره و لینک آگهی)'),
+        evToggle('visits', 'یک ساعت قبل از قرار بازدید، و اگر نتیجهٔ بازدید ثبت نشده'),
+        evToggle('runs', 'بعد از هر بررسی: تعداد آگهی‌های جدید و ارزان‌ترین‌ها، کاهش قیمت‌ها'),
+        evToggle('needsYou', 'وقتی ربات منتظر شماست (ورود به دیوار یا کپچا)')),
+      h('section', { class: 'card' },
+        h('div', { class: 'card-h' }, h('h2', null, 'ساعت سکوت')),
+        h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: !!s.quiet.enabled, onchange: (e) => save({ quiet: { enabled: e.target.checked } }) }), 'شب‌ها پیام نفرست (بعداً، صبح فرستاده می‌شود)'),
+        h('div', { class: 'crm-row', style: 'max-width:420px' }, h('span', null, 'از'), hours('from'), h('span', null, 'تا'), hours('to')),
+        h('p', { class: 'muted', style: 'font-size:13px' }, 'یادآوری بازدید و «ربات منتظر شماست» همیشه فوری فرستاده می‌شوند.')));
+  }
+  draw();
+}

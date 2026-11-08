@@ -84,7 +84,7 @@ function publicRun(run) {
   };
 }
 
-function createServer({ scanner, store, context }) {
+function createServer({ scanner, store, context, notifier }) {
   return http.createServer(async (req, res) => {
     try {
       // Only accept requests from the panel itself (blocks other websites poking the local API).
@@ -148,6 +148,18 @@ function createServer({ scanner, store, context }) {
         } catch (e) {
           return send(res, 400, { error: e.message });
         }
+      }
+
+      // ---- phone reminders ----
+      if (p === '/api/settings/notify' && req.method === 'GET') return send(res, 200, notifier.publicSettings());
+      if (p === '/api/settings/notify' && req.method === 'POST') {
+        try { return send(res, 200, notifier.update(await readBody(req))); } catch (e) { return send(res, 400, { error: e.message }); }
+      }
+      if (p === '/api/notify/find-chat' && req.method === 'POST') {
+        try { return send(res, 200, await notifier.findChat()); } catch (e) { return send(res, 400, { error: e.message }); }
+      }
+      if (p === '/api/notify/test' && req.method === 'POST') {
+        try { await notifier.test(); return send(res, 200, { ok: true }); } catch (e) { return send(res, 400, { error: e.message }); }
       }
 
       // ---- backups ----

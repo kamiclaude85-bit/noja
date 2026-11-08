@@ -25,6 +25,8 @@ const { startApp } = require('../src/app');
 const P = require('../src/parser');
 const { buildDataset, searchPageHtml, adPageHtml, captchaPageHtml } = require('./fixtures/mock-divar.js');
 
+const http = require('node:http');
+
 const SHOTS = process.argv[2] ? path.resolve(process.argv[2]) : null;
 const COUNT = 40;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -90,8 +92,23 @@ const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350)
   await context.route('https://s100.divarcdn.com/**', (route) =>
     route.fulfill({ status: 200, contentType: 'image/svg+xml', body: carSvg(route.request().url()) }));
 
+  // Fake Bale bot API: records messages, returns one «سلام» update.
+  const baleSent = [];
+  const bale = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      res.setHeader('content-type', 'application/json');
+      if (req.url.endsWith('/getUpdates')) return res.end(JSON.stringify({ ok: true, result: [{ update_id: 1, message: { chat: { id: 4242, first_name: 'کامران' }, text: 'سلام' } }] }));
+      if (req.url.endsWith('/sendMessage')) { baleSent.push(JSON.parse(body)); return res.end(JSON.stringify({ ok: true, result: {} })); }
+      res.statusCode = 404; return res.end('{}');
+    });
+  });
+  await new Promise((r) => bale.listen(0, '127.0.0.1', r));
+  const baleBase = `http://127.0.0.1:${bale.address().port}`;
+
   context.on('page', (pg) => { pg.waitForURL(/\/v\//, { timeout: 60000 }).then(() => { newTabs++; }).catch(() => {}); });
-  const app = await startApp({ context, dataDir: path.join(tmp, 'data'), port: 4799, log: () => {} });
+  const app = await startApp({ context, dataDir: path.join(tmp, 'data'), port: 4799, log: () => {}, notifyApiBases: { bale: baleBase } });
   const ui = context.pages().find((p) => p.url().startsWith(app.panelUrl));
   assert.ok(ui, 'Noja opened in Chrome');
   const getJson = async (p) => (await fetch(`${app.panelUrl}${p}`)).json();
@@ -253,6 +270,27 @@ const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350)
   const restored = JSON.parse(zlib.gunzipSync(Buffer.from(gz)));
   assert.equal(restored.db.ads[tCall].crm.phone, '0912 345 6789', 'backup contains follow-up data');
 
+  // ---- Phone reminders via Bale ----
+  await ui.goto(`${app.panelUrl}#/settings`);
+  await ui.waitForSelector('.seg.chan');
+  await ui.click('.seg.chan button:has-text("بله")');
+  await ui.waitForSelector('.setup-steps');
+  await ui.fill('.setup-steps input', '123456789:AAbbCCddEEffGGhhIIjj');
+  await ui.click('.setup-steps button:has-text("ذخیره")');
+  await ui.waitForSelector('.setup-step.done');
+  await ui.click('.setup-steps button:has-text("اتصال")');
+  await ui.waitForSelector('text=وصل است به');
+  await ui.click('.setup-steps button:has-text("پیام آزمایشی")');
+  await waitFor(() => baleSent.length === 1, 'test message');
+  assert.equal(baleSent[0].chat_id, '4242');
+  await ui.click('label:has-text("شب‌ها پیام نفرست") input');
+  await waitFor(async () => (await getJson('api/settings/notify')).quiet.enabled === false, 'quiet off');
+  await shot(ui, 'settings');
+  // a due call is sent to the phone
+  await postJson(`api/ads/${tCall}/crm`, { action: 'schedule', at: Date.now() - 1000 });
+  await app.notifier.tick();
+  assert.ok(baleSent.some((m) => /وقت تماس/.test(m.text) && m.text.includes('0912 345 6789')), 'call reminder sent with the phone number');
+
   // ---- Day 2: 8 new ads, one price drop, the visit ad was sold (deleted on Divar) ----
   list = allAds.slice();
   const cheaper = list.find((it, i) => i >= 8 && specs[it.token].price != null && ![captchaToken, goneToken, tCall, tVisit, tReject, tStar].includes(it.token));
@@ -272,6 +310,9 @@ const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350)
   assert.equal(run2.stats.sold, 1, 'the followed-up ad that disappeared is detected');
   assert.equal(run2.collectStop, 'known', 'stopped scrolling at already-seen ads');
   assert.ok((await adOf(tVisit)).removed, 'sold ad is marked as removed');
+  const summary = await waitFor(() => baleSent.find((m) => /بررسی «پژو ۲۰۶» تمام شد/.test(m.text)), 'run summary on the phone');
+  assert.match(summary.text, /۸ آگهی جدید، ۱ تغییر قیمت، ۱ آگهی پیگیری‌شده فروخته شد/);
+  assert.match(summary.text, /https:\/\/divar\.ir\/v\//);
   await ui.waitForSelector('#results .row');
   await shot(ui, 'next-day');
 
@@ -305,10 +346,11 @@ const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350)
   assert.equal(evil.status, 403);
 
   await app.close();
+  bale.close();
   await context.close();
   fs.rmSync(tmp, { recursive: true, force: true });
   console.log(`e2e OK — day 1: ${run.posts.length} ads read; day 2: ${opened2.size} pages opened `
-    + `(8 new, 1 price change, ${followed.length} followed-up, 1 sold); follow-up, dashboard and backups work`);
+    + `(8 new, 1 price change, ${followed.length} followed-up, 1 sold); follow-up, dashboard, backups and phone reminders work`);
   process.exit(0);
 })().catch((err) => {
   console.error(err);

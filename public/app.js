@@ -78,7 +78,7 @@ function parseRoute() {
   const params = new URLSearchParams(query || '');
   const m = path.match(/^\/run\/([A-Za-z0-9_-]+)/);
   if (m) return { name: 'run', id: m[1], params };
-  const name = { '/': 'dash', '': 'dash', '/ads': 'ads', '/search': 'search', '/runs': 'runs', '/backup': 'backup' }[path] || 'dash';
+  const name = { '/': 'dash', '': 'dash', '/ads': 'ads', '/search': 'search', '/runs': 'runs', '/backup': 'backup', '/settings': 'settings' }[path] || 'dash';
   return { name, params };
 }
 
@@ -107,6 +107,7 @@ function render() {
     case 'runs': setTitle('جستجوها'); renderRuns(view); PAGE.update = () => renderRuns(view); break;
     case 'run': setTitle('جستجو'); renderRun(view, route.id); break;
     case 'backup': setTitle('پشتیبان'); renderBackup(view); break;
+    case 'settings': setTitle('تنظیمات'); renderSettings(view); break;
     default:
       setTitle('پیشخوان');
       renderDashboard(view);

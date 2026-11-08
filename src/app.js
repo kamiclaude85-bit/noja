@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const { Store } = require('./store');
 const { Scanner } = require('./scanner');
 const { createServer } = require('./server');
+const { Notifier } = require('./notify');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -56,9 +57,11 @@ async function startApp(opts = {}) {
     profileDir: opts.profileDir || process.env.NOJA_PROFILE_DIR || path.join(ROOT, 'chrome-profile'),
     executablePath: opts.executablePath || process.env.NOJA_CHROME_PATH,
   });
+  const log = opts.log || ((e) => console.error(e));
   const store = new Store(dataDir);
-  const scanner = new Scanner({ context, store, log: opts.log || ((e) => console.error(e)) });
-  const server = createServer({ scanner, store, context });
+  const notifier = new Notifier({ store, dataDir, log, apiBases: opts.notifyApiBases });
+  const scanner = new Scanner({ context, store, log, onEvent: (run, kind) => notifier.runEvent(run, kind) });
+  const server = createServer({ scanner, store, context, notifier });
   const port = await listen(server, opts.port || 4777);
   const panelUrl = `http://127.0.0.1:${port}/`;
 
@@ -73,12 +76,17 @@ async function startApp(opts = {}) {
   const backupTimer = setInterval(() => { try { store.backupNow(false); } catch (_) { /* retry next hour */ } }, 60 * 60 * 1000);
   backupTimer.unref();
 
+  // Phone reminders: check every minute for due calls and visits.
+  const notifyTimer = setInterval(() => { notifier.tick().catch(log); }, 60 * 1000);
+  notifyTimer.unref();
+
   const close = async () => {
     clearInterval(backupTimer);
+    clearInterval(notifyTimer);
     server.close();
     store.flush();
   };
-  return { context, scanner, store, server, port, panelUrl, close };
+  return { context, scanner, store, notifier, server, port, panelUrl, close };
 }
 
 module.exports = { startApp, launchChrome };

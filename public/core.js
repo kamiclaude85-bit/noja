@@ -137,6 +137,7 @@ function toast(text, kind) {
   if (!box) { box = h('div', { id: 'toasts', 'aria-live': 'polite' }); document.body.append(box); }
   const t = h('div', { class: `toast${kind ? ` ${kind}` : ''}` }, kind === 'err' ? icon('alert', 'sm') : icon('check', 'sm'), text);
   box.append(t);
+  while (box.children.length > 3) box.firstChild.remove();
   setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 300); }, 3200);
 }
 

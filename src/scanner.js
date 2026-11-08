@@ -48,10 +48,11 @@ async function isLoggedIn(context) {
 }
 
 class Scanner {
-  constructor({ context, store, log = () => {} }) {
+  constructor({ context, store, log = () => {}, onEvent = () => {} }) {
     this.context = context;
     this.store = store;
     this.log = log;
+    this.onEvent = onEvent; // (run, kind) for phone reminders
     this.current = null;
     this.control = null;
   }
@@ -111,6 +112,7 @@ class Scanner {
     run.waitUntil = untilMs || null;
     this.setStatus(run, status, message);
     this.store.saveRun(run, true);
+    Promise.resolve(this.onEvent(run, status)).catch(() => {});
     let pressed = false;
     const press = new Promise((resolve) => { this.control.resume = () => { pressed = true; resolve(); }; });
     while (!pressed && !this.control.stop) {
@@ -514,6 +516,7 @@ class Scanner {
       ? `متوقف شد. ${parts.join('، ')}.`
       : `تمام شد: ${parts.join('، ')}${errs ? `؛ ${fa(errs)} آگهی باز نشد` : ''}.`);
     this.store.saveRun(run, true);
+    Promise.resolve(this.onEvent(run, status)).catch(() => {});
     if (this.page) this.page.close().catch(() => {});
     this.page = null;
     return run;
