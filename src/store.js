@@ -239,7 +239,7 @@ class Store {
       });
     }
     const searches = Object.entries(this.db.searches).map(([key, s]) => ({
-      key, criteria: s.criteria || null, lastRunAt: s.lastRunAt || null, createdAt: s.createdAt, count: s.tokens.length,
+      key, criteria: s.criteria || null, lastRunAt: s.lastRunAt || null, createdAt: s.createdAt, count: s.tokens.length, auto: s.auto || null,
     }));
     return { version: this.version, ads, searches };
   }
@@ -293,6 +293,26 @@ class Store {
   searchTokens(key) {
     const s = this.db.searches[key];
     return s ? s.tokens.slice() : [];
+  }
+
+  /** Daily automatic recheck settings of a saved search ({ on, hour, full }). */
+  setAuto(key, auto) {
+    const s = this.db.searches[key];
+    if (!s) throw new Error('این جستجو پیدا نشد');
+    s.auto = auto;
+    this.changes.searches = true;
+    this.bump();
+    this.scheduleFlush();
+    return s;
+  }
+
+  /** Remember that today's automatic check of this search was lined up. */
+  markAutoRan(key, day) {
+    const s = this.db.searches[key];
+    if (!s) return;
+    s.lastAutoDay = day;
+    this.changes.searches = true;
+    this.scheduleFlush();
   }
 
   touchSearch(key, criteria) {

@@ -9,6 +9,8 @@ const { createServer, cleanCriteria } = require('./server');
 const { followUpSearches } = require('./budget');
 const { Notifier } = require('./notify');
 const { Cloud } = require('./cloud');
+const { dueSearches, localDay } = require('./daily');
+const { searchKey } = require('./scanner');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -118,17 +120,34 @@ async function startApp(opts = {}) {
   // Waiting searches held by the daily cap start again after midnight.
   const queueTimer = setInterval(() => { try { cloud.startPending(); } catch (_) { /* next time */ } }, 30 * 60 * 1000);
   queueTimer.unref();
+
+  // Daily automatic check of saved searches: every 10 minutes, line up the ones whose time has come.
+  const autoCheck = () => {
+    try {
+      const busy = new Set(cloud.pending.map((c) => searchKey(c)));
+      if (scanner.busy && scanner.current) busy.add(searchKey(scanner.current.criteria));
+      const due = dueSearches(store.db.searches, Date.now(), busy);
+      if (!due.length) return;
+      const today = localDay(Date.now());
+      for (const d of due) store.markAutoRan(d.key, today);
+      cloud.enqueue(due.map((d) => cleanCriteria(d.criteria)));
+    } catch (e) { log(e); }
+  };
+  const autoTimer = setInterval(autoCheck, opts.autoCheckMs || 10 * 60 * 1000);
+  autoTimer.unref();
+  setTimeout(autoCheck, opts.autoFirstMs || 60 * 1000).unref();
   notifyTimer.unref();
 
   const close = async () => {
     clearInterval(backupTimer);
     clearInterval(notifyTimer);
     clearInterval(queueTimer);
+    clearInterval(autoTimer);
     cloud.stop();
     server.close();
     store.flush();
   };
-  return { context, scanner, store, notifier, cloud, server, port, panelUrl, close };
+  return { context, scanner, store, notifier, cloud, server, port, panelUrl, close, autoCheck };
 }
 
 module.exports = { startApp, launchChrome };

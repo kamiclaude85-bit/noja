@@ -401,6 +401,24 @@ const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350)
   assert.equal(batchRes.queued, true);
   await waitFor(async () => { const st = await getJson('api/state'); return st.runs.length >= runsBefore + 2 && !st.busy && !st.queue.length; }, 'queued searches ran', 120000);
 
+  // Daily automatic check: a saved search set to run every day is lined up once, then not again today.
+  const st0 = await getJson('api/ads');
+  const autoKey = st0.searches[0].key;
+  const setRes = await postJson('api/search-auto', { key: autoKey, on: true, hour: 0, full: false });
+  assert.deepEqual(setRes.auto, { on: true, hour: 0, full: false });
+  app.store.db.searches[autoKey].lastRunAt = 0; // not checked by hand today
+  app.store.db.searches[autoKey].criteria = { ...app.store.db.searches[autoKey].criteria, speed: 'test', maxAds: 2 };
+  const runsBefore2 = (await getJson('api/state')).runs.length;
+  app.autoCheck();
+  app.autoCheck(); // a second check the same day adds nothing
+  const autoRun = await waitFor(async () => {
+    const st = await getJson('api/state');
+    return st.runs.length >= runsBefore2 + 1 && !st.busy && !st.queue.length ? st.runs[0] : null;
+  }, 'daily check ran', 120000);
+  assert.equal(autoRun.criteria.auto, true, 'marked as automatic');
+  assert.equal((await getJson('api/state')).runs.length, runsBefore2 + 1, 'only once a day');
+  assert.equal((await getJson('api/ads')).searches.find((s) => s.key === autoKey).auto.on, true);
+
   // Cross-site requests to the local API are refused.
   const evil = await fetch(`${app.panelUrl}api/scan`, { method: 'POST', headers: { origin: 'https://evil.example' }, body: '{}' });
   assert.equal(evil.status, 403);

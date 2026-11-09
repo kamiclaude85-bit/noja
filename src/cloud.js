@@ -260,6 +260,11 @@ class Cloud {
   take(q) {
     if (q.kind === 'scan') {
       this.enqueue([cleanCriteria(q.body || {})]);
+    } else if (q.kind === 'auto') {
+      // Daily automatic check switched on/off in the online panel.
+      const { cleanAuto } = require('./daily');
+      try { this.store.setAuto(String((q.body || {}).key || ''), cleanAuto(q.body)); } catch (_) { /* search gone */ }
+      this.syncSoon();
     } else if (q.kind === 'cmd') {
       const { runId, action } = q.body || {};
       if (this.scanner.current && this.scanner.current.id === runId && ['continue', 'pause', 'resume', 'stop', 'cancel'].includes(action)) {

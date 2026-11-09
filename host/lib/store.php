@@ -56,7 +56,7 @@ function export_ads(): array {
     $list = [];
     foreach ($searches as $key => $s) {
         $list[] = ['key' => (string) $key, 'criteria' => $s['criteria'] ?? null, 'lastRunAt' => $s['lastRunAt'] ?? null,
-            'createdAt' => $s['createdAt'] ?? null, 'count' => count($s['tokens'] ?? [])];
+            'createdAt' => $s['createdAt'] ?? null, 'count' => count($s['tokens'] ?? []), 'auto' => $s['auto'] ?? null];
     }
     return ['version' => (int) kv_get('seq', 0), 'ads' => $ads, 'searches' => $list];
 }

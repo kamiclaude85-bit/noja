@@ -16,7 +16,7 @@ function allAds() { return Array.from(App.ads.values()); }
 /** Start a search again (only new ads will be opened). */
 async function rerunSearch(criteria) {
   try {
-    await startScan({ ...criteria, recheckAll: false });
+    await startScan({ ...criteria, recheckAll: false, auto: false });
   } catch (e) {
     if (e.body && e.body.id) location.hash = `#/run/${e.body.id}`;
     else toast(e.message, 'err');
@@ -523,6 +523,44 @@ function blocksCard() {
   return box;
 }
 
+// ---------- daily automatic check of a saved search ----------
+const hourFa = (hr) => `ساعت ${fa(hr)}${hr < 12 ? ' صبح' : hr < 17 ? ' بعدازظهر' : ' شب'}`;
+function autoLabel(a) { return `هر روز از ${hourFa(a.hour)}${a.full ? ' · همهٔ آگهی‌ها' : ''}`; }
+
+function autoDialog(s, done) {
+  const a = { on: true, hour: 9, full: false, ...(s.auto || {}) };
+  if (!s.auto) a.on = true;
+  const on = h('input', { type: 'checkbox', checked: a.on });
+  const hour = h('select', { 'aria-label': 'ساعت' }, Array.from({ length: 18 }, (_, i) => i + 6).map((hr) => h('option', { value: hr, selected: hr === a.hour }, hourFa(hr))));
+  const mode = (full, title, note) => h('label', { class: 'check mode' }, h('input', { type: 'radio', name: 'automode', value: full ? 'full' : 'new', checked: a.full === full }),
+    h('span', null, h('b', null, title), h('small', null, note)));
+  const opts = h('div', { class: 'auto-opts' },
+    h('label', { class: 'field-inline' }, 'از', hour, 'به بعد'),
+    mode(false, 'فقط آگهی‌های جدید', 'سریع؛ آگهی‌هایی که پیگیری می‌کنید هم دوباره دیده می‌شوند.'),
+    mode(true, 'همهٔ آگهی‌های بازه', 'کندتر؛ تغییر قیمت و فروش‌رفته‌ها را هم پیدا می‌کند.'));
+  const sync = () => { opts.hidden = !on.checked; };
+  on.addEventListener('change', sync);
+  sync();
+  openDialog('بررسی خودکار روزانه', h('div', { class: 'auto-dialog' },
+    h('p', { class: 'muted' }, describeCriteria(s.criteria)),
+    h('label', { class: 'check' }, on, 'هر روز خودش بررسی کند'),
+    opts,
+    h('p', { class: 'muted small' }, 'کامپیوتر و ربات باید روشن باشند؛ اگر خاموش بود، با روشن شدن انجام می‌شود.')),
+  (close) => [
+    h('button', { class: 'btn', type: 'button', onclick: close }, 'انصراف'),
+    h('button', { class: 'btn primary', type: 'button', onclick: async () => {
+      const body = { key: s.key, on: on.checked, hour: Number(hour.value), full: !!opts.querySelector('input[value=full]').checked };
+      try {
+        const r = await api('/api/search-auto', { method: 'POST', body });
+        s.auto = r.auto;
+        close();
+        toast(r.auto.on ? `از این به بعد ${autoLabel(r.auto)} بررسی می‌شود.` : 'بررسی خودکار خاموش شد.');
+        done();
+      } catch (e) { toast(e.message, 'err'); }
+    } }, 'ذخیره'),
+  ]);
+}
+
 function renderRuns(view) {
   const STATUS = { done: 'تمام شده', stopped: 'متوقف شده', error: 'خطا' };
   const runs = App.state.runs || [];
@@ -537,15 +575,17 @@ function renderRuns(view) {
           try { await api(`/api/queue/${encodeURIComponent(q.id)}`, { method: 'DELETE' }); await App.refreshState(); renderRuns(view); } catch (e) { toast(e.message, 'err'); }
         } }, icon('x', 'sm'), 'لغو')))))) : null,
     App.searches.length ? h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h2', null, icon('search', 'sm'), 'جستجوهای ذخیره‌شده')),
-      h('ul', { class: 'items' }, App.searches.map((s) => h('li', { class: 'item' },
+      h('ul', { class: 'items saved-list' }, App.searches.map((s) => h('li', { class: 'item' },
         h('a', { class: 'item-main', href: `#/ads?search=${encodeURIComponent(s.key)}` }, h('b', null, describeCriteria(s.criteria)),
-          h('small', null, `${fa(s.count)} آگهی${s.lastRunAt ? ` · آخرین بررسی ${agoFa(s.lastRunAt)}` : ''}`)),
-        h('div', { class: 'item-actions' }, s.criteria ? h('button', { class: 'btn sm', type: 'button', disabled: !!App.state.busy && !App.host, onclick: () => rerunSearch(s.criteria) },
+          h('small', null, `${fa(s.count)} آگهی${s.lastRunAt ? ` · آخرین بررسی ${agoFa(s.lastRunAt)}` : ''}`),
+          s.auto && s.auto.on ? h('small', { class: 'auto-line' }, icon('clock', 'sm'), autoLabel(s.auto)) : null),
+        h('div', { class: 'item-actions' }, s.criteria ? h('button', { class: `btn sm${s.auto && s.auto.on ? ' on' : ''}`, type: 'button', 'aria-label': 'بررسی خودکار روزانه', title: 'بررسی خودکار روزانه', onclick: () => autoDialog(s, () => renderRuns(view)) },
+          icon('clock', 'sm'), 'خودکار') : null, s.criteria ? h('button', { class: 'btn sm', type: 'button', disabled: !!App.state.busy && !App.host, onclick: () => rerunSearch(s.criteria) },
           icon('refresh', 'sm'), 'بررسی جدیدها') : null))))) : null,
     h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h2', null, icon('history', 'sm'), 'اجراهای ربات')),
       runs.length ? h('ul', { class: 'items' }, runs.map((r) => h('li', { class: 'item' },
         h('a', { class: 'item-main', href: `#/run/${encodeURIComponent(r.id)}` }, h('b', null, describeCriteria(r.criteria)),
-          h('small', null, `${new Date(r.createdAt).toLocaleString('fa-IR', { dateStyle: 'medium', timeStyle: 'short' })} · ${fa(r.read)} آگهی${r.newCount != null ? ` (${fa(r.newCount)} جدید)` : ''}`)),
+          h('small', null, `${new Date(r.createdAt).toLocaleString('fa-IR', { dateStyle: 'medium', timeStyle: 'short' })} · ${fa(r.read)} آگهی${r.newCount != null ? ` (${fa(r.newCount)} جدید)` : ''}${r.criteria && r.criteria.auto ? ' · خودکار' : ''}`)),
         h('div', { class: 'item-actions' }, h('span', { class: 'muted' }, ACTIVE_RUN.includes(r.status) ? 'در حال انجام' : (STATUS[r.status] || r.status))))))
         : h('p', { class: 'muted empty-line' }, 'هنوز جستجویی انجام نشده.')),
     blocksCard()));

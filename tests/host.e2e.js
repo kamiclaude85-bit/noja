@@ -191,6 +191,16 @@ async function main() {
     assert.equal((await api('/api/state')).busy, 'run_live');
     scanner.busy = false;
 
+    // ---- daily automatic check switched on from the phone ----
+    const au = await api('/api/search-auto', { method: 'POST', body: { key: 'q|tehran|206', on: true, hour: 7, full: true } });
+    assert.deepEqual(au.auto, { on: true, hour: 7, full: true });
+    assert.deepEqual((await api('/api/ads')).searches.find((s) => s.key === 'q|tehran|206').auto, au.auto, 'shown on the phone at once');
+    await cloud.sync();
+    assert.deepEqual(store.db.searches['q|tehran|206'].auto, { on: true, hour: 7, full: true }, 'the bot got the setting');
+    await cloud.sync();
+    assert.deepEqual((await api('/api/ads')).searches.find((s) => s.key === 'q|tehran|206').auto.hour, 7, 'still set after the bot reports back');
+    await assert.rejects(api('/api/search-auto', { method: 'POST', body: { key: 'nope', on: true } }), /404/);
+
     // ---- messages for the phone are handed to the host ----
     assert.equal(cloud.forward({ kind: 'runs', key: 'run:x:done', text: 'تست' }), true);
     await cloud.sync();
@@ -264,7 +274,7 @@ async function main() {
     await api('/api/session', { method: 'DELETE' });
     assert.equal((await fetch(`${BASE}api/state`, { headers: { cookie } })).status, 401);
 
-    console.log('host e2e OK — setup, sign-in, upload, two-way follow-up, newer change wins, PHP = JS rules, phone search queue, run commands, messages, backups, update + rollback');
+    console.log('host e2e OK — setup, sign-in, upload, two-way follow-up, newer change wins, PHP = JS rules, phone search queue, run commands, daily check setting, messages, backups, update + rollback');
   } finally {
     server.kill();
   }

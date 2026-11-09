@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const P = require('./parser');
 const { isLoggedIn, DEFAULT_DAILY_LIMIT } = require('./scanner');
+const { cleanAuto } = require('./daily');
 const CRM = require('./crm');
 
 const PUBLIC = path.join(__dirname, '..', 'public');
@@ -61,6 +62,8 @@ function cleanCriteria(b) {
     dailyLimit: Math.min(Math.max(num(b.dailyLimit) || DEFAULT_DAILY_LIMIT, 1), 2000),
     requireLogin: b.requireLogin !== false,
     recheckAll: !!b.recheckAll,
+    // Started by the daily automatic check (not by hand).
+    auto: !!b.auto,
     trackRecheckHours: b.trackRecheckHours != null && Number(b.trackRecheckHours) >= 0 ? Number(b.trackRecheckHours) : 20,
     searchUrl,
     // Searches started together («خرید با بودجه»): one id, so «پایان» can stop all of them.
@@ -130,6 +133,14 @@ function createServer({ scanner, store, context, notifier, cloud }) {
         if (!Array.isArray(items) || !items.length || items.length > 20) return send(res, 400, { error: 'فهرست جستجو نامعتبر است.' });
         const n = cloud.enqueue(items.map(cleanCriteria));
         return send(res, 200, { queued: true, count: n });
+      }
+      // Daily automatic check of a saved search: { key, on, hour, full }.
+      if (p === '/api/search-auto' && req.method === 'POST') {
+        const b = await readBody(req);
+        try {
+          const s = store.setAuto(String(b.key || ''), cleanAuto(b));
+          return send(res, 200, { ok: true, auto: s.auto });
+        } catch (e) { return send(res, 404, { error: e.message }); }
       }
       const qm = p.match(/^\/api\/queue\/([a-z0-9]+)$/);
       if (qm && req.method === 'DELETE' && cloud) { cloud.dequeue(qm[1]); return send(res, 200, { ok: true }); }

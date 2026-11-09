@@ -84,6 +84,20 @@ try {
         foreach ($items as $c) if (is_array($c)) queue_add('scan', $c);
         json_out(200, ['queued' => true, 'count' => count($items)]);
     }
+    // Daily automatic check of a saved search: shown here at once, applied by the bot at its next check-in.
+    if ($path === '/search-auto' && $method === 'POST') {
+        $b = body_json(10000);
+        $key = (string) ($b['key'] ?? '');
+        $searches = kv_get('searches', []) ?: [];
+        if ($key === '' || !isset($searches[$key])) json_out(404, ['error' => 'این جستجو پیدا نشد']);
+        $hour = (int) ($b['hour'] ?? 9);
+        $auto = ['on' => !empty($b['on']), 'hour' => ($hour >= 0 && $hour <= 23) ? $hour : 9, 'full' => !empty($b['full'])];
+        $searches[$key]['auto'] = $auto;
+        kv_set('searches', $searches);
+        next_seq();
+        queue_add('auto', ['key' => $key] + $auto);
+        json_out(200, ['ok' => true, 'auto' => $auto]);
+    }
     if (preg_match('#^/queue/([a-f0-9]+)$#', $path, $m) && $method === 'DELETE') {
         db()->prepare('DELETE FROM radyab_queue WHERE id = ? AND taken = 0')->execute([$m[1]]);
         json_out(200, ['ok' => true]);

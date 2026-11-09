@@ -6,7 +6,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "test": "node --test tests/parser.test.js tests/notify.test.js tests/deals.test.js tests/real-pages.test.js",
+    "test": "node --test tests/parser.test.js tests/notify.test.js tests/deals.test.js tests/real-pages.test.js tests/daily.test.js",
     "test:e2e": "node tests/bot.e2e.js",
     "test:host": "node tests/host.e2e.js",
     "build:host": "node tools/build-host.js"
