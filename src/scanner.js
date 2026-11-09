@@ -27,6 +27,8 @@ const SPEEDS = {
 const DEFAULT_DAILY_LIMIT = 300;
 /** Divar lists newest ads first: after this many already-known ads in a row, the rest is old. */
 const KNOWN_STREAK_STOP = 20;
+/** After this many ads in a row older than the chosen period («آگهی‌های تا چه مدت پیش»), stop scrolling. */
+const OLD_STREAK_STOP = 5;
 /** At most this many result pages (24 ads each on Divar) per search. */
 const MAX_LIST_PAGES = 15;
 
@@ -369,30 +371,40 @@ class Scanner {
     const maxNew = Math.max(1, Number(c.maxAds) || 150);
     const useMemory = !c.recheckAll;
     const isKnown = (t) => useMemory && !!this.store.knownAd(t);
+    // «آگهی‌های تا چه مدت پیش؟»: the list card says «۲ هفته پیش در …». Bumped ads («نردبان شده»)
+    // show no time; they are not counted as old.
+    const maxAgeMs = Number(c.maxAgeDays) > 0 ? Number(c.maxAgeDays) * 86400000 : null;
+    const ageOf = (it) => { const t = P.parseRelativeAgo((it.lines || []).join(' '), it.seenAt || Date.now()); return t ? Date.now() - t : null; };
+    const isOld = (it) => maxAgeMs != null && (ageOf(it) || 0) > maxAgeMs;
     await page.waitForSelector('a[href*="/v/"]', { timeout: 20000 }).catch(() => {});
     await H.sleep(H.natural(900, 1800));
     const found = new Map();
     let reason = '';
     const add = async () => {
       const listUrl = page.url(); // results come in pages; remember on which page each ad is
-      for (const it of await page.evaluate(S.collectListItems)) if (!found.has(it.token)) found.set(it.token, { ...it, listUrl });
+      const seenAt = Date.now();
+      for (const it of await page.evaluate(S.collectListItems)) if (!found.has(it.token)) found.set(it.token, { ...it, listUrl, seenAt });
       run.items = Array.from(found.values());
     };
     let pages = 1;
     const counts = () => {
       let fresh = 0;
       let streak = 0;
+      let oldStreak = 0;
       for (const it of run.items) {
+        if (isOld(it)) { oldStreak++; continue; }
+        if (ageOf(it) != null) oldStreak = 0;
         if (isKnown(it.token)) streak++;
         else { fresh++; streak = 0; }
       }
-      return { fresh, streak };
+      return { fresh, streak, oldStreak };
     };
     let idle = 0;
     await add();
     while (!this.control.stop && idle < 6) {
-      const { fresh, streak } = counts();
+      const { fresh, streak, oldStreak } = counts();
       if (fresh >= maxNew) { reason = 'max'; break; }
+      if (oldStreak >= OLD_STREAK_STOP) { reason = 'old'; break; }
       if (useMemory && streak >= KNOWN_STREAK_STOP) { reason = 'known'; break; }
       await this.pauseGate(run);
       const before = found.size;
@@ -441,10 +453,13 @@ class Scanner {
     // Keep the list up to the point we stopped; new ads beyond maxNew are left for next time.
     const items = [];
     let fresh = 0;
+    let tooOld = 0;
     for (const it of found.values()) {
+      if (isOld(it) && !isKnown(it.token)) { tooOld++; continue; } // older than the chosen period: not opened
       if (!isKnown(it.token)) { if (fresh >= maxNew) continue; fresh++; }
       items.push(it);
     }
+    run.stats.tooOld = tooOld;
     run.items = items.map((it, i) => ({ ...it, order: i }));
     run.collectStop = reason || (this.control.stop ? 'user' : 'end');
     this.control.stop = false; // «enough» during collection means: go read them
@@ -561,6 +576,7 @@ class Scanner {
     if (st.priceChanged) parts.push(`${fa(st.priceChanged)} تغییر قیمت`);
     if (st.sold) parts.push(`${fa(st.sold)} آگهی پیگیری‌شده از دیوار حذف شد`);
     if (st.known) parts.push(`${fa(st.known)} آگهی از قبل`);
+    if (st.tooOld) parts.push(`${fa(st.tooOld)} آگهی قدیمی‌تر از بازه باز نشد`);
     run.message = message || (status === 'stopped'
       ? `متوقف شد. ${parts.join('، ')}.`
       : `تمام شد: ${parts.join('، ')}${errs ? `؛ ${fa(errs)} آگهی باز نشد` : ''}.`);
@@ -572,4 +588,4 @@ class Scanner {
   }
 }
 
-module.exports = { Scanner, SPEEDS, DEFAULT_DAILY_LIMIT, KNOWN_STREAK_STOP, isLoggedIn, searchKey };
+module.exports = { Scanner, SPEEDS, DEFAULT_DAILY_LIMIT, KNOWN_STREAK_STOP, OLD_STREAK_STOP, isLoggedIn, searchKey };

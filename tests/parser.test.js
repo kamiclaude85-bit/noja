@@ -171,3 +171,15 @@ test('Persian dates, «X پیش», place and car model', () => {
   assert.deepEqual(P.modelOf({ brand: 'پژو 206 SD V8' }), { key: '206', label: 'پژو 206', trim: 'SD V8' });
   assert.equal(P.modelOf({}).label, 'نامشخص');
 });
+
+test('«X پیش» in words, for the «آگهی‌های تا چه مدت پیش» period', () => {
+  const at = Date.UTC(2026, 10, 9, 12);
+  const days = (s) => Math.round((at - P.parseRelativeAgo(s, at)) / 86400000);
+  assert.equal(days('یک ماه پیش در تهران'), 30);
+  assert.equal(days('دو هفته پیش'), 14);
+  assert.equal(days('هفتهٔ پیش در کرج'), 7);
+  assert.ok(days('بیش از یک ماه پیش') > 30);
+  assert.equal(days('۳ هفته پیش'), 21);
+  assert.equal(P.parseRelativeAgo('نردبان شده', at), null, 'bumped ads have no time');
+  assert.equal(P.parseRelativeAgo('دقایقی پیش', at), at - 5 * 60000);
+});

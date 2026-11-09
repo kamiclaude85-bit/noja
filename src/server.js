@@ -54,6 +54,8 @@ function cleanCriteria(b) {
     priceMax: num(b.priceMax),
     mileageMax: num(b.mileageMax),
     maxAds: Math.min(Math.max(num(b.maxAds) || 150, 1), 1000),
+    // «آگهی‌های تا چه مدت پیش؟» in days; 0 = all. Default: one month.
+    maxAgeDays: b.maxAgeDays === undefined || b.maxAgeDays === null || b.maxAgeDays === '' ? 30 : Math.min(Math.max(Number(b.maxAgeDays) || 0, 0), 3650),
     strictYear: !!b.strictYear,
     speed: ['slow', 'normal', 'fast', 'test'].includes(b.speed) ? b.speed : 'normal',
     dailyLimit: Math.min(Math.max(num(b.dailyLimit) || DEFAULT_DAILY_LIMIT, 1), 2000),

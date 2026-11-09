@@ -243,9 +243,9 @@ function guideOf(p) {
 function renderPrices(view, params) {
   const entries = App.guide || [];
   if (!entries.length) {
-    view.replaceChildren(h('div', { class: 'page' }, pageHead('قیمت‌یاب', 'برای هر خودرو، قیمت خوب برای خرید و فروش.'),
-      h('div', { class: 'empty big' }, icon('trend', 'xl'), h('b', null, 'هنوز آگهی کافی نیست'),
-        h('p', null, 'وقتی ربات چند آگهی از یک خودرو بخواند، قیمت‌ها اینجا می‌آیند.'),
+    view.replaceChildren(h('div', { class: 'page' }, pageHead('قیمت‌یاب', 'برای هر خودرو، قیمت خوب برای خرید و فروش.', periodSelect(() => { App.computeGuide(); render(); })),
+      h('div', { class: 'empty big' }, icon('trend', 'xl'), h('b', null, App.ads.size ? 'در این بازهٔ زمانی آگهی کافی نیست' : 'هنوز آگهی کافی نیست'),
+        h('p', null, App.ads.size ? 'بازهٔ زمانی بالای صفحه را بیشتر کنید، یا جستجوی تازه بزنید.' : 'وقتی ربات چند آگهی از یک خودرو بخواند، قیمت‌ها اینجا می‌آیند.'),
         h('a', { class: 'btn primary lg', href: '#/search' }, icon('search'), 'جستجوی جدید'))));
     return;
   }
@@ -318,7 +318,8 @@ function renderPrices(view, params) {
   });
 
   view.replaceChildren(h('div', { class: 'page' },
-    pageHead('قیمت‌یاب', 'قیمت‌ها از آگهی‌های دیوار است؛ آگهی‌های اقساطی حساب نمی‌شوند. پای معامله معمولاً چند درصد پایین‌تر بسته می‌شود.'),
+    pageHead('قیمت‌یاب', 'قیمت‌ها از آگهی‌های دیوار است؛ آگهی‌های اقساطی حساب نمی‌شوند. پای معامله معمولاً چند درصد پایین‌تر بسته می‌شود.',
+      periodSelect(() => { App.computeGuide(); render(); })),
     chips, myCard, h('div', { class: 'guide-grid' }, cards)));
   if (sure.length) { fillTrims(); calc(); }
 }
@@ -329,7 +330,8 @@ function renderAds(view, params) {
   const searchKey = params.get('search') || '';
   const modelKey = params.get('model') || '';
   const trimKey = params.get('trim') || '';
-  const inSearch = (a) => !searchKey || a.searches.includes(searchKey);
+  const period = reviewPeriod();
+  const inSearch = (a) => (!searchKey || a.searches.includes(searchKey)) && inPeriod(a, period);
   const inModel = (a) => {
     if (!modelKey) return true;
     const m = P.modelOf(a.post);
@@ -367,7 +369,7 @@ function renderAds(view, params) {
 
   const box = h('div');
   view.replaceChildren(h('div', { class: 'page wide' },
-    pageHead('پیگیری آگهی‌ها', 'هر آگهی را مثل یک لید پیگیری کنید: تماس، قرار بازدید، یادداشت.', [searchSel,
+    pageHead('پیگیری آگهی‌ها', 'هر آگهی را مثل یک لید پیگیری کنید: تماس، قرار بازدید، یادداشت.', [periodSelect(() => render()), searchSel,
       h('a', { class: 'btn', href: '#/search' }, icon('plus', 'sm'), 'جستجوی جدید')]),
     tabs, quick, strip, box));
   drawStrip();
@@ -415,7 +417,9 @@ function renderSearch(view) {
       h('label', { class: 'field' }, h('span', null, 'شهر'), select),
       h('label', { class: 'field' }, h('span', null, 'مدل از سال'), h('input', { name: 'yearMin', inputmode: 'numeric', placeholder: 'مثلاً ۹۷', value: val('yearMin') })),
       h('label', { class: 'field' }, h('span', null, 'تا سال'), h('input', { name: 'yearMax', inputmode: 'numeric', placeholder: 'مثلاً ۹۷', value: val('yearMax') }))),
-    h('div', { class: 'search-row two' },
+    h('div', { class: 'search-row' },
+      h('label', { class: 'field' }, h('span', null, 'آگهی‌های تا چه مدت پیش؟'),
+        h('select', { name: 'maxAgeDays' }, PERIODS.map(([d, t]) => h('option', { value: d, selected: Number(val('maxAgeDays', DEFAULT_PERIOD)) === d }, t)))),
       h('label', { class: 'field' }, h('span', null, 'قیمت از (میلیون تومان)'), h('input', { name: 'priceMinM', inputmode: 'numeric', placeholder: 'مثلاً ۴۰۰', value: val('priceMinM') })),
       h('label', { class: 'field' }, h('span', null, 'قیمت تا (میلیون تومان)'), h('input', { name: 'priceMaxM', inputmode: 'numeric', placeholder: 'مثلاً ۵۰۰', value: val('priceMaxM') }))),
     h('details', { class: 'adv' },

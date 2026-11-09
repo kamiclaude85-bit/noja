@@ -93,6 +93,29 @@ function conditionClass(text) {
   return null;
 }
 
+// ---------- period («آگهی‌های تا چه مدت پیش») ----------
+const PERIODS = [[7, '۱ هفتهٔ اخیر'], [14, '۲ هفتهٔ اخیر'], [30, '۱ ماه اخیر'], [60, '۲ ماه اخیر'], [90, '۳ ماه اخیر'], [0, 'همه']];
+const DEFAULT_PERIOD = 30;
+
+/** The period chosen for reviewing ads (days, 0 = all); remembered on this device. */
+function reviewPeriod() { const v = Number(prefs.get('radyab.period', DEFAULT_PERIOD)); return PERIODS.some(([d]) => d === v) ? v : DEFAULT_PERIOD; }
+
+/** In the chosen period? Ads you are following up always count, and so do ads with no known date. */
+function inPeriod(ad, days = reviewPeriod()) {
+  if (!days) return true;
+  if (ad.crm && App.meta.activeStages.includes(ad.crm.stage)) return true;
+  const t = ad.post && ad.post.publishedAt;
+  return !t || Date.now() - t <= days * DAY;
+}
+
+/** «بازهٔ زمانی» select; `onchange(days)`. */
+function periodSelect(onchange) {
+  const cur = reviewPeriod();
+  return h('label', { class: 'period-sel' }, icon('clock', 'sm'),
+    h('select', { 'aria-label': 'بازهٔ زمانی', onchange: (e) => { prefs.set('radyab.period', Number(e.target.value)); onchange(Number(e.target.value)); } },
+      PERIODS.map(([d, t]) => h('option', { value: d, selected: d === cur }, t))));
+}
+
 // ---------- publish time & place ----------
 /** «۱۷ آبان ۱۴۰۵، ۲۲:۵۶» */
 function dateTimeFa(t) {
@@ -213,6 +236,12 @@ const App = {
   queue: [],
 };
 
+/** «قیمت‌یاب» numbers, from the ads of the chosen period only (prices change quickly). */
+App.computeGuide = () => {
+  const ads = Array.from(App.ads.values()).filter((a) => a.post && inPeriod(a));
+  App.guide = globalThis.NojaDeals.priceGuide(ads.map((a) => ({ ...a.post, removed: a.removed })));
+};
+
 App.onChange = (fn) => { App.listeners.add(fn); return () => App.listeners.delete(fn); };
 App.emit = (what) => { for (const fn of App.listeners) { try { fn(what); } catch (e) { console.error(e); } } };
 
@@ -240,7 +269,7 @@ App.refreshAds = async (force) => {
     App.searches = r.searches.sort((a, b) => (b.lastRunAt || 0) - (a.lastRunAt || 0));
     App.meta = { stages: r.stages, activeStages: r.activeStages, rejectReasons: r.rejectReasons, callResults: r.callResults };
     App.deals = globalThis.NojaDeals.computeDeals(r.ads.map((a) => ({ ...a.post, removed: a.removed })));
-    App.guide = globalThis.NojaDeals.priceGuide(r.ads.map((a) => ({ ...a.post, removed: a.removed })));
+    App.computeGuide();
     App.emit('ads');
     return true;
   } catch (_) {
