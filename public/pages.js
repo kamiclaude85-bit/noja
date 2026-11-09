@@ -184,7 +184,10 @@ function modelGroups(ads) {
 
 function groupStats(ads) {
   const prices = ads.map((a) => a.post.price).filter((n) => n > 0);
-  const years = ads.map((a) => a.post.year).filter((n) => n > 1300);
+  // Foreign cars use the Western year (2014), Iranian ones the Persian year (1401): when both
+  // are mixed, count everything in Persian years.
+  let years = ads.map((a) => a.post.year).filter((n) => n > 1300);
+  if (years.some((y) => y < 1700) && years.some((y) => y > 1900)) years = years.map((y) => (y > 1900 ? y - 621 : y));
   const avg = (xs) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null);
   // Photo: the newest ad of the group that has one.
   const withImg = ads.filter((a) => (a.post.images || []).length)
@@ -213,14 +216,111 @@ function modelStrip(ads, modelKey, trimKey, go) {
   for (const g of groups) cards.push(card(g.key, g.label, groupStats(g.ads), g.key === modelKey, () => go(g.key, '')));
   const out = [h('div', { class: 'models', role: 'group', 'aria-label': 'مدل خودرو' }, cards)];
   const sel = groups.find((g) => g.key === modelKey);
-  if (sel && sel.trims.size > 1) {
-    const trims = Array.from(sel.trims.values()).sort((x, y) => y.ads.length - x.ads.length);
+  if (sel) {
+    const trims = sel.trims.size > 1 ? Array.from(sel.trims.values()).sort((x, y) => y.ads.length - x.ads.length) : [];
     out.push(h('div', { class: 'quick trims' },
-      h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(!trimKey), onclick: () => go(modelKey, '') }, 'همهٔ تیپ‌ها', h('small', null, fa(sel.ads.length))),
-      trims.map((t) => h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(t.key === trimKey), onclick: () => go(modelKey, t.key) },
-        t.label, h('small', null, fa(t.ads.length))))));
+      trims.length ? [
+        h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(!trimKey), onclick: () => go(modelKey, '') }, 'همهٔ تیپ‌ها', h('small', null, fa(sel.ads.length))),
+        trims.map((t) => h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(t.key === trimKey), onclick: () => go(modelKey, t.key) },
+          t.label, h('small', null, fa(t.ads.length))))] : null,
+      h('a', { class: 'chip-btn', href: `#/prices?model=${encodeURIComponent(modelKey)}` }, icon('trend', 'sm'), `قیمت‌یاب ${sel.label}`)));
   }
   return out;
+}
+
+// =========================================================
+// «قیمت‌یاب»: what is a good price to buy, and to sell your own car
+// =========================================================
+const BODY_OPTIONS = [['clean', 'سالم و بی‌رنگ'], ['scratches', 'خط و خش جزیی'], ['paint', 'رنگ‌شدگی'], ['accident', 'تصادفی']];
+
+/** The guide entry for an ad's model, trim and year (or for its model and year). */
+function guideOf(p) {
+  const m = P.modelOf(p);
+  const t = P.normalizeText(m.trim);
+  return App.guide.find((g) => g.enough && g.modelKey === m.key && P.normalizeText(g.trim) === t && g.year === p.year) || null;
+}
+
+function renderPrices(view, params) {
+  const entries = App.guide || [];
+  if (!entries.length) {
+    view.replaceChildren(h('div', { class: 'page' }, pageHead('قیمت‌یاب', 'برای هر خودرو، قیمت خوب برای خرید و فروش.'),
+      h('div', { class: 'empty big' }, icon('trend', 'xl'), h('b', null, 'هنوز آگهی کافی نیست'),
+        h('p', null, 'وقتی ربات چند آگهی از یک خودرو بخواند، قیمت‌ها اینجا می‌آیند.'),
+        h('a', { class: 'btn primary lg', href: '#/search' }, icon('search'), 'جستجوی جدید'))));
+    return;
+  }
+  // Models, biggest first
+  const models = [];
+  for (const g of entries) {
+    let m = models.find((x) => x.key === g.modelKey);
+    if (!m) models.push((m = { key: g.modelKey, label: g.label, total: 0 }));
+    m.total += g.total;
+  }
+  const modelKey = models.some((m) => m.key === params.get('model')) ? params.get('model') : models[0].key;
+  const go = (k) => { location.hash = `#/prices?model=${encodeURIComponent(k)}`; };
+  const mine = entries.filter((g) => g.modelKey === modelKey);
+  const sure = mine.filter((g) => g.enough);
+  const price = (n) => h('span', { class: 'num' }, formatPrice(n));
+
+  const chips = h('div', { class: 'quick' }, models.map((m) => h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(m.key === modelKey), onclick: () => go(m.key) },
+    m.label, h('small', null, fa(m.total)))));
+
+  // ---- «ماشین خودم» ----
+  const myBox = h('div', { class: 'my-result' });
+  const years = Array.from(new Set(sure.map((g) => g.year))).sort((a, b) => b - a);
+  const ySel = h('select', { name: 'year', 'aria-label': 'سال' }, years.map((y) => h('option', { value: y }, faYear(y))));
+  const tSel = h('select', { name: 'trim', 'aria-label': 'تیپ' });
+  const km = h('input', { name: 'km', inputmode: 'numeric', placeholder: 'مثلاً ۸۰٬۰۰۰' });
+  const body = h('select', { name: 'body', 'aria-label': 'بدنه' }, BODY_OPTIONS.map(([v, t]) => h('option', { value: v }, t)));
+  const fillTrims = () => {
+    const y = Number(ySel.value);
+    tSel.replaceChildren(...sure.filter((g) => g.year === y).map((g) => h('option', { value: g.key }, g.trim || 'بدون تیپ')));
+    tSel.closest('label').hidden = tSel.options.length < 2;
+  };
+  const calc = () => {
+    const g = sure.find((x) => x.key === tSel.value);
+    const r = g && NojaDeals.myCarPrice(g, { mileage: P.parseNumber(km.value), body: body.value });
+    myBox.replaceChildren(...(r ? [
+      h('p', { class: 'my-line' }, 'آگهی‌تان را با ', h('b', null, price(r.sellList)), ' ثبت کنید.', h('small', null, ' کمی بالاتر از قیمت بازار است تا جای چانه بماند.')),
+      h('p', { class: 'my-line' }, 'اگر عجله دارید، تا ', h('b', null, price(r.sellFast)), ' پایین بیایید.', h('small', null, ' کمتر از این نفروشید.')),
+      h('p', { class: 'muted' }, `از روی ${fa(g.n)} آگهی${g.sure ? '' : ' — کم‌اطمینان'}`),
+    ] : [h('p', { class: 'muted' }, 'برای این مدل هنوز آگهی کافی نیست.')]));
+  };
+  ySel.addEventListener('change', () => { fillTrims(); calc(); });
+  for (const el of [tSel, body]) el.addEventListener('change', calc);
+  km.addEventListener('input', calc);
+  const myCard = sure.length ? h('section', { class: 'card my-car' },
+    h('div', { class: 'card-h' }, h('h2', null, icon('car', 'sm'), 'ماشین خودم را بفروشم؟')),
+    h('div', { class: 'my-form' },
+      h('label', { class: 'field' }, h('span', null, 'سال'), ySel),
+      h('label', { class: 'field' }, h('span', null, 'تیپ'), tSel),
+      h('label', { class: 'field' }, h('span', null, 'کارکرد (کیلومتر)'), km),
+      h('label', { class: 'field' }, h('span', null, 'بدنه'), body)),
+    myBox) : null;
+
+  // ---- one card per year + trim ----
+  const cards = mine.map((g) => {
+    const adsHref = `#/ads?${new URLSearchParams({ stage: 'active', model: g.modelKey, ...(g.trim ? { trim: P.normalizeText(g.trim) } : {}) })}`;
+    return h('section', { class: `card guide${g.enough ? '' : ' thin'}` },
+      h('div', { class: 'guide-h' },
+        h('b', null, faYear(g.year), ' · ', h('bdi', null, g.trim || g.label)),
+        h('small', null, `${fa(g.enough ? g.n : g.total)} آگهی`),
+        g.enough && !g.sure ? h('span', { class: 'chip-status' }, 'کم‌اطمینان') : null),
+      g.enough ? [
+        h('div', { class: 'g-row buy' }, h('span', null, 'خرید خوب'), h('b', null, 'تا ', price(g.buyGood))),
+        h('div', { class: 'g-row' }, h('span', null, 'قیمت بازار'), h('b', null, price(g.market))),
+        h('div', { class: 'g-row sell' }, h('span', null, 'برای فروش، در آگهی بنویسید'), h('b', null, price(g.sellList))),
+        h('div', { class: 'g-row' }, h('span', null, 'اگر عجله دارید، کمتر نفروشید از'), h('b', null, price(g.sellFast))),
+        h('div', { class: 'g-foot' },
+          g.medKm != null ? h('span', null, `کارکرد معمول ${fa(Math.round(g.medKm / 1000))} هزار`) : h('span'),
+          h('a', { href: adsHref }, 'دیدن آگهی‌ها', icon('left', 'sm'))),
+      ] : h('p', { class: 'muted' }, 'آگهی کافی نیست (دست‌کم ۳ آگهی نقدی لازم است).'));
+  });
+
+  view.replaceChildren(h('div', { class: 'page' },
+    pageHead('قیمت‌یاب', 'قیمت‌ها از آگهی‌های دیوار است؛ آگهی‌های اقساطی حساب نمی‌شوند. پای معامله معمولاً چند درصد پایین‌تر بسته می‌شود.'),
+    chips, myCard, h('div', { class: 'guide-grid' }, cards)));
+  if (sure.length) { fillTrims(); calc(); }
 }
 
 function renderAds(view, params) {

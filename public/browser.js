@@ -574,6 +574,19 @@ function crmSection(p) {
       timeline(c)));
 }
 
+/** Drawer: where this ad's price sits against «قیمت‌یاب» for the same model, trim and year. */
+function guideLine(p) {
+  const g = typeof guideOf === 'function' && p.price ? guideOf(p) : null;
+  if (!g) return null;
+  const diff = (p.price - g.market) / g.market;
+  const pct = fa(Math.abs(Math.round(diff * 100)));
+  const where = Math.abs(diff) < 0.01 ? 'هم‌قیمت بازار' : diff < 0 ? `${pct}٪ زیر قیمت بازار` : `${pct}٪ بالای قیمت بازار`;
+  return h('div', { class: 'd-guide' },
+    h('span', null, 'قیمت بازار ', h('b', { class: 'num' }, formatPrice(g.market)), ` · ${where}`),
+    h('span', null, 'خرید خوب تا ', h('b', { class: 'num' }, formatPrice(g.buyGood))),
+    h('a', { href: `#/prices?model=${encodeURIComponent(g.modelKey)}` }, 'قیمت‌یاب'));
+}
+
 function dealBox(deal) {
   if (!deal || (!deal.level && !deal.reasons.length)) return null;
   const title = deal.level === 'caution' ? 'با احتیاط' : deal.deal ? 'چرا پیشنهاد ویژه است؟' : 'مقایسه با آگهی‌های مشابه';
@@ -649,6 +662,7 @@ function openDrawer(token, keepScroll) {
           d ? h('span', { class: `delta ${d.cls}` }, d.text) : null,
           priceChangeBadge(p),
           sellerBadge(p)),
+        guideLine(p),
         ph.length > 1 ? h('div', { class: 'where', style: 'margin-top:6px' }, icon('trend', 'sm'),
           `تاریخچهٔ قیمت: ${ph.map((x) => formatPrice(x.price)).join(' ← ')}`) : null,
         p._ad && p._ad.firstSeenAt ? h('div', { class: 'where', style: 'margin-top:4px' }, icon('clock', 'sm'), `اولین بار ${agoFa(p._ad.firstSeenAt)} دیده شد`) : null,

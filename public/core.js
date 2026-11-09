@@ -202,6 +202,7 @@ const App = {
   version: 0,
   ads: new Map(), // token -> { token, post, crm, removed, firstSeenAt, lastReadAt, priceHistory, searches }
   deals: new Map(), // token -> special-offer analysis (see src/deals.js)
+  guide: [], // «قیمت‌یاب»: buy / market / sell per model + trim + year (see src/deals.js)
   searches: [],
   meta: { stages: {}, activeStages: [], rejectReasons: [], callResults: {} },
   listeners: new Set(),
@@ -239,6 +240,7 @@ App.refreshAds = async (force) => {
     App.searches = r.searches.sort((a, b) => (b.lastRunAt || 0) - (a.lastRunAt || 0));
     App.meta = { stages: r.stages, activeStages: r.activeStages, rejectReasons: r.rejectReasons, callResults: r.callResults };
     App.deals = globalThis.NojaDeals.computeDeals(r.ads.map((a) => ({ ...a.post, removed: a.removed })));
+    App.guide = globalThis.NojaDeals.priceGuide(r.ads.map((a) => ({ ...a.post, removed: a.removed })));
     App.emit('ads');
     return true;
   } catch (_) {

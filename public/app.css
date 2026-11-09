@@ -435,6 +435,33 @@ td.good { color: var(--good); }
 .where > span { display: inline-flex; align-items: center; gap: 4px; }
 .where > span + span::before { content: '·'; margin-inline-end: 4px; color: var(--line-strong); }
 @media (max-width: 560px) { .model-card { flex-basis: 138px; } .mc-img { height: 70px; } }
+/* «قیمت‌یاب» */
+.guide-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; margin-top: 12px; }
+.card.guide { padding: 14px 16px; display: flex; flex-direction: column; gap: 8px; margin: 0; }
+.card.guide.thin { opacity: .7; }
+.guide-h { display: flex; align-items: baseline; gap: 8px; }
+.guide-h b { font-size: 16px; }
+.guide-h small { color: var(--text-3); }
+.guide-h .chip-status { margin-inline-start: auto; }
+.g-row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; color: var(--text-2); }
+.g-row b { color: var(--text); font-size: 15.5px; }
+.g-row b small { color: var(--text-3); font-weight: 500; font-size: 12.5px; }
+.g-row.buy b { color: var(--good); }
+.g-foot { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--text-3); padding-top: 4px; }
+.g-foot a { display: inline-flex; align-items: center; gap: 2px; color: var(--primary); text-decoration: none; font-weight: 600; }
+.card.my-car { margin-top: 12px; }
+.my-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.my-form label[hidden] { display: none; }
+.my-result { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 28px; margin-top: 14px; }
+.my-result .muted { margin: 0; flex-basis: 100%; font-size: 12.5px; }
+.my-big { display: flex; flex-direction: column; gap: 2px; }
+.my-big small { color: var(--text-3); font-size: 12.5px; }
+.my-big .num { font-size: 22px; font-weight: 800; color: var(--primary); }
+.my-big + .my-big .num { font-size: 18px; color: var(--text); }
+.d-guide { margin-top: 8px; font-size: 13px; color: var(--text-2); display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.d-guide b { color: var(--text); }
+.d-guide a { color: var(--primary); text-decoration: none; }
+@media (max-width: 760px) { .my-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .chip-status { margin-inline-start: auto; font-size: 12.5px; color: var(--text-3); background: var(--surface-2); border-radius: 99px; padding: 4px 10px; }
 .chip-status.on { color: var(--good); background: var(--good-soft); }
 .side-foot .logout { justify-content: flex-start; color: var(--text-3); }
@@ -686,3 +713,6 @@ tr.sold { opacity: .55; }
   .deal-box-h { color: #fdba74; }
 }
 .search-row.two { grid-template-columns: 1fr 1fr; }
+.my-line { margin: 0; font-size: 15px; line-height: 1.9; flex-basis: 100%; }
+.my-line b .num { font-size: 20px; font-weight: 800; color: var(--primary); }
+.my-line small { color: var(--text-3); font-size: 12.5px; }

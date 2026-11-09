@@ -53,3 +53,29 @@ test('needs enough similar ads', () => {
   const d = computeDeals([car('a', 500, 1), car('b', 400, 1), car('c', 500, 1)]);
   assert.equal(d.size, 0);
 });
+
+test('price guide: buy / market / sell per model, trim and year; installments left out', () => {
+  const D = require('../src/deals.js');
+  const mk = (i, price, extra = {}) => ({ token: `t${i}`, brand: 'شاهین G', year: 1401, price, mileage: 60000 + i * 5000, title: 'شاهین', description: '', ...extra });
+  const posts = [2350, 2370, 2400, 2410, 2420, 2450, 2470, 2570].map((m, i) => mk(i, m * 1e6));
+  posts.push(mk(20, 1200e6, { description: 'اقساط بدون ضامن، پیش پرداخت' })); // down payment: left out
+  posts.push(mk(21, 4000e6)); // far off: left out
+  posts.push({ ...mk(30, 2600e6), year: 1402 }, { ...mk(31, 2620e6), year: 1402 }); // too few
+  const g = D.priceGuide(posts);
+  const y1401 = g.find((x) => x.year === 1401);
+  assert.equal(y1401.n, 8);
+  assert.equal(y1401.enough, true);
+  assert.equal(y1401.sure, true);
+  assert.equal(y1401.market, 2415e6);
+  assert.ok(y1401.buyGood < y1401.market && y1401.market < y1401.sellList);
+  assert.ok(y1401.sellFast >= y1401.buyGood && y1401.sellFast < y1401.market);
+  assert.equal(y1401.buyGood % 5e6, 0, 'rounded to 5 million');
+  const y1402 = g.find((x) => x.year === 1402);
+  assert.equal(y1402.enough, false, 'two ads are not enough');
+  assert.equal(g[0].year, 1401, 'cards with enough ads come first');
+  // My car: more km or paint lowers the price; low km raises it.
+  const base = D.myCarPrice(y1401, { body: 'clean' });
+  assert.ok(D.myCarPrice(y1401, { mileage: 150000, body: 'clean' }).sellList < base.sellList);
+  assert.ok(D.myCarPrice(y1401, { body: 'paint' }).sellList < base.sellList);
+  assert.ok(D.myCarPrice(y1401, { mileage: 20000, body: 'clean' }).sellList > base.sellList);
+});

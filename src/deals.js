@@ -112,7 +112,90 @@
     return out;
   }
 
-  const api = { computeDeals, modelName, DEAL_MIN, HOT_MIN, TOO_CHEAP };
+  // ---------------------------------------------------------------------------
+  // «قیمت‌یاب» — price guide for one model + trim + year, from the asking prices on Divar.
+  //   buyGood  : a quarter of the ads are cheaper (buying up to this is a good buy)
+  //   market   : the middle price (median)
+  //   sellList : what to write in your ad (a little above the middle, room to bargain)
+  //   sellFast : a little under the middle, to sell quickly
+  // Installment / «شرایطی» prices (down payments) and far-off prices are left out.
+  // ---------------------------------------------------------------------------
+  const GUIDE_MIN = 3; // fewer ads: no numbers
+  const GUIDE_SURE = 5; // fewer ads: «کم‌اطمینان»
+  const GUIDE_INSTALLMENT_RE = /پیش\s?پرداخت|اقساط|قسطی|وام|لیزینگ|بیعانه|ضامن|شرایطی|چک\s?(صیادی|ماهانه)/;
+  /** Body condition of «ماشین خودم» → price factor. */
+  const BODY_FACTORS = { clean: 1, scratches: 0.98, paint: 0.94, accident: 0.88 };
+
+  function quantile(sorted, f) {
+    const i = (sorted.length - 1) * f;
+    const lo = Math.floor(i);
+    const hi = Math.ceil(i);
+    return sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
+  }
+  /** Round to 5 million toman (prices are quoted that way). */
+  const round5m = (n) => Math.round(n / 5e6) * 5e6;
+
+  function guideFor(list) {
+    const cash = list.filter((p) => !GUIDE_INSTALLMENT_RE.test(`${p.title || ''} ${p.description || ''} ${p.priceText || ''}`));
+    const med0 = median(cash.map((p) => p.price));
+    const used = med0 ? cash.filter((p) => p.price > med0 * 0.75 && p.price < med0 * 1.35) : [];
+    if (used.length < GUIDE_MIN) return { n: used.length, enough: false };
+    const prices = used.map((p) => p.price).sort((a, b) => a - b);
+    const market = quantile(prices, 0.5);
+    const kms = used.filter((p) => p.mileage != null);
+    const medKm = kms.length ? median(kms.map((p) => p.mileage)) : null;
+    const b = slope(kms.map((p) => [p.mileage, p.price])) ?? -market * 1e-6; // ~1% per 10,000 km
+    return {
+      n: used.length,
+      skipped: list.length - used.length,
+      enough: true,
+      sure: used.length >= GUIDE_SURE,
+      min: prices[0],
+      max: prices[prices.length - 1],
+      buyGood: round5m(quantile(prices, 0.25)),
+      market: round5m(market),
+      sellList: round5m(Math.max(market * 1.02, quantile(prices, 0.6))),
+      // never below «خرید خوب»: selling fast should still beat a good buy
+      sellFast: round5m(Math.max(quantile(prices, 0.25), Math.min(market * 0.98, quantile(prices, 0.35)))),
+      medKm,
+      perKm: b,
+      tokens: used.map((p) => p.token),
+    };
+  }
+
+  /**
+   * Price guide for every model + trim + year with enough ads.
+   * posts: parsed posts (removed ones count too: they were on sale at that price).
+   * Returns [{ key, modelKey, label, trim, year, ...guideFor }] sorted by model size, then year.
+   */
+  function priceGuide(posts) {
+    const groups = new Map();
+    for (const p of posts) {
+      if (!p || !(p.price > 1e6) || !p.year) continue;
+      const m = P.modelOf(p);
+      const key = `${m.key}|${P.normalizeText(m.trim)}|${p.year}`;
+      if (!groups.has(key)) groups.set(key, { key, modelKey: m.key, label: m.label, trim: m.trim, year: p.year, list: [] });
+      groups.get(key).list.push(p);
+    }
+    const sizes = new Map();
+    for (const g of groups.values()) sizes.set(g.modelKey, (sizes.get(g.modelKey) || 0) + g.list.length);
+    return Array.from(groups.values())
+      .map((g) => ({ key: g.key, modelKey: g.modelKey, label: g.label, trim: g.trim, year: g.year, total: g.list.length, ...guideFor(g.list) }))
+      .sort((a, b) => sizes.get(b.modelKey) - sizes.get(a.modelKey) || a.modelKey.localeCompare(b.modelKey)
+        || Number(b.enough) - Number(a.enough) || b.year - a.year || b.n - a.n);
+  }
+
+  /** «ماشین خودم»: the guide adjusted for its mileage and body. */
+  function myCarPrice(g, { mileage, body } = {}) {
+    if (!g || !g.enough) return null;
+    const f = BODY_FACTORS[body] || 1;
+    let kmDelta = 0;
+    if (mileage != null && g.medKm != null) kmDelta = g.perKm * (mileage - g.medKm);
+    const adj = (n) => round5m(Math.min(n * 1.2, Math.max(n * 0.8, n + kmDelta)) * f);
+    return { sellList: adj(g.sellList), sellFast: adj(g.sellFast), market: adj(g.market), buyGood: adj(g.buyGood) };
+  }
+
+  const api = { computeDeals, modelName, priceGuide, myCarPrice, BODY_FACTORS, DEAL_MIN, HOT_MIN, TOO_CHEAP };
   root.NojaDeals = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
