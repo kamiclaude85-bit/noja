@@ -96,7 +96,32 @@ class Store {
   countView() {
     this.dailyCount();
     this.daily.count++;
+    // Times of the ad pages opened in the last 24 h (for the captcha log: how busy was the bot?).
+    const now = Date.now();
+    this.daily.times = (this.daily.times || []).filter((t) => now - t < 24 * 3600000);
+    this.daily.times.push(now);
     writeJson(this.dailyFile, this.daily);
+  }
+
+  /** Ad pages opened in the last `ms` milliseconds. */
+  viewsSince(ms) {
+    const from = Date.now() - ms;
+    return (this.daily.times || []).filter((t) => t >= from).length;
+  }
+
+  // ---------- captcha / «درخواست زیاد» log ----------
+  // Every time Divar asks for a captcha or says «too many requests», what led to it is kept here,
+  // so Divar's limits can be worked out later (data/blocks.json, last 2000 events).
+  logBlock(ev) {
+    const file = path.join(this.dir, 'blocks.json');
+    let list = [];
+    try { list = JSON.parse(fs.readFileSync(file, 'utf8')); } catch (_) { /* first one */ }
+    list.push(ev);
+    writeJson(file, list.slice(-2000));
+  }
+
+  listBlocks() {
+    try { return JSON.parse(fs.readFileSync(path.join(this.dir, 'blocks.json'), 'utf8')); } catch (_) { return []; }
   }
 
   // ---------- runs ----------

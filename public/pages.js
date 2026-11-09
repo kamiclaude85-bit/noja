@@ -497,6 +497,34 @@ function renderSearch(view) {
 // =========================================================
 // Runs (history)
 // =========================================================
+/** «کپچا و محدودیت‌ها»: every captcha / «درخواست زیاد» and how busy the bot was just before. */
+function blocksCard() {
+  const box = h('section', { class: 'card', hidden: true });
+  api('/api/blocks').then(({ blocks }) => {
+    const WHERE = { ad: 'صفحهٔ آگهی', list: 'فهرست جستجو', other: 'صفحهٔ دیگر' };
+    const HOW = { user: 'خودتان حل کردید', timeout: 'ربات ۵ دقیقه صبر کرد', stop: 'جستجو متوقف شد', auto: 'خودش رفع شد' };
+    const week = blocks.filter((b) => Date.now() - b.t < 7 * DAY).length;
+    const avg = (k) => (blocks.length ? Math.round(blocks.reduce((x, b) => x + (b[k] || 0), 0) / blocks.length) : 0);
+    box.hidden = false;
+    box.replaceChildren(
+      h('div', { class: 'card-h' }, h('h2', null, icon('shield', 'sm'), 'کپچا و محدودیت‌ها'),
+        h('span', { class: 'chip-status' }, blocks.length ? `${fa(week)} بار در ۷ روز اخیر` : 'تا حالا نبوده')),
+      blocks.length ? [
+        h('p', { class: 'muted', style: 'margin:0 0 8px' },
+          `به‌طور میانگین وقتی دیوار تأیید خواسته، ربات در یک ساعت قبلش ${fa(avg('views1h'))} آگهی و در ۲۴ ساعت قبلش ${fa(avg('views24h'))} آگهی باز کرده بود.`),
+        h('ul', { class: 'items' }, blocks.slice(-15).reverse().map((b) => h('li', { class: 'item' },
+          h('div', { class: 'item-main' },
+            h('b', null, `${dateTimeFa(b.t)} · ${WHERE[b.where] || b.where}`),
+            h('small', null, [
+              `یک ساعت قبلش ${fa(b.views1h)} آگهی`, `۲۴ ساعت قبلش ${fa(b.views24h)}`,
+              `${fa(b.runMinutes)} دقیقه بعد از شروع جستجو`, b.sinceLastBlockMin != null ? `${fa(b.sinceLastBlockMin)} دقیقه بعد از کپچای قبلی` : null,
+              HOW[b.resolved] || '',
+            ].filter(Boolean).join(' · ')))))),
+      ] : h('p', { class: 'muted empty-line' }, 'هر بار دیوار کپچا یا «درخواست زیاد» نشان دهد، اینجا ثبت می‌شود تا الگوی دیوار معلوم شود.'));
+  }).catch(() => {}); // the online panel has no captcha log (it is kept on the PC)
+  return box;
+}
+
 function renderRuns(view) {
   const STATUS = { done: 'تمام شده', stopped: 'متوقف شده', error: 'خطا' };
   const runs = App.state.runs || [];
@@ -521,7 +549,8 @@ function renderRuns(view) {
         h('a', { class: 'item-main', href: `#/run/${encodeURIComponent(r.id)}` }, h('b', null, describeCriteria(r.criteria)),
           h('small', null, `${new Date(r.createdAt).toLocaleString('fa-IR', { dateStyle: 'medium', timeStyle: 'short' })} · ${fa(r.read)} آگهی${r.newCount != null ? ` (${fa(r.newCount)} جدید)` : ''}`)),
         h('div', { class: 'item-actions' }, h('span', { class: 'muted' }, ACTIVE_RUN.includes(r.status) ? 'در حال انجام' : (STATUS[r.status] || r.status))))))
-        : h('p', { class: 'muted empty-line' }, 'هنوز جستجویی انجام نشده.'))));
+        : h('p', { class: 'muted empty-line' }, 'هنوز جستجویی انجام نشده.')),
+    blocksCard()));
 }
 
 // =========================================================

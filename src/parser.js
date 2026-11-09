@@ -128,6 +128,55 @@
     return m ? m[1].trim() : s;
   }
 
+  // ---------- value tags: recent repairs and extras that make a car worth a little more ----------
+  // Each rule: words in the title/description, a short label, and roughly how much it adds to the
+  // price (share of the price). Bad signs subtract. The total is capped, so extras never decide alone.
+  const VALUE_RULES = [
+    { key: 'tires', label: 'لاستیک نو', worth: 0.01, re: /لاستیک(?:\s*ها)?\s*(?:نو|تازه|صفر|۹۰|90|۹۵|95|تازه\s*عوض)|(?:۴|4|چهار)\s*حلقه\s*لاستیک\s*نو|لاستیک\s*(?:تعویض\s*شده|تازه\s*تعویض)/ },
+    { key: 'timing', label: 'تسمه تایم تازه', worth: 0.01, re: /تسمه\s*تایم\s*(?:نو|تازه|تعویض|عوض)|(?:تعویض|عوض)\s*تسمه\s*تایم/ },
+    { key: 'clutch', label: 'دیسک و صفحه نو', worth: 0.008, re: /دیسک\s*(?:و\s*)?صفحه\s*(?:نو|تازه|تعویض|عوض)|کلاچ\s*(?:نو|تعویض)/ },
+    { key: 'battery', label: 'باتری نو', worth: 0.004, re: /باطری\s*(?:نو|تازه)|باتری\s*(?:نو|تازه)/ },
+    { key: 'shocks', label: 'کمک‌فنر نو', worth: 0.005, re: /کمک\s*(?:فنر)?\s*(?:ها)?\s*(?:نو|تازه|تعویض)/ },
+    { key: 'brakes', label: 'لنت نو', worth: 0.003, re: /لنت\s*(?:ها)?\s*(?:نو|تازه|تعویض)/ },
+    { key: 'service', label: 'سرویس کامل', worth: 0.004, re: /سرویس\s*(?:کامل|دوره\s*ای)\s*(?:شده|انجام)|روغن\s*(?:و\s*)?فیلتر\s*(?:تازه|تعویض|عوض)/ },
+    { key: 'sunroof', label: 'سانروف', worth: 0.01, re: /سان\s*روف|ساندروف/ },
+    { key: 'rims', label: 'رینگ اسپرت', worth: 0.005, re: /رینگ\s*(?:و\s*لاستیک\s*)?اسپرت/ },
+    { key: 'media', label: 'پخش تصویری', worth: 0.003, re: /پخش\s*تصویری|مانیتور|اندروید\s*(?:پلیر|ضبط)?/ },
+    { key: 'sensor', label: 'دوربین/سنسور دنده‌عقب', worth: 0.003, re: /(?:سنسور|دوربین)\s*(?:دنده\s*)?عقب/ },
+    { key: 'one-owner', label: 'دست اول', worth: 0.005, re: /دست\s*اول|تک\s*برگ|تک\s*مالک/ },
+    // bad signs
+    { key: 'tires-bad', label: 'لاستیک نیاز به تعویض', worth: -0.01, bad: true, re: /لاستیک\s*(?:ها)?\s*(?:نیاز|احتیاج)\s*به\s*تعویض|نیاز\s*به\s*(?:تعویض\s*)?لاستیک/ },
+    { key: 'oil', label: 'روغن‌سوزی', worth: -0.04, bad: true, re: /روغن\s*سوز(?:ی)?|دود\s*آبی/ },
+    { key: 'repair', label: 'نیاز به تعمیر', worth: -0.03, bad: true, re: /نیاز\s*به\s*(?:تعمیر|صافکاری|موتور)|نیاز\s*به\s*کار\s*(?:دارد|داره)/ },
+  ];
+  const VALUE_CAP = 0.05;
+
+  /** Value tags of an ad: [{ key, label, worth, bad }]. From title, description and Divar's spec rows. */
+  function valueTags(post) {
+    const text = normalizeText(`${post.title || ''} ${post.description || ''}`);
+    const out = [];
+    for (const r of VALUE_RULES) {
+      const m = text.match(r.re);
+      if (!m) continue;
+      // «لاستیک نو نیست»، «سانروف ندارد» mean the opposite
+      if (/^\s*(?:ن(?:یست|دارد|داره|دارم|میخواد)|ندارد)/.test(text.slice(m.index + m[0].length, m.index + m[0].length + 12))) continue;
+      out.push({ key: r.key, label: r.label, worth: r.worth, bad: !!r.bad });
+    }
+    // Third-party insurance from the spec row («۱۰ ماه»): long is worth a little, none costs a little.
+    const ins = post.insurance ? parseNumber(post.insurance) : null;
+    if (ins != null && ins >= 9) out.push({ key: 'insurance', label: `بیمهٔ ${toFaDigits(ins)} ماه`, worth: 0.004, bad: false });
+    else if (post.insurance && (/ندارد|تمام|۰|^0/.test(post.insurance) || ins === 0)) out.push({ key: 'insurance-none', label: 'بیمه ندارد', worth: -0.006, bad: true });
+    return out;
+  }
+
+  /** How much the tags add (or take) as a share of the price, capped at ±5%. */
+  function valueBoost(tags) {
+    const sum = (tags || []).reduce((s, t) => s + t.worth, 0);
+    return Math.max(-VALUE_CAP * 2, Math.min(VALUE_CAP, sum));
+  }
+
+  function toFaDigits(n) { return String(n).replace(/\d/g, (d) => FA_DIGITS[d]); }
+
   // ---------- car model ----------
   // Makes that Divar writes before the model («پژو 206 تیپ ۲»); otherwise the first word is the model («شاهین G»).
   const MAKES = ['پژو', 'سایپا', 'ایران', 'ایران‌خودرو', 'رنو', 'کیا', 'هیوندای', 'تویوتا', 'نیسان', 'مزدا', 'میتسوبیشی', 'سوزوکی', 'هوندا',
@@ -533,6 +582,8 @@
     estimatePublished,
     placeOf,
     modelOf,
+    valueTags,
+    valueBoost,
     matchesCriteria,
     buildSearchUrl,
     median,

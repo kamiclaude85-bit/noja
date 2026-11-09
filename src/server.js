@@ -167,6 +167,9 @@ function createServer({ scanner, store, context, notifier, cloud }) {
         }
       }
 
+      // ---- captcha / «درخواست زیاد» log ----
+      if (p === '/api/blocks' && req.method === 'GET') return send(res, 200, { blocks: store.listBlocks() });
+
       // ---- online panel connection ----
       if (p === '/api/cloud' && req.method === 'GET') return send(res, 200, cloud ? cloud.publicSettings() : { url: '' });
       if (p === '/api/cloud' && req.method === 'POST' && cloud) {

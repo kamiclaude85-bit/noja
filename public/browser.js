@@ -363,7 +363,7 @@ function renderRow(p, d) {
         p.mileage != null || p.mileageText ? h('span', { class: 'num' }, icon('gauge'), p.mileage != null ? `${fa(p.mileage)} کیلومتر` : p.mileageText) : null,
         p.gearbox ? h('span', null, icon('gear'), p.gearbox) : null,
         p.color ? h('span', null, icon('palette'), p.color) : null),
-      h('div', { class: 'conds' }, follow.length ? follow : [cond('بدنه', p.body), cond('موتور', p.engine), conditionClass(p.chassis) === 'bad' ? cond('شاسی', p.chassis) : null])),
+      h('div', { class: 'conds' }, follow.length ? follow : [cond('بدنه', p.body), cond('موتور', p.engine), conditionClass(p.chassis) === 'bad' ? cond('شاسی', p.chassis) : null, ...valueChips(p, 3)])),
     h('div', { class: 'row-side' },
       p.price ? h('div', { class: 'price num' }, formatPrice(p.price), ' ', h('small', null, 'تومان')) : h('div', { class: 'price none' }, p.priceText || 'بدون قیمت'),
       dealBadge(p._deal),
@@ -574,6 +574,25 @@ function crmSection(p) {
       timeline(c)));
 }
 
+/** Green chips for recent repairs and extras (red for bad signs), from the ad text. */
+function valueChips(p, max = 99) {
+  const tags = P.valueTags(p);
+  const good = tags.filter((t) => !t.bad).slice(0, max);
+  const bad = tags.filter((t) => t.bad);
+  return [...bad.map((t) => h('span', { class: 'vtag bad' }, icon('alert', 'sm'), t.label)),
+    ...good.map((t) => h('span', { class: 'vtag' }, icon('check', 'sm'), t.label))];
+}
+
+/** Drawer: «امکانات و تعمیرات» with roughly how much they are worth. */
+function valueBlock(p) {
+  const tags = P.valueTags(p);
+  if (!tags.length) return null;
+  const b = P.valueBoost(tags);
+  const worth = Math.abs(b) < 0.002 ? '' : b > 0 ? `حدود ${fa(Math.round(b * 1000) / 10)}٪ ارزش بیشتر` : `حدود ${fa(Math.round(-b * 1000) / 10)}٪ ارزش کمتر`;
+  return h('div', { class: 'd-values' }, h('div', { class: 'd-values-h' }, h('b', null, 'امکانات و تعمیرات'), worth ? h('small', null, worth) : null),
+    h('div', { class: 'conds' }, valueChips(p)));
+}
+
 /** Drawer: where this ad's price sits against «قیمت‌یاب» for the same model, trim and year. */
 function guideLine(p) {
   const g = typeof guideOf === 'function' && p.price ? guideOf(p) : null;
@@ -581,8 +600,13 @@ function guideLine(p) {
   const diff = (p.price - g.market) / g.market;
   const pct = fa(Math.abs(Math.round(diff * 100)));
   const where = Math.abs(diff) < 0.01 ? 'هم‌قیمت بازار' : diff < 0 ? `${pct}٪ زیر قیمت بازار` : `${pct}٪ بالای قیمت بازار`;
+  const boost = P.valueBoost(P.valueTags(p));
+  const why = diff > 0.01 && boost > 0.002
+    ? `ولی امکانات و تعمیرات تازه‌اش حدود ${fa(Math.round(Math.min(boost, diff) * 100))}٪ از این اختلاف را توجیه می‌کند`
+    : null;
   return h('div', { class: 'd-guide' },
     h('span', null, 'قیمت بازار ', h('b', { class: 'num' }, formatPrice(g.market)), ` · ${where}`),
+    why ? h('span', { class: 'why' }, why) : null,
     h('span', null, 'خرید خوب تا ', h('b', { class: 'num' }, formatPrice(g.buyGood))),
     h('a', { href: `#/prices?model=${encodeURIComponent(g.modelKey)}` }, 'قیمت‌یاب'));
 }
@@ -663,6 +687,7 @@ function openDrawer(token, keepScroll) {
           priceChangeBadge(p),
           sellerBadge(p)),
         guideLine(p),
+        valueBlock(p),
         ph.length > 1 ? h('div', { class: 'where', style: 'margin-top:6px' }, icon('trend', 'sm'),
           `تاریخچهٔ قیمت: ${ph.map((x) => formatPrice(x.price)).join(' ← ')}`) : null,
         p._ad && p._ad.firstSeenAt ? h('div', { class: 'where', style: 'margin-top:4px' }, icon('clock', 'sm'), `اولین بار ${agoFa(p._ad.firstSeenAt)} دیده شد`) : null,

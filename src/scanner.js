@@ -128,15 +128,18 @@ class Scanner {
     this.store.saveRun(run, true);
     Promise.resolve(this.onEvent(run, status)).catch(() => {});
     let pressed = false;
+    let how = 'user';
     const press = new Promise((resolve) => { this.control.resume = () => { pressed = true; resolve(); }; });
     while (!pressed && !this.control.stop) {
-      if (untilMs && Date.now() >= untilMs) break;
-      if (autoCheck && (await autoCheck().catch(() => false))) break;
+      if (untilMs && Date.now() >= untilMs) { how = 'timeout'; break; }
+      if (autoCheck && (await autoCheck().catch(() => false))) { how = 'auto'; break; }
       await Promise.race([press, H.sleep(untilMs ? Math.min(1000, untilMs - Date.now()) : 2000)]);
     }
+    if (!pressed && this.control.stop) how = 'stop';
     this.control.resume = null;
     run.waitUntil = null;
     this.setStatus(run, prev.status, prev.message);
+    return how;
   }
 
   async pauseGate(run) {
@@ -152,10 +155,34 @@ class Scanner {
     const status = response ? response.status() : 200;
     const blocked = status === 429 || status === 403 || (await page.evaluate(S.detectBlock).catch(() => false));
     if (!blocked) return false;
+    // Keep what led to it, to learn Divar's limits over time (see «کپچا و محدودیت‌ها» in «جستجوها»).
+    const url = page.url();
+    const ev = {
+      t: Date.now(),
+      kind: status === 429 ? 'too-many' : status === 403 ? 'forbidden' : 'captcha',
+      http: status,
+      where: url.includes('/v/') ? 'ad' : url.includes('/s/') ? 'list' : 'other',
+      runId: run.id,
+      query: run.criteria.query || '',
+      speed: run.criteria.speed || 'normal',
+      runMinutes: Math.round((Date.now() - run.createdAt) / 60000),
+      runOpened: (run.stats && run.stats.opened) || 0,
+      views15m: this.store.viewsSince(15 * 60000),
+      views1h: this.store.viewsSince(3600000),
+      views24h: this.store.viewsSince(24 * 3600000),
+      today: this.store.dailyCount(),
+      sinceLastBlockMin: null,
+    };
+    const last = this.store.listBlocks().slice(-1)[0];
+    if (last) ev.sinceLastBlockMin = Math.round((ev.t - last.t) / 60000);
     await page.bringToFront().catch(() => {});
-    await this.waitForUser(run, 'blocked',
+    const how = await this.waitForUser(run, 'blocked',
       'دیوار تأیید خواسته (کپچا یا «درخواست زیاد»). در پنجرهٔ دیوار حلش کنید و «ادامه» را بزنید. اگر کاری نکنید، ربات ۵ دقیقه صبر می‌کند و آرام ادامه می‌دهد.',
       { untilMs: Date.now() + 5 * 60 * 1000 });
+    ev.resolved = how; // 'user' (you pressed «ادامه»), 'timeout' (waited 5 min), 'stop'
+    ev.waitedSec = Math.round((Date.now() - ev.t) / 1000);
+    try { this.store.logBlock(ev); } catch (e) { this.log(e); }
+    run.stats.blocks = (run.stats.blocks || 0) + 1;
     return true;
   }
 
@@ -324,7 +351,8 @@ class Scanner {
       if (this.control.stop) return cityUrl;
       resp = await page.goto(cityUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
     }
-    await H.sleep(H.natural(1200, 2600));
+    await this.idle(H.natural(1200, 2600));
+    if (this.control.stop) return page.url(); // «پایان» while opening the search
 
     let typed = false;
     if (c.query) {
@@ -350,6 +378,7 @@ class Scanner {
       }
     }
 
+    if (this.control.stop) return page.url();
     // Year / price filters (and the query, if typing did not work), like ticking filters on Divar.
     const want = new URL(target);
     const now = new URL(page.url());

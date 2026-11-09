@@ -96,6 +96,12 @@
         if (engine === 'bad') { score -= 0.1; warnings.push(`موتور: ${p.engine}`); }
         if (chassis === 'bad') { score -= 0.12; warnings.push(`شاسی: ${p.chassis}`); }
         if (p.seller === 'dealer') score -= 0.02; else reasons.push('فروشنده شخصی');
+        // Recent repairs and extras (لاستیک نو، تسمه تایم…) add a little; bad signs take away.
+        const tags = P.valueTags ? P.valueTags(p) : [];
+        score += P.valueBoost ? P.valueBoost(tags) : 0;
+        const goodTags = tags.filter((t) => !t.bad).map((t) => t.label);
+        if (goodTags.length) reasons.push(goodTags.join('، '));
+        for (const t of tags.filter((x) => x.bad)) warnings.push(t.label);
         const installment = INSTALLMENT_RE.test(`${p.description || ''} ${p.priceText || ''}`);
         const tooCheap = discount > TOO_CHEAP;
         if (installment) warnings.unshift('قیمت احتمالاً پیش‌پرداخت یا اقساطی است');

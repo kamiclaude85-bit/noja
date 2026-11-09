@@ -183,3 +183,16 @@ test('«X پیش» in words, for the «آگهی‌های تا چه مدت پیش
   assert.equal(P.parseRelativeAgo('نردبان شده', at), null, 'bumped ads have no time');
   assert.equal(P.parseRelativeAgo('دقایقی پیش', at), at - 5 * 60000);
 });
+
+test('value tags: recent repairs and extras from the ad text; negations and bad signs', () => {
+  const tags = (description, extra = {}) => P.valueTags({ title: '', description, ...extra }).map((t) => t.key);
+  assert.deepEqual(tags('چهار حلقه لاستیک نو، تسمه تایم تازه عوض شده، باتری نو'), ['tires', 'timing', 'battery']);
+  assert.deepEqual(tags('سانروف دار، رینگ اسپرت، دوربین دنده عقب'), ['sunroof', 'rims', 'sensor']);
+  assert.deepEqual(tags('لاستیک نو نیست. سانروف ندارد'), [], 'negated');
+  assert.deepEqual(tags('لاستیک ها نیاز به تعویض دارد'), ['tires-bad']);
+  assert.deepEqual(tags('کمی روغن سوزی دارد'), ['oil']);
+  assert.deepEqual(tags('', { insurance: '۱۱ ماه' }), ['insurance']);
+  const boost = P.valueBoost(P.valueTags({ description: 'لاستیک نو تسمه تایم نو دیسک و صفحه نو سانروف رینگ اسپرت باتری نو کمک فنر نو لنت نو دست اول' }));
+  assert.equal(boost, 0.05, 'capped at 5%');
+  assert.ok(P.valueBoost(P.valueTags({ description: 'روغن سوزی دارد، نیاز به تعمیر' })) < 0);
+});

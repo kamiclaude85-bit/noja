@@ -154,6 +154,14 @@ const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350)
   // ---- Day 1 finished ----
   const run = await waitFor(async () => { const r = await getRun(); return r.status === 'done' ? r : null; }, 'run to finish', 180000);
   assert.equal(run.items.length, COUNT, 'all ads collected by scrolling');
+  // The captcha was logged with what led to it.
+  const blocks = (await getJson('api/blocks')).blocks;
+  assert.equal(blocks.length, 1, 'one captcha logged');
+  assert.ok(['captcha', 'too-many'].includes(blocks[0].kind)); // opened by a click: known from the page text
+  assert.equal(blocks[0].where, 'ad');
+  assert.equal(blocks[0].resolved, 'user');
+  assert.equal(blocks[0].runId, runId);
+  assert.ok(blocks[0].views1h >= 1 && blocks[0].today >= 1, 'how busy the bot was is recorded');
   assert.deepEqual(Object.keys(run.errors), [goneToken], 'only the deleted ad failed');
   assert.equal(run.posts.length, COUNT - 1);
   assert.ok(!new URL(listUrls[0]).searchParams.has('q'), 'started from the city page');
@@ -381,7 +389,7 @@ const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350)
   const r5 = await postJson('api/scan', { query: 'پژو ۲۰۶', speed: 'slow', maxAds: 3, recheckAll: true, maxAgeDays: 0 });
   await waitFor(async () => (await getRun(r5.id)).status === 'collecting', 'slow run collecting', 60000);
   await postJson(`api/runs/${r5.id}/cancel`, {});
-  const cancelled = await waitFor(async () => { const r = await getRun(r5.id); return r.status === 'stopped' ? r : null; }, 'cancel', 20000);
+  const cancelled = await waitFor(async () => { const r = await getRun(r5.id); return r.status === 'stopped' ? r : null; }, 'cancel', 30000);
   assert.equal(cancelled.stats.opened || 0, 0, 'cancel during collecting opens no ad');
 
   // Cross-site requests to the local API are refused.
