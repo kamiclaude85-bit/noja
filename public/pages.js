@@ -751,8 +751,64 @@ async function renderBackup(view) {
       [now, h('label', { class: 'btn', for: 'restoreFile' }, icon('upload', 'sm'), 'بارگذاری پشتیبان'), file]),
     h('div', { class: 'notice soft' }, icon('shield'), h('div', { class: 'grow' },
       'پشتیبان‌ها در پوشهٔ ', h('code', null, 'data/backups'), ' کنار برنامه هستند. گاهی یکی را دانلود کنید و جای دیگری (فلش یا ایمیل) نگه دارید.')),
-    h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h2', null, icon('database', 'sm'), 'پشتیبان‌ها')), list)));
+    h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h2', null, icon('database', 'sm'), 'پشتیبان‌ها')), list),
+    App.host ? updateCard() : null));
   load().catch((e) => toast(e.message, 'err'));
+}
+
+/** Online panel: install «ردیاب-آپدیت.zip» from here (like Noja), or go back to an earlier version. */
+function updateCard() {
+  const box = h('section', { class: 'card' });
+  const verText = (v) => (v && v.builtAt ? dateTimeFa(v.builtAt) : (v && v.version) || 'نامشخص');
+  const draw = async () => {
+    let info;
+    try {
+      const r = await fetch('update.php?action=info', { cache: 'no-store' });
+      info = await r.json();
+      if (!r.ok) throw new Error(info.error || r.status);
+    } catch (e) { box.replaceChildren(h('p', { class: 'muted' }, `به‌روزرسانی در دسترس نیست: ${e.message}`)); return; }
+    const file = h('input', { type: 'file', accept: '.zip,application/zip', class: 'sr-only', id: 'updFile' });
+    const post = async (fd, okText) => {
+      fd.append('token', info.token);
+      const r = await fetch('update.php', { method: 'POST', body: fd });
+      const b = await r.json().catch(() => ({}));
+      if (!r.ok || b.ok === false) throw new Error(b.error || `خطای ${r.status}`);
+      toast(okText(b));
+      setTimeout(() => location.reload(), 1500); // load the new panel files
+    };
+    file.addEventListener('change', async () => {
+      const f = file.files[0];
+      if (!f) return;
+      if (!confirm(`«${f.name}» نصب شود؟ پیش از نصب، از فایل‌های فعلی پشتیبان گرفته می‌شود و تنظیمات و داده‌ها دست نمی‌خورند.`)) { file.value = ''; return; }
+      const fd = new FormData();
+      fd.append('action', 'apply');
+      fd.append('pkg', f);
+      try { await post(fd, (b) => `به‌روزرسانی نصب شد (${fa(b.applied)} فایل).`); } catch (e) { toast(e.message, 'err'); }
+      file.value = '';
+    });
+    const rollback = async (b) => {
+      if (!confirm(`برگشت به نسخهٔ قبل از ${b.at ? dateTimeFa(Date.parse(b.at)) : b.id}؟`)) return;
+      const fd = new FormData();
+      fd.append('action', 'rollback');
+      fd.append('backup', b.id);
+      try { await post(fd, (r) => `نسخهٔ قبل برگردانده شد (${fa(r.restored)} فایل).`); } catch (e) { toast(e.message, 'err'); }
+    };
+    box.replaceChildren(
+      h('div', { class: 'card-h' }, h('h2', null, icon('upload', 'sm'), 'به‌روزرسانی ردیاب'),
+        h('span', { class: 'chip-status' }, `نسخهٔ فعلی: ${verText(info.version)}`)),
+      h('p', { class: 'muted', style: 'margin:0 0 12px' }, 'فایل «ردیاب-آپدیت.zip» را انتخاب کنید. پیش از نصب از فایل‌های فعلی پشتیبان گرفته می‌شود؛ تنظیمات و داده‌ها دست نمی‌خورند.'),
+      info.zip ? h('label', { class: 'btn primary', for: 'updFile' }, icon('upload', 'sm'), 'انتخاب فایل و نصب') : h('p', { class: 'form-error' }, 'افزونهٔ Zip روی هاست فعال نیست.'),
+      file,
+      info.backups.length ? [
+        h('h3', { class: 'd-h', style: 'margin-top:16px' }, 'نسخه‌های قبلی (برای برگشت)'),
+        h('ul', { class: 'items' }, info.backups.slice(0, 5).map((b) => h('li', { class: 'item' },
+          h('div', { class: 'item-main' }, h('b', null, b.at ? dateTimeFa(Date.parse(b.at)) : b.id), h('small', null, `${fa(b.files || 0)} فایل`)),
+          h('div', { class: 'item-actions' }, h('button', { class: 'btn sm', type: 'button', onclick: () => rollback(b) }, icon('undo', 'sm'), 'برگشت'))))),
+      ] : null);
+  };
+  box.append(h('p', { class: 'muted' }, 'در حال بارگذاری…'));
+  draw();
+  return box;
 }
 
 // =========================================================

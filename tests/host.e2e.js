@@ -43,7 +43,7 @@ async function main() {
   execFileSync(process.execPath, [path.join(ROOT, 'tools', 'build-host.js')], { stdio: 'ignore' });
   const site = fs.mkdtempSync(path.join(os.tmpdir(), 'radyab-host-'));
   fs.cpSync(path.join(ROOT, 'dist', 'radyab-host'), site, { recursive: true });
-  const server = spawn(php, ['-S', `127.0.0.1:${PORT}`, '-t', site, path.join(ROOT, 'host', 'dev-router.php')], { stdio: 'ignore' });
+  const server = spawn(php, ['-d', 'display_errors=1', '-S', `127.0.0.1:${PORT}`, '-t', site, path.join(ROOT, 'host', 'dev-router.php')], { stdio: 'ignore' });
   try {
     for (let i = 0; i < 50; i++) { try { await fetch(BASE); break; } catch (_) { await sleep(100); } }
 
@@ -206,11 +206,65 @@ async function main() {
     const count = (await api('/api/backups/restore', { method: 'POST', body: restored })).count;
     assert.equal(count, 30);
 
+    // ---- update from inside the panel (update.php) ----
+    const upd = async (fields, withCookie = true) => {
+      const fd = new FormData();
+      for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+      const r = await fetch(`${BASE}update.php`, { method: 'POST', headers: withCookie ? { cookie } : {}, body: fd });
+      const text = await r.text();
+      let body = {};
+      try { body = JSON.parse(text); } catch (_) { body = { raw: text.slice(0, 600) }; }
+      return { status: r.status, body };
+    };
+    assert.equal((await fetch(`${BASE}update.php?action=info`)).status, 401, 'update needs sign-in');
+    const info = await (await fetch(`${BASE}update.php?action=info`, { headers: { cookie } })).json();
+    assert.equal(info.version.app, 'radyab');
+    assert.equal(info.zip, true);
+    // A newer package: changed version.json and app.css, plus things that must never be installed.
+    const pkgDir = fs.mkdtempSync(path.join(os.tmpdir(), 'radyab-upd-'));
+    fs.cpSync(path.join(ROOT, 'dist', 'radyab-host'), pkgDir, { recursive: true });
+    fs.rmSync(path.join(pkgDir, 'data'), { recursive: true, force: true });
+    fs.writeFileSync(path.join(pkgDir, 'version.json'), JSON.stringify({ app: 'radyab', version: '9.9.9-test', builtAt: Date.now() }));
+    fs.appendFileSync(path.join(pkgDir, 'app.css'), '\n/* update-test-marker */\n');
+    fs.writeFileSync(path.join(pkgDir, 'config.php'), '<?php // must not replace the real one');
+    fs.writeFileSync(path.join(pkgDir, 'new-file.js'), '// added by the update');
+    const zipOf = (dir, name) => {
+      const out = path.join(os.tmpdir(), `${name}-${Date.now()}.zip`);
+      const tar = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe') : null;
+      if (tar) execFileSync(tar, ['-a', '-c', '-f', out, '-C', dir, ...fs.readdirSync(dir)]);
+      else execFileSync('zip', ['-qr', out, ...fs.readdirSync(dir)], { cwd: dir });
+      return new Blob([fs.readFileSync(out)], { type: 'application/zip' });
+    };
+    const configBefore = fs.readFileSync(path.join(site, 'config.php'), 'utf8');
+    const cssBefore = fs.readFileSync(path.join(site, 'app.css'), 'utf8');
+    assert.equal((await upd({ action: 'apply', pkg: zipOf(pkgDir, 'u1') })).status, 403, 'needs the form token');
+    let u = await upd({ action: 'apply', token: info.token, pkg: zipOf(pkgDir, 'u1') });
+    assert.equal(u.status, 200, JSON.stringify(u.body));
+    assert.ok(u.body.applied > 20);
+    assert.match(fs.readFileSync(path.join(site, 'app.css'), 'utf8'), /update-test-marker/, 'new files installed');
+    assert.equal(fs.readFileSync(path.join(site, 'config.php'), 'utf8'), configBefore, 'config.php untouched');
+    assert.ok(fs.existsSync(path.join(site, 'data', 'radyab.sqlite')), 'data untouched');
+    assert.equal((await (await fetch(`${BASE}update.php?action=info`, { headers: { cookie } })).json()).version.version, '9.9.9-test');
+    assert.equal((await fetch(`${BASE}api/state`, { headers: { cookie } })).status, 200, 'panel still works after the update');
+    // Not a Radyab package: refused, nothing changed.
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), 'radyab-other-'));
+    fs.writeFileSync(path.join(other, 'index.html'), 'x');
+    u = await upd({ action: 'apply', token: info.token, pkg: zipOf(other, 'u2') });
+    assert.equal(u.status, 400);
+    assert.match(u.body.error, /ردیاب نیست/);
+    // Roll back: the old files return, the added file goes.
+    const backups = (await (await fetch(`${BASE}update.php?action=info`, { headers: { cookie } })).json()).backups;
+    u = await upd({ action: 'rollback', token: info.token, backup: backups[0].id });
+    assert.equal(u.status, 200, JSON.stringify(u.body));
+    assert.equal(fs.readFileSync(path.join(site, 'app.css'), 'utf8'), cssBefore, 'rolled back');
+    assert.ok(!fs.existsSync(path.join(site, 'new-file.js')), 'file added by the update removed');
+    assert.notEqual((await (await fetch(`${BASE}update.php?action=info`, { headers: { cookie } })).json()).version.version, '9.9.9-test');
+
     // ---- sign out ----
     await api('/api/session', { method: 'DELETE' });
     assert.equal((await fetch(`${BASE}api/state`, { headers: { cookie } })).status, 401);
 
-    console.log('host e2e OK — setup, sign-in, upload, two-way follow-up, newer change wins, PHP = JS rules, phone search queue, run commands, messages, backups');
+    console.log('host e2e OK — setup, sign-in, upload, two-way follow-up, newer change wins, PHP = JS rules, phone search queue, run commands, messages, backups, update + rollback');
   } finally {
     server.kill();
   }
