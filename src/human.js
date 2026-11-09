@@ -98,9 +98,9 @@ async function typeText(page, text) {
  * "Read" the current page for about `ms` milliseconds: scroll down in
  * uneven steps, pause, sometimes scroll back up a little.
  */
-async function readPage(page, ms) {
+async function readPage(page, ms, isStopped = () => false) {
   const end = Date.now() + ms;
-  while (Date.now() < end) {
+  while (Date.now() < end && !isStopped()) {
     const r = Math.random();
     if (r < 0.62) await scrollBy(page, rand(150, 520));
     else if (r < 0.75) await scrollBy(page, -rand(100, 300));
@@ -108,7 +108,8 @@ async function readPage(page, ms) {
       const vp = page.viewportSize() || { width: 1280, height: 800 };
       await moveMouse(page, rand(vp.width * 0.15, vp.width * 0.85), rand(vp.height * 0.15, vp.height * 0.85));
     }
-    await sleep(Math.min(end - Date.now(), natural(500, 2600)));
+    const until = Date.now() + Math.min(end - Date.now(), natural(500, 2600));
+    while (Date.now() < until && !isStopped()) await sleep(Math.min(250, until - Date.now()));
   }
 }
 

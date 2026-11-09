@@ -73,9 +73,10 @@ async function startApp(opts = {}) {
     store.saveRunNow(run);
   }
   const notifier = new Notifier({ store, dataDir, log, apiBases: opts.notifyApiBases });
-  const scanner = new Scanner({ context, store, log, onEvent: (run, kind) => notifier.runEvent(run, kind) });
+  let cloud = null;
+  const scanner = new Scanner({ context, store, log, onEvent: (run, kind) => { if (cloud) cloud.syncSoon(); return notifier.runEvent(run, kind); } });
   // Online panel (optional): set up from «پنل آنلاین» in the PC panel.
-  const cloud = new Cloud({ store, scanner, context, dataDir, log, fetchImpl: opts.fetchImpl });
+  cloud = new Cloud({ store, scanner, context, dataDir, log, fetchImpl: opts.fetchImpl });
   Object.defineProperty(notifier, 'forward', { get: () => (cloud.enabled ? (m) => cloud.forward(m) : null) });
   cloud.start();
   if (cloud.enabled) cloud.sync().catch(() => {});

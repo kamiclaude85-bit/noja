@@ -601,7 +601,10 @@ function runErrors(run) {
 }
 
 async function runControl(action) {
-  try { await api(`/api/runs/${encodeURIComponent(RUN.id)}/${action}`, { method: 'POST' }); } catch (_) { /* ignore */ }
+  // «پایان» shows at once that it was pressed (on the online panel the bot gets it at its next check-in).
+  const enough = action === 'stop' && RUN.run && RUN.run.status === 'collecting'; // «کافیه»: go on to reading
+  if ((action === 'stop' && !enough) || action === 'cancel') { RUN.stopping = { action, at: Date.now() }; renderRunStatus(); }
+  try { await api(`/api/runs/${encodeURIComponent(RUN.id)}/${action}`, { method: 'POST' }); } catch (e) { RUN.stopping = null; toast(e.message, 'err'); }
   pollRun();
 }
 
@@ -629,7 +632,7 @@ function renderRunStatus() {
       break;
     case 'collecting':
       ic = 'search'; title = 'در حال مرور نتایج دیوار'; sub = run.message;
-      actions = [btn('کافیه، برو سراغ آگهی‌ها', 'right', () => runControl('stop'))];
+      actions = [btn('کافیه، برو سراغ آگهی‌ها', 'right', () => runControl('stop')), btn('پایان', 'stop', () => runControl('cancel'), 'ghost')];
       break;
     case 'reading':
       ic = 'car'; title = run.message; sub = run.activity ? `الان: ${run.activity}` : ''; meta = eta(); pct = total ? done / total : 0;
@@ -657,6 +660,13 @@ function renderRunStatus() {
       actions = [btn('دوباره امتحان کن', 'refresh', () => rerunSearch(run.criteria))];
       break;
     default:
+  }
+  if (RUN.stopping && !ACTIVE_RUN.includes(st)) RUN.stopping = null;
+  if (RUN.stopping) {
+    ic = 'loader'; pulse = true; cls = '';
+    title = 'در حال توقف…';
+    sub = App.host ? 'دستور توقف برای ربات روی کامپیوتر فرستاده شد؛ چند ثانیه طول می‌کشد.' : 'ربات بعد از همین لحظه متوقف می‌شود.';
+    actions = [];
   }
   const status = $('#status');
   if (!status) return;

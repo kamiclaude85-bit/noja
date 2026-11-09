@@ -88,7 +88,7 @@ async function main() {
     const started = [];
     const actions = [];
     const scanner = { busy: false, current: null, start: (c) => { started.push(c); return { id: 'x' }; } };
-    for (const a of ['stop', 'pause', 'resume', 'continue']) scanner[a] = () => actions.push(a);
+    for (const a of ['stop', 'cancel', 'pause', 'resume', 'continue']) scanner[a] = () => actions.push(a);
     const cloud = new Cloud({ store, scanner, dataDir });
 
     // Wrong key is refused and shown.
@@ -185,6 +185,9 @@ async function main() {
     await api('/api/runs/run_live/stop', { method: 'POST' });
     await cloud.sync();
     assert.deepEqual(actions, ['stop'], 'stop from the phone reached the bot');
+    await api('/api/runs/run_live/cancel', { method: 'POST' });
+    await cloud.sync();
+    assert.deepEqual(actions, ['stop', 'cancel'], '«پایان» while collecting reached the bot');
     assert.equal((await api('/api/state')).busy, 'run_live');
     scanner.busy = false;
 

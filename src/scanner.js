@@ -103,6 +103,14 @@ class Scanner {
   pause() { if (this.control) this.control.paused = true; }
   resume() { if (this.control) { this.control.paused = false; this.continue(); } }
   stop() { if (this.control) { this.control.stop = true; this.continue(); } }
+  /** «پایان» during list-collecting: end the search without reading the ads found so far. */
+  cancel() { if (this.control) { this.control.cancel = true; this.control.stop = true; this.continue(); } }
+
+  /** Wait, but return at once when «پایان» is pressed. */
+  async idle(ms) {
+    const until = Date.now() + ms;
+    while (Date.now() < until && !(this.control && this.control.stop)) await H.sleep(Math.min(250, until - Date.now()));
+  }
   focus() { if (this.page) this.page.bringToFront().catch(() => {}); }
 
   setStatus(run, status, message, activity) {
@@ -177,6 +185,7 @@ class Scanner {
       const key = searchKey(c);
       this.store.touchSearch(key, c);
       await this.collect(run, page);
+      if (this.control.cancel) return this.finish(run, 'stopped', `متوقف شد. ${fa(run.items.length)} آگهی در فهرست پیدا شد و باز نشد.`);
 
       // ---- 4. Decide what to open: only new ads, and old ads whose price changed ----
       const toVisit = [];
@@ -287,7 +296,7 @@ class Scanner {
           sinceBreak = 0;
           nextBreak = H.randInt(...pace.breakEvery);
         } else {
-          await H.sleep(H.natural(...pace.gap));
+          await this.idle(H.natural(...pace.gap));
         }
       }
       return this.finish(run, this.control.stop ? 'stopped' : 'done');
@@ -462,7 +471,7 @@ class Scanner {
     run.stats.tooOld = tooOld;
     run.items = items.map((it, i) => ({ ...it, order: i }));
     run.collectStop = reason || (this.control.stop ? 'user' : 'end');
-    this.control.stop = false; // «enough» during collection means: go read them
+    if (!this.control.cancel) this.control.stop = false; // «کافیه» during collection means: go read them
     this.store.saveRun(run, true);
     await H.scrollBy(page, -H.rand(3000, 6000)).catch(() => {});
   }
@@ -540,7 +549,7 @@ class Scanner {
         // Read: time depends on how much there is to read, plus randomness.
         const descLen = await adPage.evaluate(() => (document.body.innerText || '').length).catch(() => 1500);
         const [rMin, rMax] = pace.read;
-        await H.readPage(adPage, H.natural(rMin, rMax) * Math.min(1.6, 0.7 + descLen / 6000));
+        await H.readPage(adPage, H.natural(rMin, rMax) * Math.min(1.6, 0.7 + descLen / 6000), () => this.control.stop);
 
         const raw = await adPage.evaluate(S.extractAdPage);
         const post = P.extractPost(raw, item.token, item);

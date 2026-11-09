@@ -87,7 +87,7 @@ try {
         if (!$run) json_out(404, ['error' => 'not found']);
         json_out(200, public_run($run));
     }
-    if (preg_match('#^/runs/([A-Za-z0-9_-]+)/(continue|pause|resume|stop|focus)$#', $path, $m) && $method === 'POST') {
+    if (preg_match('#^/runs/([A-Za-z0-9_-]+)/(continue|pause|resume|stop|cancel|focus)$#', $path, $m) && $method === 'POST') {
         if ($m[2] !== 'focus') queue_add('cmd', ['runId' => $m[1], 'action' => $m[2]]);
         json_out(200, ['ok' => true]);
     }

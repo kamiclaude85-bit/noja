@@ -138,7 +138,7 @@ function createServer({ scanner, store, context, notifier, cloud }) {
         const run = scanner.current && scanner.current.id === m[1] ? scanner.current : store.loadRun(m[1]);
         return run ? send(res, 200, publicRun(run, store)) : send(res, 404, { error: 'not found' });
       }
-      m = p.match(/^\/api\/runs\/([A-Za-z0-9_-]+)\/(continue|pause|resume|stop|focus)$/);
+      m = p.match(/^\/api\/runs\/([A-Za-z0-9_-]+)\/(continue|pause|resume|stop|cancel|focus)$/);
       if (m && req.method === 'POST') {
         if (!scanner.current || scanner.current.id !== m[1]) return send(res, 409, { error: 'این جستجو فعال نیست.' });
         scanner[m[2]]();

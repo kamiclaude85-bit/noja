@@ -368,6 +368,22 @@ const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350)
     await ui.setViewportSize({ width: 1440, height: 900 });
   }
 
+  // «پایان» while reading an ad at slow speed stops within seconds (not after the ad's reading time).
+  const r4 = await postJson('api/scan', { query: 'پژو ۲۰۶', speed: 'slow', maxAds: 3, recheckAll: true, maxAgeDays: 0 });
+  await waitFor(async () => (await getRun(r4.id)).status === 'reading', 'slow run reading', 120000);
+  await sleep(1500);
+  const tStop = Date.now();
+  await postJson(`api/runs/${r4.id}/stop`, {});
+  const stopped = await waitFor(async () => { const r = await getRun(r4.id); return r.status === 'stopped' ? r : null; }, 'stop', 15000);
+  assert.ok(Date.now() - tStop < 4000, `stopped in ${Date.now() - tStop} ms`);
+  assert.ok((stopped.stats.opened || 0) <= 1, 'no further ads opened after «پایان»');
+  // «پایان» while still collecting the list: nothing is opened.
+  const r5 = await postJson('api/scan', { query: 'پژو ۲۰۶', speed: 'slow', maxAds: 3, recheckAll: true, maxAgeDays: 0 });
+  await waitFor(async () => (await getRun(r5.id)).status === 'collecting', 'slow run collecting', 60000);
+  await postJson(`api/runs/${r5.id}/cancel`, {});
+  const cancelled = await waitFor(async () => { const r = await getRun(r5.id); return r.status === 'stopped' ? r : null; }, 'cancel', 20000);
+  assert.equal(cancelled.stats.opened || 0, 0, 'cancel during collecting opens no ad');
+
   // Cross-site requests to the local API are refused.
   const evil = await fetch(`${app.panelUrl}api/scan`, { method: 'POST', headers: { origin: 'https://evil.example' }, body: '{}' });
   assert.equal(evil.status, 403);

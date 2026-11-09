@@ -121,6 +121,13 @@ class Cloud {
 
   stop() { clearInterval(this.timer); this.timer = null; }
 
+  /** Check in again in a moment (after a command, or when a search changes state). */
+  syncSoon(ms = 1500) {
+    if (!this.enabled) return;
+    clearTimeout(this.soon);
+    this.soon = setTimeout(() => this.sync().catch(() => {}), ms);
+  }
+
   /** A message for the phone (run finished, captcha…); the host sends it with its settings. */
   forward(msg) {
     if (!this.enabled) return false;
@@ -236,7 +243,10 @@ class Cloud {
       this.saveState({ pending: this.pending });
     } else if (q.kind === 'cmd') {
       const { runId, action } = q.body || {};
-      if (this.scanner.current && this.scanner.current.id === runId && ['continue', 'pause', 'resume', 'stop'].includes(action)) this.scanner[action]();
+      if (this.scanner.current && this.scanner.current.id === runId && ['continue', 'pause', 'resume', 'stop', 'cancel'].includes(action)) {
+        this.scanner[action]();
+        this.syncSoon(); // let the panel see the change right away
+      }
     }
   }
 
