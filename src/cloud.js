@@ -156,12 +156,23 @@ class Cloud {
         this.loggedIn = await isLoggedIn(this.context).catch(() => null);
       }
       const { payload, sent } = this.buildPayload();
-      const res = await this.fetch(`${this.cfg.url}api/bot/sync`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-radyab-key': this.cfg.key },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(60000),
-      });
+      const body1 = JSON.stringify(payload);
+      // A new connection to the host sometimes times out; try again right away before giving up.
+      let res;
+      for (let attempt = 1; ; attempt++) {
+        try {
+          res = await this.fetch(`${this.cfg.url}api/bot/sync`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', 'x-radyab-key': this.cfg.key },
+            body: body1,
+            signal: AbortSignal.timeout(60000),
+          });
+          break;
+        } catch (netErr) {
+          if (attempt >= 3) throw new Error('اتصال به پنل آنلاین برقرار نشد (اینترنت یا هاست). ربات کمی بعد دوباره امتحان می‌کند.');
+          await new Promise((r) => setTimeout(r, 1500 * attempt));
+        }
+      }
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `پاسخ پنل: ${res.status}`);
 
