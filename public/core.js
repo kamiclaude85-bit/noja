@@ -93,6 +93,43 @@ function conditionClass(text) {
   return null;
 }
 
+// ---------- city ----------
+const CITIES = [['tehran', 'تهران'], ['karaj', 'کرج'], ['mashhad', 'مشهد'], ['isfahan', 'اصفهان'], ['shiraz', 'شیراز'], ['tabriz', 'تبریز'],
+  ['ahvaz', 'اهواز'], ['qom', 'قم'], ['rasht', 'رشت'], ['kermanshah', 'کرمانشاه'], ['urmia', 'ارومیه'], ['kerman', 'کرمان'], ['yazd', 'یزد'],
+  ['hamedan', 'همدان'], ['qazvin', 'قزوین'], ['arak', 'اراک'], ['sari', 'ساری'], ['gorgan', 'گرگان'], ['zanjan', 'زنجان'], ['ardabil', 'اردبیل'],
+  ['bandar-abbas', 'بندرعباس'], ['zahedan', 'زاهدان'], ['iran', 'سراسر ایران']];
+const CITY_NAME = Object.fromEntries(CITIES);
+
+/** The city of an ad: from the place line («تهران، شهرری»), else from the search that found it. */
+function cityOf(ad) {
+  const place = P.placeOf(ad.post && ad.post.subtitle);
+  const first = place.split('،')[0].trim();
+  if (CITIES.some(([, n]) => n === first)) return first;
+  for (const key of ad.searches || []) {
+    const s = App.searches.find((x) => x.key === key);
+    const c = s && s.criteria && s.criteria.city;
+    if (c && c !== 'iran') return CITY_NAME[c] || c;
+  }
+  return '';
+}
+
+/** The city chosen for reviewing ads ('' = all cities); remembered on this device. */
+function reviewCity() { return prefs.get('radyab.city', ''); }
+function inCity(ad, city = reviewCity()) { return !city || cityOf(ad) === city; }
+
+/** «شهر» select with the cities that have ads; `onchange(city)`. */
+function citySelect(onchange) {
+  const cur = reviewCity();
+  const counts = new Map();
+  for (const a of App.ads.values()) { const c = cityOf(a); if (c) counts.set(c, (counts.get(c) || 0) + 1); }
+  if (cur && !counts.has(cur)) counts.set(cur, 0);
+  const list = Array.from(counts.entries()).sort((x, y) => y[1] - x[1]);
+  return h('label', { class: 'period-sel' }, icon('pin', 'sm'),
+    h('select', { 'aria-label': 'شهر', onchange: (e) => { prefs.set('radyab.city', e.target.value); onchange(e.target.value); } },
+      h('option', { value: '' }, 'همهٔ شهرها'),
+      list.map(([c, n]) => h('option', { value: c, selected: c === cur }, `${c} (${fa(n)})`))));
+}
+
 // ---------- period («آگهی‌های تا چه مدت پیش») ----------
 const PERIODS = [[7, '۱ هفتهٔ اخیر'], [14, '۲ هفتهٔ اخیر'], [30, '۱ ماه اخیر'], [60, '۲ ماه اخیر'], [90, '۳ ماه اخیر'], [0, 'همه']];
 const DEFAULT_PERIOD = 30;
@@ -238,7 +275,7 @@ const App = {
 
 /** «قیمت‌یاب» numbers, from the ads of the chosen period only (prices change quickly). */
 App.computeGuide = () => {
-  const ads = Array.from(App.ads.values()).filter((a) => a.post && inPeriod(a));
+  const ads = Array.from(App.ads.values()).filter((a) => a.post && inPeriod(a) && inCity(a));
   App.guide = globalThis.NojaDeals.priceGuide(ads.map((a) => ({ ...a.post, removed: a.removed })));
 };
 

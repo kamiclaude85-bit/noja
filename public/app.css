@@ -729,3 +729,7 @@ tr.sold { opacity: .55; }
 .d-values-h { display: flex; align-items: baseline; gap: 8px; font-size: 13.5px; }
 .d-values-h small { color: var(--good); }
 .d-guide .why { flex-basis: 100%; color: var(--good); }
+/* «مدل و سال» headings in the list */
+.list .row[data-group] { margin-top: 30px; position: relative; overflow: visible; }
+.list .row[data-group]:first-child { margin-top: 26px; }
+.list .row[data-group]::before { content: attr(data-group); position: absolute; top: -25px; inset-inline-start: 2px; font-weight: 800; font-size: 14px; color: var(--text); }

@@ -168,7 +168,7 @@ test('Persian dates, «X پیش», place and car model', () => {
   assert.equal(saved.publishedApprox, true);
   // Model groups: same model whether read with breadcrumbs or from «برند و مدل».
   assert.equal(P.modelOf({ brand: 'شاهین G' }).key, P.modelOf({ brand: 'شاهین G CVT', make: 'سایپا', model: 'شاهین', trim: 'G CVT' }).key);
-  assert.deepEqual(P.modelOf({ brand: 'پژو 206 SD V8' }), { key: '206', label: 'پژو 206', trim: 'SD V8' });
+  assert.deepEqual(P.modelOf({ brand: 'پژو 206 SD V8' }), { key: 'پژو 206', label: 'پژو 206', trim: 'SD V8' });
   assert.equal(P.modelOf({}).label, 'نامشخص');
 });
 

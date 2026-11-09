@@ -243,7 +243,7 @@ function guideOf(p) {
 function renderPrices(view, params) {
   const entries = App.guide || [];
   if (!entries.length) {
-    view.replaceChildren(h('div', { class: 'page' }, pageHead('قیمت‌یاب', 'برای هر خودرو، قیمت خوب برای خرید و فروش.', periodSelect(() => { App.computeGuide(); render(); })),
+    view.replaceChildren(h('div', { class: 'page' }, pageHead('قیمت‌یاب', 'برای هر خودرو، قیمت خوب برای خرید و فروش.', [citySelect(() => { App.computeGuide(); render(); }), periodSelect(() => { App.computeGuide(); render(); })]),
       h('div', { class: 'empty big' }, icon('trend', 'xl'), h('b', null, App.ads.size ? 'در این بازهٔ زمانی آگهی کافی نیست' : 'هنوز آگهی کافی نیست'),
         h('p', null, App.ads.size ? 'بازهٔ زمانی بالای صفحه را بیشتر کنید، یا جستجوی تازه بزنید.' : 'وقتی ربات چند آگهی از یک خودرو بخواند، قیمت‌ها اینجا می‌آیند.'),
         h('a', { class: 'btn primary lg', href: '#/search' }, icon('search'), 'جستجوی جدید'))));
@@ -319,7 +319,7 @@ function renderPrices(view, params) {
 
   view.replaceChildren(h('div', { class: 'page' },
     pageHead('قیمت‌یاب', 'قیمت‌ها از آگهی‌های دیوار است؛ آگهی‌های اقساطی حساب نمی‌شوند. پای معامله معمولاً چند درصد پایین‌تر بسته می‌شود.',
-      periodSelect(() => { App.computeGuide(); render(); })),
+      [citySelect(() => { App.computeGuide(); render(); }), periodSelect(() => { App.computeGuide(); render(); })]),
     chips, myCard, h('div', { class: 'guide-grid' }, cards)));
   if (sure.length) { fillTrims(); calc(); }
 }
@@ -331,7 +331,8 @@ function renderAds(view, params) {
   const modelKey = params.get('model') || '';
   const trimKey = params.get('trim') || '';
   const period = reviewPeriod();
-  const inSearch = (a) => (!searchKey || a.searches.includes(searchKey)) && inPeriod(a, period);
+  const city = reviewCity();
+  const inSearch = (a) => (!searchKey || a.searches.includes(searchKey)) && inPeriod(a, period) && inCity(a, city);
   const inModel = (a) => {
     if (!modelKey) return true;
     const m = P.modelOf(a.post);
@@ -369,7 +370,7 @@ function renderAds(view, params) {
 
   const box = h('div');
   view.replaceChildren(h('div', { class: 'page wide' },
-    pageHead('پیگیری آگهی‌ها', 'هر آگهی را مثل یک لید پیگیری کنید: تماس، قرار بازدید، یادداشت.', [periodSelect(() => render()), searchSel,
+    pageHead('پیگیری آگهی‌ها', 'هر آگهی را مثل یک لید پیگیری کنید: تماس، قرار بازدید، یادداشت.', [citySelect(() => render()), periodSelect(() => render()), searchSel,
       h('a', { class: 'btn', href: '#/search' }, icon('plus', 'sm'), 'جستجوی جدید')]),
     tabs, quick, strip, box));
   drawStrip();
@@ -398,10 +399,7 @@ function renderAds(view, params) {
 function renderSearch(view) {
   const saved = prefs.get('noja.form', {});
   const val = (k, d = '') => (saved[k] != null ? saved[k] : d);
-  const cities = [['tehran', 'تهران'], ['karaj', 'کرج'], ['mashhad', 'مشهد'], ['isfahan', 'اصفهان'], ['shiraz', 'شیراز'], ['tabriz', 'تبریز'],
-    ['ahvaz', 'اهواز'], ['qom', 'قم'], ['rasht', 'رشت'], ['kermanshah', 'کرمانشاه'], ['urmia', 'ارومیه'], ['kerman', 'کرمان'], ['yazd', 'یزد'],
-    ['hamedan', 'همدان'], ['qazvin', 'قزوین'], ['arak', 'اراک'], ['sari', 'ساری'], ['gorgan', 'گرگان'], ['zanjan', 'زنجان'], ['ardabil', 'اردبیل'],
-    ['bandar-abbas', 'بندرعباس'], ['zahedan', 'زاهدان'], ['iran', 'سراسر ایران']];
+  const cities = CITIES;
   const select = h('select', { name: 'city' }, cities.map(([v, t]) => h('option', { value: v, selected: val('city', 'tehran') === v }, t)));
   const speed = h('select', { name: 'speed' },
     [['slow', 'آهسته — طبیعی‌ترین رفتار'], ['normal', 'معمولی'], ['fast', 'سریع']].map(([v, t]) => h('option', { value: v, selected: val('speed', 'normal') === v }, t)));
@@ -888,39 +886,67 @@ async function renderSettings(view) {
 function renderDeals(view, params) {
   const caution = params.get('view') === 'caution';
   const searchKey = params.get('search') || '';
-  const inSearch = (a) => !searchKey || a.searches.includes(searchKey);
-  const pick = (a) => {
-    const d = App.deals.get(a.token);
-    if (!d || !inSearch(a) || a.removed || stageOf(a) === 'rejected') return false;
-    return caution ? d.level === 'caution' : d.deal;
+  const modelKey = params.get('model') || '';
+  const year = Number(params.get('year')) || 0;
+  const city = reviewCity();
+  const period = reviewPeriod();
+  const base = (a) => (!searchKey || a.searches.includes(searchKey)) && inCity(a, city) && inPeriod(a, period) && !a.removed && stageOf(a) !== 'rejected';
+  const isPick = (a, c) => { const d = App.deals.get(a.token); return !!d && (c ? d.level === 'caution' : d.deal); };
+  const picks = allAds().filter((a) => base(a) && isPick(a, caution));
+  const count = (c) => allAds().filter((a) => base(a) && isPick(a, c)).length;
+  const nav = (patch) => {
+    const keep = { ...(searchKey ? { search: searchKey } : {}), ...(caution ? { view: 'caution' } : {}), ...(modelKey ? { model: modelKey } : {}), ...(year ? { year } : {}) };
+    location.hash = `#/deals?${new URLSearchParams(Object.entries({ ...keep, ...patch }).filter(([, v]) => v))}`;
   };
-  const count = (c) => allAds().filter((a) => { const d = App.deals.get(a.token); return d && inSearch(a) && !a.removed && stageOf(a) !== 'rejected' && (c ? d.level === 'caution' : d.deal); }).length;
-  const nav = (patch) => { const q = new URLSearchParams({ ...(searchKey ? { search: searchKey } : {}), ...patch }); location.hash = `#/deals?${q}`; };
   const tabs = h('div', { class: 'stage-tabs', role: 'tablist' },
-    h('button', { role: 'tab', type: 'button', 'aria-selected': String(!caution), onclick: () => nav({}) }, icon('flame', 'sm'), 'پیشنهاد ویژه', h('small', { class: 'num' }, fa(count(false)))),
+    h('button', { role: 'tab', type: 'button', 'aria-selected': String(!caution), onclick: () => nav({ view: '' }) }, icon('flame', 'sm'), 'پیشنهاد ویژه', h('small', { class: 'num' }, fa(count(false)))),
     h('button', { role: 'tab', type: 'button', 'aria-selected': String(caution), onclick: () => nav({ view: 'caution' }) }, icon('alert', 'sm'), 'خیلی ارزان — با احتیاط', h('small', { class: 'num' }, fa(count(true)))));
-  const searchSel = App.searches.length > 1 ? h('select', { class: 'search-sel', 'aria-label': 'جستجو', onchange: (e) => {
-    const q = new URLSearchParams(params); if (e.target.value) q.set('search', e.target.value); else q.delete('search'); location.hash = `#/deals?${q}`;
-  } }, h('option', { value: '' }, 'همهٔ جستجوها'), App.searches.map((s) => h('option', { value: s.key, selected: s.key === searchKey }, describeCriteria(s.criteria)))) : null;
+  const searchSel = App.searches.length > 1 ? h('select', { class: 'search-sel', 'aria-label': 'جستجو', onchange: (e) => nav({ search: e.target.value }) },
+    h('option', { value: '' }, 'همهٔ جستجوها'), App.searches.map((s) => h('option', { value: s.key, selected: s.key === searchKey }, describeCriteria(s.criteria)))) : null;
+
+  // Model → year: deals are only comparable within the same model and model year.
+  const models = new Map();
+  for (const a of picks) {
+    const m = P.modelOf(a.post);
+    const g = models.get(m.key) || { key: m.key, label: m.label, n: 0, years: new Map() };
+    g.n++;
+    if (a.post.year) g.years.set(a.post.year, (g.years.get(a.post.year) || 0) + 1);
+    models.set(m.key, g);
+  }
+  const list = Array.from(models.values()).sort((x, y) => y.n - x.n);
+  const sel = models.get(modelKey);
+  const modelChips = list.length > 1 || modelKey ? h('div', { class: 'quick' },
+    h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(!modelKey), onclick: () => nav({ model: '', year: '' }) }, 'همهٔ مدل‌ها', h('small', null, fa(picks.length))),
+    list.map((g) => h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(g.key === modelKey), onclick: () => nav({ model: g.key, year: '' }) }, g.label, h('small', null, fa(g.n))))) : null;
+  const yearChips = sel && sel.years.size ? h('div', { class: 'quick trims' },
+    h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(!year), onclick: () => nav({ year: '' }) }, 'همهٔ سال‌ها', h('small', null, fa(sel.n))),
+    Array.from(sel.years.entries()).sort((x, y) => y[0] - x[0]).map(([y, n]) => h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(y === year), onclick: () => nav({ year: y }) }, faYear(y), h('small', null, fa(n))))) : null;
+  // The market for the chosen model + year, so each deal can be judged against it.
+  const market = sel && year ? App.guide.filter((g) => g.enough && g.modelKey === modelKey && g.year === year) : [];
+  const marketLine = market.length ? h('div', { class: 'notice soft' }, icon('trend'), h('div', { class: 'grow' },
+    market.map((g, i) => [i ? ' · ' : '', h('bdi', null, `${g.trim || g.label} ${faYear(g.year)}: `), 'بازار ', h('b', { class: 'num' }, formatPrice(g.market)), ' · خرید خوب تا ', h('b', { class: 'num' }, formatPrice(g.buyGood))]))) : null;
+
   const box = h('div');
   view.replaceChildren(h('div', { class: 'page wide' },
     pageHead('پیشنهاد ویژه', caution
       ? 'این آگهی‌ها خیلی ارزان‌تر از بقیه‌اند یا قیمتشان احتمالاً پیش‌پرداخت/اقساطی است. قبل از هر کاری با دقت بررسی کنید.'
-      : 'آگهی‌هایی که از ماشین‌های هم‌مدل و هم‌سال (با در نظر گرفتن کارکرد و سلامت بدنه و موتور) ارزان‌ترند.', [searchSel]),
-    tabs,
-    h('div', { class: 'notice soft' }, icon('shield'), h('div', { class: 'grow' },
-      'هر آگهی فقط با آگهی‌های همان مدل و همان سال مقایسه می‌شود (حداقل ۳ آگهی مشابه). هرچه آگهی بیشتری جمع شود، پیشنهادها دقیق‌تر می‌شوند.')),
-    box));
+      : 'هر آگهی فقط با آگهی‌های همان مدل و همان سال مقایسه شده (با در نظر گرفتن کارکرد، سلامت بدنه و موتور، و امکانات).',
+    [citySelect(() => render()), periodSelect(() => render()), searchSel]),
+    tabs, modelChips, yearChips, marketLine, box));
   mountBrowser({
     root: box,
     key: `deals.${searchKey || 'all'}`,
     criteria: {},
-    getPosts: () => allAds().filter(pick).map((a, i) => ({ ...a.post, isNew: false, priceChange: null, order: i })),
-    title: (n) => `${caution ? 'با احتیاط' : 'پیشنهاد ویژه'} — ${fa(n)} آگهی`,
+    getPosts: () => allAds().filter((a) => base(a) && isPick(a, caution))
+      .filter((a) => !modelKey || P.modelOf(a.post).key === modelKey)
+      .filter((a) => !year || a.post.year === year)
+      .map((a, i) => ({ ...a.post, isNew: false, priceChange: null, order: i })),
+    title: (n) => `${caution ? 'با احتیاط' : 'پیشنهاد ویژه'}${sel ? ` — ${sel.label}${year ? ` ${faYear(year)}` : ''}` : ''} — ${fa(n)} آگهی`,
     emptyTitle: caution ? 'آگهی مشکوکی نیست' : 'فعلاً پیشنهاد ویژه‌ای نیست',
-    emptyText: 'وقتی آگهی‌ای از هم‌مدل‌هایش ارزان‌تر باشد، اینجا می‌آید.',
+    emptyText: 'وقتی آگهی‌ای از هم‌مدل‌ها و هم‌سال‌هایش ارزان‌تر باشد، اینجا می‌آید.',
   });
-  B.sort = 'deal';
+  // Grouped: model, then newest model year, then the best deal first.
+  B.sort = 'model-year';
   renderResults();
   const open = params.get('open');
   if (open) setTimeout(() => openDrawer(open), 50);

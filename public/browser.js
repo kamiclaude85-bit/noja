@@ -212,6 +212,16 @@ function sortList(list) {
     case 'km-asc': return list.sort(by((p) => p.mileage, 1));
     case 'year-desc': return list.sort(by((p) => p.year, -1));
     case 'published': return list.sort(by((p) => p.publishedAt || null, -1));
+    case 'model-year': {
+      // biggest model first, then the newest model year, then the best deal / cheapest
+      const size = new Map();
+      for (const p of list) { const k = P.modelOf(p).key; size.set(k, (size.get(k) || 0) + 1); }
+      return list.sort((a, b) => {
+        const ka = P.modelOf(a).key; const kb = P.modelOf(b).key;
+        return (size.get(kb) - size.get(ka)) || ka.localeCompare(kb) || (b.year || 0) - (a.year || 0)
+          || ((b._deal ? b._deal.score : -1) - (a._deal ? a._deal.score : -1)) || (a.price || 0) - (b.price || 0);
+      });
+    }
     case 'deal': return list.sort(by((p) => (p._deal ? p._deal.score : null), -1));
     case 'next-call': return list.sort(by((p) => (p._ad && p._ad.crm && p._ad.crm.nextCallAt) || null, 1));
     case 'updated': return list.sort(by((p) => (p._ad && p._ad.crm && p._ad.crm.updatedAt) || (p._ad && p._ad.firstSeenAt) || null, -1));
@@ -265,7 +275,7 @@ function renderResults() {
   const personal = list.filter((p) => p.seller === 'personal').length;
   if (list.length) summary.push(h('span', null, ` · ${fa(personal)} شخصی، ${fa(list.length - personal)} نمایشگاهی`));
 
-  const sortOpts = [['default', 'جدیدترین در دیوار'], ['price-asc', 'ارزان‌ترین'], ['price-desc', 'گران‌ترین'], ['km-asc', 'کم‌کارکردترین'], ['year-desc', 'جدیدترین مدل'], ['published', 'تازه‌ترین انتشار'],
+  const sortOpts = [['default', 'جدیدترین در دیوار'], ['price-asc', 'ارزان‌ترین'], ['price-desc', 'گران‌ترین'], ['km-asc', 'کم‌کارکردترین'], ['year-desc', 'جدیدترین مدل'], ['published', 'تازه‌ترین انتشار'], ['model-year', 'مدل و سال'],
     ['deal', 'بهترین پیشنهاد'], ['updated', 'آخرین پیگیری'], ['next-call', 'نزدیک‌ترین تماس']];
   const sortSel = h('select', { 'aria-label': 'مرتب‌سازی', onchange: (e) => { B.sort = e.target.value; prefs.set('noja.sort', B.sort); renderResults(); } },
     sortOpts.map(([v, t]) => h('option', { value: v, selected: B.sort === v }, t)));
@@ -315,6 +325,16 @@ function renderResults() {
       if (ul.children[i] !== entry.el) ul.insertBefore(entry.el, ul.children[i] || null);
     });
     for (const [token, entry] of B.rows) if (!seen.has(token)) { entry.el.remove(); B.rows.delete(token); }
+    // «مدل و سال»: a small heading above the first ad of each model + year.
+    let prev = '';
+    list.forEach((p) => {
+      const el = B.rows.get(p.token).el;
+      const m = P.modelOf(p);
+      const key = `${m.key}|${p.year || ''}`;
+      if (B.sort === 'model-year' && key !== prev) el.dataset.group = `${m.label}${p.year ? ` · ${faYear(p.year)}` : ''}`;
+      else delete el.dataset.group;
+      prev = key;
+    });
     const sk = $('.skeleton', ul);
     if (active) { if (!sk) ul.append(h('div', { class: 'skeleton', 'aria-hidden': 'true' })); else ul.append(sk); } else if (sk) sk.remove();
   }

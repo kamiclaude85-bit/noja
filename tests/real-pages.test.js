@@ -69,7 +69,7 @@ test('real personal ad: every spec, the seller assessment, photos and descriptio
   assert.equal(p.publishedApprox, undefined, 'exact, not estimated');
   // breadcrumbs: پژو › 206 › تیپ ۲
   assert.deepEqual([p.make, p.model, p.trim], ['پژو', '206', 'تیپ ۲']);
-  assert.deepEqual(P.modelOf(p), { key: '206', label: 'پژو 206', trim: 'تیپ ۲' });
+  assert.deepEqual(P.modelOf(p), { key: 'پژو 206', label: 'پژو 206', trim: 'تیپ ۲' });
   assert.equal(p.price, 1655000000);
   assert.equal(p.mileage, 170000);
   assert.equal(p.year, 1397);

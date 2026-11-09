@@ -181,7 +181,7 @@ function refreshAdsPage(params) {
   const tabs = $('.stage-tabs');
   if (tabs) {
     const searchKey = params.get('search') || '';
-    const ads = allAds().filter((a) => (!searchKey || a.searches.includes(searchKey)) && inPeriod(a));
+    const ads = allAds().filter((a) => (!searchKey || a.searches.includes(searchKey)) && inPeriod(a) && inCity(a));
     $$('button', tabs).forEach((b, i) => { $('small', b).textContent = fa(ads.filter((a) => adTabMatch(adFlags(a), AD_TABS[i][0])).length); });
     $$('.quick:not(.trims) button').forEach((b, i) => { $('small', b).textContent = fa(ads.filter((a) => adTabMatch(adFlags(a), null, Object.keys(AD_VIEWS)[i])).length); });
   }

@@ -184,19 +184,18 @@
     'دانگ‌فنگ', 'دنگ‌فنگ', 'بایک', 'کی‌ام‌سی', 'فیدلیتی', 'دیگنیتی', 'سانگ‌یانگ', 'تارا', 'آریسان', 'زامیاد', 'مدیران', 'کرمان', 'لاماری', 'جیپ', 'لندرور', 'پورشه', 'آئودی', 'ولوو', 'سیتروئن'];
 
   /** Which car model an ad is: { key, label, trim }. Uses Divar's breadcrumbs when read, else «برند و مدل». */
-  // The key is the model name alone («206», «شاهین»), so an ad read with breadcrumbs
-  // («سایپا › شاهین › G») and one saved earlier («شاهین G») land in the same group.
+  // Models whose second word is a different vehicle (پیکان وانت / پیکان سواری).
+  const WITH_BODY = ['پیکان'];
   function modelOf(post) {
-    const brand = String(post.brand || '').replace(/\s+/g, ' ').trim();
-    if (post.make && post.model) {
-      const label = normalizeText(brand).startsWith(normalizeText(post.make)) ? `${post.make} ${post.model}` : post.model;
-      return { key: normalizeText(post.model), label: label.trim(), trim: post.trim || '' };
-    }
+    // «برند و مدل» is the most consistent source (Divar's breadcrumbs sometimes skip a level:
+    // «شاهین › G», «کیا › نسل دوم»); breadcrumbs are used only when it is missing.
+    const brand = String(post.brand || (post.make ? `${post.make} ${post.model || ''} ${post.trim || ''}` : '')).replace(/s+/g, ' ').trim();
     if (!brand) return { key: '', label: 'نامشخص', trim: '' };
     const words = brand.split(' ');
-    const n = words.length >= 2 && MAKES.includes(words[0]) ? 2 : 1;
-    return { key: normalizeText(words[n - 1]), label: words.slice(0, n).join(' '), trim: words.slice(n).join(' ') };
+    const n = words.length >= 2 && (MAKES.includes(words[0]) || WITH_BODY.includes(words[0])) ? 2 : 1;
+    return { key: normalizeText(words.slice(0, n).join(' ')), label: words.slice(0, n).join(' '), trim: words.slice(n).join(' ') };
   }
+
 
   /** Extract the post token from a Divar post link (/v/<slug>/<token>). */
   function extractTokenFromHref(href) {
