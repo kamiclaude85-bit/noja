@@ -145,6 +145,7 @@ function render() {
   closeOverlay();
   unmountBrowser();
   stopRunView();
+  refreshModelStrip = null;
   toggleSide(false);
   bellPop.hidden = true;
   markNav(route);
@@ -181,8 +182,9 @@ function refreshAdsPage(params) {
     const searchKey = params.get('search') || '';
     const ads = allAds().filter((a) => !searchKey || a.searches.includes(searchKey));
     $$('button', tabs).forEach((b, i) => { $('small', b).textContent = fa(ads.filter((a) => adTabMatch(adFlags(a), AD_TABS[i][0])).length); });
-    $$('.quick button').forEach((b, i) => { $('small', b).textContent = fa(ads.filter((a) => adTabMatch(adFlags(a), null, Object.keys(AD_VIEWS)[i])).length); });
+    $$('.quick:not(.trims) button').forEach((b, i) => { $('small', b).textContent = fa(ads.filter((a) => adTabMatch(adFlags(a), null, Object.keys(AD_VIEWS)[i])).length); });
   }
+  if (refreshModelStrip) refreshModelStrip();
   refreshBrowser();
 }
 

@@ -211,6 +211,7 @@ function sortList(list) {
     case 'price-desc': return list.sort(by((p) => p.price, -1));
     case 'km-asc': return list.sort(by((p) => p.mileage, 1));
     case 'year-desc': return list.sort(by((p) => p.year, -1));
+    case 'published': return list.sort(by((p) => p.publishedAt || null, -1));
     case 'deal': return list.sort(by((p) => (p._deal ? p._deal.score : null), -1));
     case 'next-call': return list.sort(by((p) => (p._ad && p._ad.crm && p._ad.crm.nextCallAt) || null, 1));
     case 'updated': return list.sort(by((p) => (p._ad && p._ad.crm && p._ad.crm.updatedAt) || (p._ad && p._ad.firstSeenAt) || null, -1));
@@ -264,7 +265,7 @@ function renderResults() {
   const personal = list.filter((p) => p.seller === 'personal').length;
   if (list.length) summary.push(h('span', null, ` · ${fa(personal)} شخصی، ${fa(list.length - personal)} نمایشگاهی`));
 
-  const sortOpts = [['default', 'جدیدترین در دیوار'], ['price-asc', 'ارزان‌ترین'], ['price-desc', 'گران‌ترین'], ['km-asc', 'کم‌کارکردترین'], ['year-desc', 'جدیدترین مدل'],
+  const sortOpts = [['default', 'جدیدترین در دیوار'], ['price-asc', 'ارزان‌ترین'], ['price-desc', 'گران‌ترین'], ['km-asc', 'کم‌کارکردترین'], ['year-desc', 'جدیدترین مدل'], ['published', 'تازه‌ترین انتشار'],
     ['deal', 'بهترین پیشنهاد'], ['updated', 'آخرین پیگیری'], ['next-call', 'نزدیک‌ترین تماس']];
   const sortSel = h('select', { 'aria-label': 'مرتب‌سازی', onchange: (e) => { B.sort = e.target.value; prefs.set('noja.sort', B.sort); renderResults(); } },
     sortOpts.map(([v, t]) => h('option', { value: v, selected: B.sort === v }, t)));
@@ -356,7 +357,7 @@ function renderRow(p, d) {
     h('div', { class: 'row-main' },
       h('div', { class: 'row-top' }, f.stage !== 'new' ? stageChip(f.stage) : null, p.isNew ? h('span', { class: 'new-pill' }, 'جدید') : null),
       h('h3', null, p.title || 'بدون عنوان'),
-      p.subtitle ? h('div', { class: 'where' }, icon('pin', 'sm'), p.subtitle) : null,
+      publishedLine(p),
       h('div', { class: 'facts' },
         p.year || p.yearText ? h('span', null, icon('calendar'), p.year ? faYear(p.year) : p.yearText) : null,
         p.mileage != null || p.mileageText ? h('span', { class: 'num' }, icon('gauge'), p.mileage != null ? `${fa(p.mileage)} کیلومتر` : p.mileageText) : null,
@@ -401,7 +402,7 @@ function renderTable(list, med) {
       cell(p.mileage != null ? fa(p.mileage) : p.mileageText, 'num'),
       cell(p.color), cell(p.gearbox), cell(p.body, conditionClass(p.body)),
       cell(c.nextCallAt ? whenFa(c.nextCallAt) : '', p._f.callDue ? 'bad' : null),
-      cell(p.subtitle));
+      cell([P.placeOf(p.subtitle), p.publishedAt ? `انتشار ${p.publishedApprox ? roughAgoFa(p.publishedAt) : agoFa(p.publishedAt)}` : ''].filter(Boolean).join(' · ')));
   });
   return h('div', { class: 'table-wrap' }, h('table', null, h('thead', null, head), h('tbody', null, rows)));
 }
@@ -641,7 +642,8 @@ function openDrawer(token, keepScroll) {
       imgs.length > 1 ? thumbs : null,
       h('div', { class: 'd-section' },
         h('h2', { class: 'd-title' }, p.title),
-        p.subtitle ? h('div', { class: 'where', style: 'margin-top:4px' }, icon('pin', 'sm'), p.subtitle) : null,
+        publishedLine(p, 'where d-where'),
+        p.publishedAt ? h('div', { class: 'muted', style: 'font-size:12.5px;margin-top:2px' }, `انتشار آگهی: ${dateTimeFa(p.publishedAt)}${p.publishedApprox ? ' (تقریبی)' : ''}`) : null,
         h('div', { class: 'd-price' },
           p.price ? h('div', { class: 'price num' }, formatPrice(p.price), ' ', h('small', null, 'تومان')) : h('div', { class: 'price none' }, p.priceText || 'بدون قیمت'),
           d ? h('span', { class: `delta ${d.cls}` }, d.text) : null,
@@ -694,7 +696,7 @@ function openCompare() {
     ['رنگ', (p) => p.color || '—'], ['گیربکس', (p) => p.gearbox || '—'],
     ['بدنه', (p) => h('span', { class: conditionClass(p.body) === 'bad' ? 'cond bad' : null }, p.body || '—')],
     ['موتور', (p) => h('span', { class: conditionClass(p.engine) === 'bad' ? 'cond bad' : null }, p.engine || '—')],
-    ['شاسی', (p) => p.chassis || '—'], ['بیمه', (p) => p.insurance || '—'], ['محل', (p) => p.subtitle || '—'],
+    ['شاسی', (p) => p.chassis || '—'], ['بیمه', (p) => p.insurance || '—'], ['محل', (p) => P.placeOf(p.subtitle) || '—'], ['انتشار', (p) => (p.publishedAt ? (p.publishedApprox ? roughAgoFa(p.publishedAt) : agoFa(p.publishedAt)) : '—')],
     ['', (p) => (safeDivarUrl(p.url) ? h('a', { class: 'btn sm', href: safeDivarUrl(p.url), target: '_blank', rel: 'noopener' }, icon('external', 'sm'), 'دیوار') : '')],
   ];
   const scrim = h('div', { class: 'scrim', onclick: closeOverlay });
@@ -715,7 +717,7 @@ function exportCsv() {
     ['مدل', (p) => p.year ?? p.yearText], ['کارکرد', (p) => p.mileage ?? p.mileageText], ['رنگ', (p) => p.color],
     ['گیربکس', (p) => p.gearbox], ['سوخت', (p) => p.fuel], ['بدنه', (p) => p.body], ['موتور', (p) => p.engine],
     ['شاسی', (p) => p.chassis], ['بیمه', (p) => p.insurance], ['برند و تیپ', (p) => p.brand], ['معاوضه', (p) => p.exchange],
-    ['زمان و محل', (p) => p.subtitle], ['لینک', (p) => p.url], ['توضیحات', (p) => p.description],
+    ['محل', (p) => P.placeOf(p.subtitle)], ['انتشار آگهی', (p) => (p.publishedAt ? `${dateTimeFa(p.publishedAt)}${p.publishedApprox ? ' (تقریبی)' : ''}` : '')], ['لینک', (p) => p.url], ['توضیحات', (p) => p.description],
   ];
   const esc = (v) => { const s = v == null ? '' : String(v); return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   const lines = [cols.map(([k]) => esc(k)).join(','), ...posts.map((p) => cols.map(([, fn]) => esc(fn(p))).join(','))];

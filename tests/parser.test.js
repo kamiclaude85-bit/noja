@@ -148,3 +148,26 @@ test('saved ads get the new seller rule; sure dealers stay dealers', () => {
   const sure = { title: 'پژو', description: '', fields: {}, seller: 'dealer', sellerConfidence: 'high', sellerReasons: ['برچسب «نمایشگاه در فردوس»'] };
   assert.deepEqual(P.reclassifySaved({ ...sure }).sellerReasons, ['برچسب «نمایشگاه در فردوس»']);
 });
+
+test('Persian dates, «X پیش», place and car model', () => {
+  assert.deepEqual(P.jalaliToGregorian(1405, 8, 18), [2026, 11, 9]);
+  assert.deepEqual(P.jalaliToGregorian(1404, 1, 1), [2025, 3, 21]);
+  assert.deepEqual(P.jalaliToGregorian(1403, 12, 30), [2025, 3, 20]);
+  assert.equal(new Date(P.parseFaDateTime('۱ فروردین ۱۴۰۵، ۰۰:۰۰')).toISOString(), '2026-03-20T20:30:00.000Z');
+  assert.equal(P.parseFaDateTime('بدون تاریخ'), null);
+  const at = Date.UTC(2026, 10, 9, 12);
+  assert.equal(P.parseRelativeAgo('۳ ساعت پیش در تهران', at), at - 3 * 3600000);
+  assert.equal(P.parseRelativeAgo('۲ هفته پیش', at), at - 14 * 86400000);
+  assert.equal(P.parseRelativeAgo('دیروز در تهران', at), at - 86400000);
+  assert.equal(P.parseRelativeAgo('نمایشگاه در فردوس', at), null);
+  assert.equal(P.placeOf('۲ ساعت پیش در تهران، شهرری'), 'تهران، شهرری');
+  assert.equal(P.placeOf('نمایشگاه در فردوس'), 'نمایشگاه در فردوس');
+  // Saved ads without the exact date get an estimate, marked as such.
+  const saved = P.estimatePublished({ subtitle: '۶ ساعت پیش در تهران، نارمک' }, at);
+  assert.equal(saved.publishedAt, at - 6 * 3600000);
+  assert.equal(saved.publishedApprox, true);
+  // Model groups: same model whether read with breadcrumbs or from «برند و مدل».
+  assert.equal(P.modelOf({ brand: 'شاهین G' }).key, P.modelOf({ brand: 'شاهین G CVT', make: 'سایپا', model: 'شاهین', trim: 'G CVT' }).key);
+  assert.deepEqual(P.modelOf({ brand: 'پژو 206 SD V8' }), { key: '206', label: 'پژو 206', trim: 'SD V8' });
+  assert.equal(P.modelOf({}).label, 'نامشخص');
+});

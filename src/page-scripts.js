@@ -219,6 +219,29 @@ function extractAdPage() {
   };
   const bizLink = root.querySelector('a[href*="/business"], a[href*="dealership"], a[href*="/shop/"]');
   if (bizLink) result.business_ref = bizLink.getAttribute('href');
+
+  // Breadcrumbs: … › خودرو سواری و وانت › پژو › 206 › تیپ ۲ › <title>. The part after the
+  // vehicle category is make › model › trim.
+  const crumbs = Array.from(document.querySelectorAll('nav[aria-label="breadcrumbs"] li, [class*="breadcrumbs__item"]'))
+    .map((li) => clean(li.textContent)).filter(Boolean);
+  const cat = crumbs.findIndex((c) => /سواری|وانت/.test(c));
+  if (cat >= 0) {
+    const rest = crumbs.slice(cat + 1).filter((c) => c !== title);
+    if (rest.length >= 2) result.crumbs = rest.slice(0, 4);
+  }
+
+  // «انتشار آگهی: ۱۷ آبان ۱۴۰۵، ۲۲:۵۶» / «آخرین نردبان: …» — inside the (folded) time/place row.
+  const info = {};
+  for (const el of root.querySelectorAll('[class*="info-row"] [class*="description-row__text"], [class*="info-row__content"]')) {
+    for (const line of String(el.textContent || '').split(/\n|(?=آخرین)/)) {
+      const m = line.match(/^\s*(انتشار آگهی|آخرین نردبان|آخرین به[‌\s]*روز[‌\s]*رسانی)\s*[:：]\s*(.+?)\s*$/);
+      if (!m) continue;
+      if (/انتشار/.test(m[1])) info.published = info.published || m[2];
+      else if (/نردبان/.test(m[1])) info.bumped = info.bumped || m[2];
+      else info.updated = info.updated || m[2];
+    }
+  }
+  if (info.published) result.publishInfo = info;
   return result;
 }
 

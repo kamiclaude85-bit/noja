@@ -162,16 +162,93 @@ function adTabMatch(f, tab, viewName) {
   return f.stage === tab;
 }
 
+// =========================================================
+// Car models: one card per model (real photo, number of ads, average price and model year)
+// =========================================================
+let refreshModelStrip = null;
+
+function modelGroups(ads) {
+  const groups = new Map();
+  for (const a of ads) {
+    const m = P.modelOf(a.post);
+    let g = groups.get(m.key);
+    if (!g) groups.set(m.key, (g = { key: m.key, label: m.label, ads: [], trims: new Map() }));
+    g.ads.push(a);
+    const tk = P.normalizeText(m.trim);
+    const t = g.trims.get(tk) || { key: tk, label: m.trim || 'بدون تیپ', ads: [] };
+    t.ads.push(a);
+    g.trims.set(tk, t);
+  }
+  return Array.from(groups.values()).sort((x, y) => y.ads.length - x.ads.length || x.label.localeCompare(y.label, 'fa'));
+}
+
+function groupStats(ads) {
+  const prices = ads.map((a) => a.post.price).filter((n) => n > 0);
+  const years = ads.map((a) => a.post.year).filter((n) => n > 1300);
+  const avg = (xs) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null);
+  // Photo: the newest ad of the group that has one.
+  const withImg = ads.filter((a) => (a.post.images || []).length)
+    .sort((x, y) => (y.post.publishedAt || y.firstSeenAt || 0) - (x.post.publishedAt || x.firstSeenAt || 0))[0];
+  return { count: ads.length, price: avg(prices), year: avg(years), img: withImg ? safeImg(withImg.post.images[0]) : null };
+}
+
+/** The row of model cards (and the trim chips of the chosen model). `go(model, trim)` navigates. */
+function modelStrip(ads, modelKey, trimKey, go) {
+  const groups = modelGroups(ads);
+  if (groups.length < 2 && !modelKey) return [];
+  const pic = (src) => h('img', { src, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' });
+  const card = (key, label, st, pressed, onclick) => h('button', { class: 'model-card', type: 'button', 'aria-pressed': String(pressed), onclick },
+    h('div', { class: `mc-img${st.imgs ? ` mosaic n${st.imgs.length}` : ''}` },
+      st.imgs ? st.imgs.map(pic) : st.img ? pic(st.img) : icon('image', 'lg')),
+    h('b', null, label),
+    h('span', { class: 'mc-count' }, `${fa(st.count)} آگهی`),
+    h('dl', null,
+      h('dt', null, 'میانگین قیمت'), h('dd', { class: 'num' }, st.price ? formatPrice(Math.round(st.price)) : '—'),
+      h('dt', null, 'میانگین مدل'), h('dd', { class: 'num' }, st.year ? faYear(Math.round(st.year)) : '—')));
+  const all = groupStats(ads);
+  // «همه»: one real photo from each of the biggest models.
+  const imgs = groups.map((g) => groupStats(g.ads).img).filter(Boolean).slice(0, 4);
+  if (imgs.length > 1) all.imgs = imgs.length === 3 ? imgs.slice(0, 2) : imgs;
+  const cards = [card('', 'همه', all, !modelKey, () => go('', ''))];
+  for (const g of groups) cards.push(card(g.key, g.label, groupStats(g.ads), g.key === modelKey, () => go(g.key, '')));
+  const out = [h('div', { class: 'models', role: 'group', 'aria-label': 'مدل خودرو' }, cards)];
+  const sel = groups.find((g) => g.key === modelKey);
+  if (sel && sel.trims.size > 1) {
+    const trims = Array.from(sel.trims.values()).sort((x, y) => y.ads.length - x.ads.length);
+    out.push(h('div', { class: 'quick trims' },
+      h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(!trimKey), onclick: () => go(modelKey, '') }, 'همهٔ تیپ‌ها', h('small', null, fa(sel.ads.length))),
+      trims.map((t) => h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(t.key === trimKey), onclick: () => go(modelKey, t.key) },
+        t.label, h('small', null, fa(t.ads.length))))));
+  }
+  return out;
+}
+
 function renderAds(view, params) {
   const viewName = AD_VIEWS[params.get('view')] ? params.get('view') : null;
   const tab = viewName ? null : (params.get('stage') || 'active');
   const searchKey = params.get('search') || '';
+  const modelKey = params.get('model') || '';
+  const trimKey = params.get('trim') || '';
   const inSearch = (a) => !searchKey || a.searches.includes(searchKey);
+  const inModel = (a) => {
+    if (!modelKey) return true;
+    const m = P.modelOf(a.post);
+    return m.key === modelKey && (!trimKey || P.normalizeText(m.trim) === trimKey);
+  };
   const ads = allAds().filter(inSearch);
+  // Switching tabs keeps the chosen model; choosing a model keeps the tab.
   const nav = (patch) => {
-    const q = new URLSearchParams({ ...(searchKey ? { search: searchKey } : {}), ...patch });
+    const keep = { ...(searchKey ? { search: searchKey } : {}), ...(modelKey ? { model: modelKey } : {}), ...(trimKey ? { trim: trimKey } : {}) };
+    const q = new URLSearchParams(Object.entries({ ...keep, ...patch }).filter(([, v]) => v));
     location.hash = `#/ads?${q}`;
   };
+  const here = viewName ? { view: viewName } : { stage: tab };
+  const strip = h('div', { class: 'models-wrap' });
+  const drawStrip = () => strip.replaceChildren(...modelStrip(
+    allAds().filter(inSearch).filter((a) => adTabMatch(adFlags(a), tab, viewName)),
+    modelKey, trimKey,
+    (m, t) => nav({ ...here, model: m || '', trim: t || '' })));
+  refreshModelStrip = drawStrip;
 
   const tabs = h('div', { class: 'stage-tabs', role: 'tablist' },
     AD_TABS.map(([k, label]) => {
@@ -192,7 +269,8 @@ function renderAds(view, params) {
   view.replaceChildren(h('div', { class: 'page wide' },
     pageHead('پیگیری آگهی‌ها', 'هر آگهی را مثل یک لید پیگیری کنید: تماس، قرار بازدید، یادداشت.', [searchSel,
       h('a', { class: 'btn', href: '#/search' }, icon('plus', 'sm'), 'جستجوی جدید')]),
-    tabs, quick, box));
+    tabs, quick, strip, box));
+  drawStrip();
 
   const title = viewName ? AD_VIEWS[viewName] : (AD_TABS.find((t) => t[0] === tab) || [null, ''])[1];
   mountBrowser({
@@ -200,7 +278,7 @@ function renderAds(view, params) {
     key: `ads.${searchKey || 'all'}`,
     criteria: {},
     // isNew / priceChange belong to a single run; here the stage tabs say what is new.
-    getPosts: () => allAds().filter(inSearch).filter((a) => adTabMatch(adFlags(a), tab, viewName))
+    getPosts: () => allAds().filter(inSearch).filter(inModel).filter((a) => adTabMatch(adFlags(a), tab, viewName))
       .sort((x, y) => (y.firstSeenAt || 0) - (x.firstSeenAt || 0) || (x.post.order || 0) - (y.post.order || 0))
       .map((a, i) => ({ ...a.post, isNew: false, priceChange: null, order: i })),
     title: (n) => `${title} — ${fa(n)} آگهی`,

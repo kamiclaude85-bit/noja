@@ -93,6 +93,36 @@ function conditionClass(text) {
   return null;
 }
 
+// ---------- publish time & place ----------
+/** «۱۷ آبان ۱۴۰۵، ۲۲:۵۶» */
+function dateTimeFa(t) {
+  return new Date(t).toLocaleString('fa-IR', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+/** For an estimated time: «حدود ۵ ساعت پیش», «حدود ۳ روز پیش» (no false minutes). */
+function roughAgoFa(t) {
+  const hrs = Math.max(0, (Date.now() - t) / 3600000);
+  if (hrs < 1) return 'کمتر از یک ساعت پیش';
+  if (hrs < 24) return `حدود ${fa(Math.round(hrs))} ساعت پیش`;
+  const d = Math.round(hrs / 24);
+  return d < 30 ? `حدود ${fa(d)} روز پیش` : `حدود ${fa(Math.round(d / 30))} ماه پیش`;
+}
+
+/** «انتشار: ۲ روز پیش» (+ «نردبان: …» when bumped later), with the exact date on hover. */
+function publishedLine(p, cls = 'where') {
+  const place = P.placeOf(p.subtitle);
+  const bits = [];
+  if (place) bits.push(h('span', null, icon('pin', 'sm'), place));
+  if (p.publishedAt) {
+    const exact = `${dateTimeFa(p.publishedAt)}${p.publishedApprox ? ' (تقریبی)' : ''}`;
+    bits.push(h('span', { class: 'pub', title: `انتشار آگهی: ${exact}` }, icon('clock', 'sm'), `انتشار ${p.publishedApprox ? roughAgoFa(p.publishedAt) : agoFa(p.publishedAt)}`));
+  }
+  if (p.bumpedAt && (!p.publishedAt || p.bumpedAt - p.publishedAt > 3600000)) {
+    bits.push(h('span', { class: 'pub', title: `آخرین نردبان: ${dateTimeFa(p.bumpedAt)}` }, `نردبان ${agoFa(p.bumpedAt)}`));
+  }
+  return bits.length ? h('div', { class: cls }, bits) : null;
+}
+
 function sellerLabel(p) {
   if (p.seller === 'dealer') return p.sellerConfidence === 'high' ? 'نمایشگاهی' : 'احتمالاً نمایشگاهی';
   return 'شخصی';

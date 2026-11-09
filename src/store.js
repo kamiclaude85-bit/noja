@@ -50,9 +50,12 @@ class Store {
   reclassifyAll() {
     for (const [token, rec] of Object.entries(this.db.ads || {})) {
       if (!rec || !rec.post) continue;
-      const before = `${rec.post.seller}|${rec.post.sellerConfidence}|${(rec.post.sellerReasons || []).join()}`;
+      const sig = () => `${rec.post.seller}|${rec.post.sellerConfidence}|${(rec.post.sellerReasons || []).join()}|${rec.post.publishedAt || ''}`;
+      const before = sig();
       P.reclassifySaved(rec.post);
-      if (before !== `${rec.post.seller}|${rec.post.sellerConfidence}|${(rec.post.sellerReasons || []).join()}`) this.changes.ads.add(token);
+      // Ads saved before the publish date was read: estimate it from «X ساعت پیش» at read time.
+      P.estimatePublished(rec.post, rec.lastReadAt || rec.firstSeenAt);
+      if (before !== sig()) this.changes.ads.add(token);
     }
   }
 

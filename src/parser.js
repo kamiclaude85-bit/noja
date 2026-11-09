@@ -59,6 +59,89 @@
     return n;
   }
 
+  // ---------- dates ----------
+  const FA_MONTHS = ['فروردین', 'اردیبهشت', 'خرداد', 'تیر', 'مرداد', 'شهریور', 'مهر', 'آبان', 'آذر', 'دی', 'بهمن', 'اسفند'];
+
+  /** Jalali (Persian) date -> [gy, gm, gd]. */
+  function jalaliToGregorian(jy, jm, jd) {
+    jy += 1595;
+    let days = -355668 + 365 * jy + Math.floor(jy / 33) * 8 + Math.floor(((jy % 33) + 3) / 4) + jd + (jm < 7 ? (jm - 1) * 31 : (jm - 7) * 30 + 186);
+    let gy = 400 * Math.floor(days / 146097);
+    days %= 146097;
+    if (days > 36524) {
+      days -= 1;
+      gy += 100 * Math.floor(days / 36524);
+      days %= 36524;
+      if (days >= 365) days += 1;
+    }
+    gy += 4 * Math.floor(days / 1461);
+    days %= 1461;
+    if (days > 365) {
+      gy += Math.floor((days - 1) / 365);
+      days = (days - 1) % 365;
+    }
+    let gd = days + 1;
+    const leap = (gy % 4 === 0 && gy % 100 !== 0) || gy % 400 === 0;
+    const months = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let gm = 0;
+    while (gm < 12 && gd > months[gm]) { gd -= months[gm]; gm++; }
+    return [gy, gm + 1, gd];
+  }
+
+  /** «۱۷ آبان ۱۴۰۵، ۲۲:۵۶» (Tehran time) -> epoch ms, or null. */
+  function parseFaDateTime(text) {
+    const s = toEnDigits(text).replace(/[‌‏‎]/g, ' ');
+    const m = s.match(/(\d{1,2})\s*(فروردین|اردیبهشت|خرداد|تیر|مرداد|شهریور|مهر|آبان|آذر|دی|بهمن|اسفند)\s*(\d{4})(?:\D+(\d{1,2}):(\d{2}))?/);
+    if (!m) return null;
+    const [gy, gm, gd] = jalaliToGregorian(Number(m[3]), FA_MONTHS.indexOf(m[2]) + 1, Number(m[1]));
+    // Iran has no daylight saving time since 1401: always UTC+03:30.
+    return Date.UTC(gy, gm - 1, gd, Number(m[4] || 0), Number(m[5] || 0)) - 3.5 * 3600000;
+  }
+
+  /** «۲ ساعت پیش در …» seen at time `at` -> approximate epoch ms, or null. */
+  function parseRelativeAgo(text, at) {
+    const s = toEnDigits(text || '');
+    const MIN = 60000;
+    const unit = { دقیقه: MIN, ساعت: 60 * MIN, روز: 1440 * MIN, هفته: 7 * 1440 * MIN, ماه: 30 * 1440 * MIN, سال: 365 * 1440 * MIN };
+    const m = s.match(/(\d+)\s*(دقیقه|ساعت|روز|هفته|ماه|سال)\s*پیش/);
+    if (m) return at - Number(m[1]) * unit[m[2]];
+    if (/لحظاتی پیش|همین الان/.test(s)) return at;
+    if (/دقایقی پیش/.test(s)) return at - 5 * MIN;
+    if (/ربع ساعت پیش/.test(s)) return at - 15 * MIN;
+    if (/نیم ساعت پیش/.test(s)) return at - 30 * MIN;
+    if (/پریروز/.test(s)) return at - 2 * 1440 * MIN;
+    if (/دیروز/.test(s)) return at - 1440 * MIN;
+    return null;
+  }
+
+  /** Place part of «۲ ساعت پیش در تهران، شهرری» -> «تهران، شهرری». */
+  function placeOf(subtitle) {
+    const s = String(subtitle || '').trim();
+    const m = s.match(/(?:پیش|دیروز|پریروز)\s+در\s+(.+)$/) || s.match(/^در\s+(.+)$/);
+    return m ? m[1].trim() : s;
+  }
+
+  // ---------- car model ----------
+  // Makes that Divar writes before the model («پژو 206 تیپ ۲»); otherwise the first word is the model («شاهین G»).
+  const MAKES = ['پژو', 'سایپا', 'ایران', 'ایران‌خودرو', 'رنو', 'کیا', 'هیوندای', 'تویوتا', 'نیسان', 'مزدا', 'میتسوبیشی', 'سوزوکی', 'هوندا',
+    'بنز', 'بی‌ام‌و', 'ب‌ام‌و', 'فولکس', 'فولکس‌واگن', 'شورولت', 'فورد', 'لکسوس', 'جک', 'چری', 'ام‌وی‌ام', 'هایما', 'لیفان', 'جیلی', 'بسترن',
+    'دانگ‌فنگ', 'دنگ‌فنگ', 'بایک', 'کی‌ام‌سی', 'فیدلیتی', 'دیگنیتی', 'سانگ‌یانگ', 'تارا', 'آریسان', 'زامیاد', 'مدیران', 'کرمان', 'لاماری', 'جیپ', 'لندرور', 'پورشه', 'آئودی', 'ولوو', 'سیتروئن'];
+
+  /** Which car model an ad is: { key, label, trim }. Uses Divar's breadcrumbs when read, else «برند و مدل». */
+  // The key is the model name alone («206», «شاهین»), so an ad read with breadcrumbs
+  // («سایپا › شاهین › G») and one saved earlier («شاهین G») land in the same group.
+  function modelOf(post) {
+    const brand = String(post.brand || '').replace(/\s+/g, ' ').trim();
+    if (post.make && post.model) {
+      const label = normalizeText(brand).startsWith(normalizeText(post.make)) ? `${post.make} ${post.model}` : post.model;
+      return { key: normalizeText(post.model), label: label.trim(), trim: post.trim || '' };
+    }
+    if (!brand) return { key: '', label: 'نامشخص', trim: '' };
+    const words = brand.split(' ');
+    const n = words.length >= 2 && MAKES.includes(words[0]) ? 2 : 1;
+    return { key: normalizeText(words[n - 1]), label: words.slice(0, n).join(' '), trim: words.slice(n).join(' ') };
+  }
+
   /** Extract the post token from a Divar post link (/v/<slug>/<token>). */
   function extractTokenFromHref(href) {
     if (!href) return null;
@@ -246,6 +329,20 @@
     }
     post.chassis = chassisParts.join('، ');
 
+    // Divar's breadcrumbs: پژو › 206 › تیپ ۲ (exact model and trim).
+    const crumbs = json && Array.isArray(json.crumbs) ? json.crumbs.map(asText).filter(Boolean) : [];
+    if (crumbs.length >= 2) {
+      post.make = crumbs[0];
+      post.model = crumbs[1];
+      post.trim = crumbs.slice(2).join(' ');
+    }
+    // «انتشار آگهی: ۱۷ آبان ۱۴۰۵، ۲۲:۵۶» and «آخرین نردبان: …» from the time/place row.
+    const pub = json && json.publishInfo && typeof json.publishInfo === 'object' ? json.publishInfo : {};
+    const publishedAt = pub.published ? parseFaDateTime(pub.published) : null;
+    if (publishedAt) { post.publishedAt = publishedAt; post.publishedText = asText(pub.published); }
+    const bumpedAt = pub.bumped ? parseFaDateTime(pub.bumped) : null;
+    if (bumpedAt) post.bumpedAt = bumpedAt;
+
     // Fallbacks from the search-list card the content script saw.
     if (listInfo) {
       if (!post.title && listInfo.title) post.title = listInfo.title;
@@ -274,6 +371,18 @@
       if (STRONG_DEALER_RE.test(t)) strongDealer.push(`برچسب «${t}»`);
     }
     classifySeller(post, { strongDealer, personalMarks });
+    estimatePublished(post, Date.now());
+    return post;
+  }
+
+  /**
+   * When the exact «انتشار آگهی» date was not on the page (or the ad was saved before it was read),
+   * estimate it from «۲ ساعت پیش» and the time it was read. Marked `publishedApprox`.
+   */
+  function estimatePublished(post, readAt) {
+    if (!post || post.publishedAt || !readAt) return post;
+    const t = parseRelativeAgo(post.subtitle, readAt);
+    if (t) { post.publishedAt = t; post.publishedApprox = true; }
     return post;
   }
 
@@ -411,6 +520,12 @@
     classifySeller,
     reclassifySaved,
     installmentWords,
+    parseFaDateTime,
+    parseRelativeAgo,
+    jalaliToGregorian,
+    estimatePublished,
+    placeOf,
+    modelOf,
     matchesCriteria,
     buildSearchUrl,
     median,

@@ -64,6 +64,12 @@ test('real personal ad: every spec, the seller assessment, photos and descriptio
 
   assert.equal(p.title, '۲۰۶شاسی سالم بی رنگ..');
   assert.equal(p.subtitle, '۲ ساعت پیش در تهران، شهرری');
+  // «انتشار آگهی: ۱۷ آبان ۱۴۰۵، ۲۲:۵۶» (Tehran) from the folded time/place row
+  assert.equal(new Date(p.publishedAt).toISOString(), '2026-11-08T19:26:00.000Z');
+  assert.equal(p.publishedApprox, undefined, 'exact, not estimated');
+  // breadcrumbs: پژو › 206 › تیپ ۲
+  assert.deepEqual([p.make, p.model, p.trim], ['پژو', '206', 'تیپ ۲']);
+  assert.deepEqual(P.modelOf(p), { key: '206', label: 'پژو 206', trim: 'تیپ ۲' });
   assert.equal(p.price, 1655000000);
   assert.equal(p.mileage, 170000);
   assert.equal(p.year, 1397);
@@ -100,6 +106,9 @@ test('real dealer ad: front/rear chassis, paint, insurance; dealer from keywords
   const p = P.extractPost(raw, 'gaYDmVII');
 
   assert.equal(p.price, 1450000000);
+  // published ۲۹ مهر ۱۴۰۵، ۱۰:۱۹ and bumped («نردبان») ۱۷ آبان ۱۴۰۵، ۱۰:۵۷
+  assert.equal(new Date(p.publishedAt).toISOString(), '2026-10-21T06:49:00.000Z');
+  assert.equal(new Date(p.bumpedAt).toISOString(), '2026-11-08T07:27:00.000Z');
   assert.equal(p.mileage, 150000);
   assert.equal(p.year, 1397);
   assert.equal(p.color, 'مشکی');
