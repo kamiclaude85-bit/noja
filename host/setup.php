@@ -16,7 +16,8 @@ $isLocal = in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1'], true);
 
 if (!$done && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     $f = function ($k) { return trim((string) ($_POST[$k] ?? '')); };
-    $driver = $isLocal && $f('driver') === 'sqlite' ? 'sqlite' : 'mysql';
+    // Built-in database (a file in the protected data/ folder) unless a MySQL database is given.
+    $driver = $f('db_name') !== '' ? 'mysql' : 'sqlite';
     try {
         if ($f('user') === '' || mb_strlen($_POST['pass'] ?? '') < 8) throw new Exception('نام کاربری را بنویسید و رمزی با دست‌کم ۸ حرف انتخاب کنید.');
         if (($_POST['pass'] ?? '') !== ($_POST['pass2'] ?? '')) throw new Exception('دو رمز یکی نیستند.');
@@ -76,15 +77,18 @@ h1{margin:0;text-align:center;color:var(--primary);font-size:24px} h2{font-size:
   <a class="btn primary lg" href="./">رفتن به پنل</a>
 <?php else: ?>
   <form method="post" style="display:flex;flex-direction:column;gap:14px" autocomplete="off">
-    <h2>دیتابیس (از کنترل‌پنل هاست)</h2>
-    <?php if ($isLocal): ?><label class="check"><input type="checkbox" name="driver" value="sqlite"> آزمایش محلی با SQLite</label><?php endif; ?>
-    <label class="field"><span>نام دیتابیس</span><input name="db_name" dir="ltr" value="<?= $h($_POST['db_name'] ?? '') ?>"></label>
-    <label class="field"><span>کاربر دیتابیس</span><input name="db_user" dir="ltr" value="<?= $h($_POST['db_user'] ?? '') ?>"></label>
-    <label class="field"><span>رمز دیتابیس</span><input name="db_pass" type="password" dir="ltr"></label>
-    <h2>ورود به پنل</h2>
+    <h2>نام کاربری و رمز پنل را انتخاب کنید</h2>
     <label class="field"><span>نام کاربری</span><input name="user" dir="ltr" autocomplete="username" value="<?= $h($_POST['user'] ?? '') ?>"></label>
     <label class="field"><span>رمز (دست‌کم ۸ حرف)</span><input name="pass" type="password" dir="ltr" autocomplete="new-password"></label>
     <label class="field"><span>تکرار رمز</span><input name="pass2" type="password" dir="ltr" autocomplete="new-password"></label>
+    <details>
+      <summary class="muted">دیتابیس MySQL جدا (اختیاری)</summary>
+      <div style="display:flex;flex-direction:column;gap:14px;margin-top:12px">
+        <label class="field"><span>نام دیتابیس</span><input name="db_name" dir="ltr" value="<?= $h($_POST['db_name'] ?? '') ?>"></label>
+        <label class="field"><span>کاربر دیتابیس</span><input name="db_user" dir="ltr" value="<?= $h($_POST['db_user'] ?? '') ?>"></label>
+        <label class="field"><span>رمز دیتابیس</span><input name="db_pass" type="password" dir="ltr"></label>
+      </div>
+    </details>
     <?php if ($error): ?><p class="form-error" role="alert"><?= $h($error) ?></p><?php endif; ?>
     <button class="btn primary lg" type="submit">راه‌اندازی</button>
   </form>

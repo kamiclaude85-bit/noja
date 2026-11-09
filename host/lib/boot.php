@@ -30,6 +30,9 @@ function db(): PDO {
     radyab_config();
     if (RADYAB_DB_DRIVER === 'sqlite') {
         $pdo = new PDO('sqlite:' . RADYAB_DB_SQLITE);
+        // The panel and the bot's check-ins can write at the same moment: wait instead of failing.
+        $pdo->exec('PRAGMA busy_timeout = 8000');
+        $pdo->exec('PRAGMA journal_mode = WAL');
     } else {
         $pdo = new PDO('mysql:host=' . RADYAB_DB_HOST . ';dbname=' . RADYAB_DB_NAME . ';charset=utf8mb4', RADYAB_DB_USER, RADYAB_DB_PASS);
     }

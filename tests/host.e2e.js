@@ -48,7 +48,7 @@ async function main() {
     for (let i = 0; i < 50; i++) { try { await fetch(BASE); break; } catch (_) { await sleep(100); } }
 
     // ---- setup, like the owner ----
-    const form = new URLSearchParams({ driver: 'sqlite', user: 'owner', pass: 'test-pass-123', pass2: 'test-pass-123' });
+    const form = new URLSearchParams({ user: 'owner', pass: 'test-pass-123', pass2: 'test-pass-123' });
     const setupHtml = await (await fetch(`${BASE}setup.php`, { method: 'POST', body: form })).text();
     const key = (setupHtml.match(/rk_[a-f0-9]{40}/) || [])[0];
     assert.ok(key, 'setup shows the bot key');
