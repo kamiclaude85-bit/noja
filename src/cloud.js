@@ -17,8 +17,37 @@ const { cleanCriteria } = require('./server');
 const SYNC_EVERY = 20000;
 const BATCH = 150; // ads per request, so the first full upload is sent in parts
 
+/**
+ * POST JSON over a fresh connection, with up to 30 s to connect. (Node's fetch gives up
+ * connecting after 10 s and reuses idle connections that the network may have dropped;
+ * from Iran a new connection to the host sometimes takes ~10 s.) Returns a fetch-like response.
+ */
+function postJson(url, { headers = {}, body = '', timeout = 60000 } = {}) {
+  const u = new URL(url);
+  const mod = u.protocol === 'https:' ? require('node:https') : require('node:http');
+  return new Promise((resolve, reject) => {
+    const req = mod.request(u, {
+      method: 'POST', agent: false, timeout: 30000,
+      headers: { 'content-type': 'application/json', 'content-length': Buffer.byteLength(body), ...headers },
+    }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => {
+        const text = Buffer.concat(chunks).toString('utf8');
+        resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, json: async () => JSON.parse(text) });
+      });
+      res.on('error', reject);
+    });
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    const all = setTimeout(() => req.destroy(new Error('timeout')), timeout);
+    req.on('close', () => clearTimeout(all));
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
 class Cloud {
-  constructor({ store, scanner, context, dataDir, log = () => {}, fetchImpl = fetch }) {
+  constructor({ store, scanner, context, dataDir, log = () => {}, fetchImpl }) {
     this.store = store;
     this.scanner = scanner;
     this.context = context;
@@ -31,7 +60,8 @@ class Cloud {
     this.st = { cursor: 0, uploaded: false };
     try { this.st = { ...this.st, ...JSON.parse(fs.readFileSync(this.stateFile, 'utf8')) }; } catch (_) { /* none */ }
     this.events = [];   // messages for the phone, delivered by the host
-    this.pending = [];  // searches from the phone waiting for the bot to be free
+    // Searches from the phone waiting for the bot to be free (kept on disk, so a restart does not lose them).
+    this.pending = Array.isArray(this.st.pending) ? this.st.pending : [];
     this.status = { lastSyncAt: null, lastError: null };
     this.timer = null;
     this.running = false;
@@ -150,6 +180,7 @@ class Cloud {
   async sync() {
     if (!this.enabled || this.running) return false;
     this.running = true;
+    this.startPending(); // searches from the phone start when the bot is free, even if the host is slow to answer
     try {
       if (this.context) {
         const { isLoggedIn } = require('./scanner');
@@ -161,12 +192,10 @@ class Cloud {
       let res;
       for (let attempt = 1; ; attempt++) {
         try {
-          res = await this.fetch(`${this.cfg.url}api/bot/sync`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', 'x-radyab-key': this.cfg.key },
-            body: body1,
-            signal: AbortSignal.timeout(60000),
-          });
+          const url = `${this.cfg.url}api/bot/sync`;
+          res = this.fetch
+            ? await this.fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', 'x-radyab-key': this.cfg.key }, body: body1, signal: AbortSignal.timeout(60000) })
+            : await postJson(url, { headers: { 'x-radyab-key': this.cfg.key }, body: body1 });
           break;
         } catch (netErr) {
           if (attempt >= 3) throw new Error('اتصال به پنل آنلاین برقرار نشد (اینترنت یا هاست). ربات کمی بعد دوباره امتحان می‌کند.');
@@ -204,6 +233,7 @@ class Cloud {
   take(q) {
     if (q.kind === 'scan') {
       this.pending.push(cleanCriteria(q.body || {}));
+      this.saveState({ pending: this.pending });
     } else if (q.kind === 'cmd') {
       const { runId, action } = q.body || {};
       if (this.scanner.current && this.scanner.current.id === runId && ['continue', 'pause', 'resume', 'stop'].includes(action)) this.scanner[action]();
@@ -213,6 +243,7 @@ class Cloud {
   startPending() {
     if (!this.pending.length || this.scanner.busy) return;
     const criteria = this.pending.shift();
+    this.saveState({ pending: this.pending });
     try { this.scanner.start(criteria); } catch (e) { this.log(e); }
   }
 }
