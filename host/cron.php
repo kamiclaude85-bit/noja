@@ -1,7 +1,7 @@
 <?php
 /*
  * Run every minute from the host's cron (cPanel → Cron Jobs):
- *   php /home/USER/radyab.nojakasht.com/cron.php
+ *   /usr/local/bin/php /home/nojakash/radyab.nojakasht.com/cron.php > /dev/null 2>&1
  * Sends due phone reminders even when nobody has the panel open and the PC is off,
  * and takes the daily backup.
  */
