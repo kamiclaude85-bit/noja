@@ -63,6 +63,10 @@ function cleanCriteria(b) {
     recheckAll: !!b.recheckAll,
     trackRecheckHours: b.trackRecheckHours != null && Number(b.trackRecheckHours) >= 0 ? Number(b.trackRecheckHours) : 20,
     searchUrl,
+    // Searches started together («خرید با بودجه»): one id, so «پایان» can stop all of them.
+    batch: /^[a-z0-9]{4,16}$/.test(b.batch || '') ? b.batch : '',
+    // «خرید با بودجه»: after this price-range search, gather the same-model ads of what it found.
+    budget: b.budget && Number(b.budget.max) > 0 ? { min: Number(b.budget.min) || 0, max: Number(b.budget.max), personalOnly: !!b.budget.personalOnly } : null,
   };
 }
 
@@ -116,8 +120,19 @@ function createServer({ scanner, store, context, notifier, cloud }) {
           today: store.dailyCount(),
           dailyLimit: DEFAULT_DAILY_LIMIT,
           runs: store.listRuns(),
+          // Searches waiting their turn (phone, «خرید با بودجه»)
+          queue: cloud ? cloud.pending.map((c) => ({ id: c.qid, createdAt: c.queuedAt, criteria: c })) : [],
         });
       }
+      // Several searches, one after another (they wait their turn; the daily cap is respected).
+      if (p === '/api/scan-batch' && req.method === 'POST' && cloud) {
+        const items = (await readBody(req)).items;
+        if (!Array.isArray(items) || !items.length || items.length > 20) return send(res, 400, { error: 'فهرست جستجو نامعتبر است.' });
+        const n = cloud.enqueue(items.map(cleanCriteria));
+        return send(res, 200, { queued: true, count: n });
+      }
+      const qm = p.match(/^\/api\/queue\/([a-z0-9]+)$/);
+      if (qm && req.method === 'DELETE' && cloud) { cloud.dequeue(qm[1]); return send(res, 200, { ok: true }); }
       if (p === '/api/scan' && req.method === 'POST') {
         const criteria = cleanCriteria(await readBody(req));
         if (!criteria.query && !criteria.searchUrl && !criteria.priceMin && !criteria.priceMax) {

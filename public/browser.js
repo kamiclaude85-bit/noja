@@ -377,6 +377,7 @@ function renderRow(p, d) {
     h('div', { class: 'row-main' },
       h('div', { class: 'row-top' }, f.stage !== 'new' ? stageChip(f.stage) : null, p.isNew ? h('span', { class: 'new-pill' }, 'جدید') : null),
       h('h3', null, p.title || 'بدون عنوان'),
+      B.opts.rowNote ? B.opts.rowNote(p) : null,
       publishedLine(p),
       h('div', { class: 'facts' },
         p.year || p.yearText ? h('span', null, icon('calendar'), p.year ? faYear(p.year) : p.yearText) : null,

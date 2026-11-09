@@ -287,10 +287,8 @@ App.refreshState = async () => {
     App.state = { ...App.state, ...(await api('/api/state')) };
     App.offline = false;
     App.host = App.state.mode === 'host';
-    if (App.host) {
-      App.bot = App.state.bot || { online: false, lastSeenAt: null };
-      App.queue = App.state.queue || [];
-    }
+    App.queue = App.state.queue || []; // searches waiting their turn (phone, «خرید با بودجه»)
+    if (App.host) App.bot = App.state.bot || { online: false, lastSeenAt: null };
   } catch (_) {
     App.offline = true;
   }

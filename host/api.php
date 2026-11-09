@@ -78,6 +78,12 @@ try {
         $id = queue_add('scan', $c);
         json_out(200, ['queued' => true, 'id' => $id]);
     }
+    if ($path === '/scan-batch' && $method === 'POST') {
+        $items = body_json(200000)['items'] ?? null;
+        if (!is_array($items) || !$items || count($items) > 20) json_out(400, ['error' => 'فهرست جستجو نامعتبر است.']);
+        foreach ($items as $c) if (is_array($c)) queue_add('scan', $c);
+        json_out(200, ['queued' => true, 'count' => count($items)]);
+    }
     if (preg_match('#^/queue/([a-f0-9]+)$#', $path, $m) && $method === 'DELETE') {
         db()->prepare('DELETE FROM radyab_queue WHERE id = ? AND taken = 0')->execute([$m[1]]);
         json_out(200, ['ok' => true]);

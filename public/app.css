@@ -733,3 +733,11 @@ tr.sold { opacity: .55; }
 .list .row[data-group] { margin-top: 30px; position: relative; overflow: visible; }
 .list .row[data-group]:first-child { margin-top: 26px; }
 .list .row[data-group]::before { content: attr(data-group); position: absolute; top: -25px; inset-inline-start: 2px; font-weight: 800; font-size: 14px; color: var(--text); }
+
+/* «خرید با بودجه» */
+.budget-form .field-big .unit { color: var(--text-3); font-size: 13px; white-space: nowrap; padding-inline-start: 8px; }
+.budget-form .check { margin-top: 10px; }
+.why-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; font-size: 12.5px; margin: 2px 0 4px; }
+.why-row .rank { min-width: 22px; height: 22px; border-radius: 99px; background: var(--primary); color: var(--on-primary); display: inline-grid; place-items: center; font-weight: 800; font-size: 12px; }
+.why-row .why-good { color: var(--good); }
+.why-row .why-bad { color: var(--bad); }

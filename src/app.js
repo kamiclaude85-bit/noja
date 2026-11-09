@@ -5,7 +5,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 const { Store } = require('./store');
 const { Scanner } = require('./scanner');
-const { createServer } = require('./server');
+const { createServer, cleanCriteria } = require('./server');
+const { followUpSearches } = require('./budget');
 const { Notifier } = require('./notify');
 const { Cloud } = require('./cloud');
 
@@ -74,7 +75,24 @@ async function startApp(opts = {}) {
   }
   const notifier = new Notifier({ store, dataDir, log, apiBases: opts.notifyApiBases });
   let cloud = null;
-  const scanner = new Scanner({ context, store, log, onEvent: (run, kind) => { if (cloud) cloud.syncSoon(); return notifier.runEvent(run, kind); } });
+  const onFinish = (run, kind) => {
+    if (!cloud) return;
+    // «پایان» on a batch search («خرید با بودجه») stops the rest of the batch too.
+    if (kind === 'stopped' && run.criteria && run.criteria.batch) cloud.dropBatch(run.criteria.batch);
+    // A budget price-range search: line up the same-model searches it needs.
+    if (kind === 'done' && run.criteria && run.criteria.budget) {
+      try {
+        const more = followUpSearches(store, run).map((c) => cleanCriteria(c));
+        if (more.length) cloud.enqueue(more);
+      } catch (e) { log(e); }
+    }
+    setTimeout(() => cloud.startPending(), 3000); // next search in line
+  };
+  const scanner = new Scanner({ context, store, log, onEvent: (run, kind) => {
+    if (cloud) cloud.syncSoon();
+    if (['done', 'stopped', 'error'].includes(kind)) onFinish(run, kind);
+    return notifier.runEvent(run, kind);
+  } });
   // Online panel (optional): set up from «پنل آنلاین» in the PC panel.
   cloud = new Cloud({ store, scanner, context, dataDir, log, fetchImpl: opts.fetchImpl });
   Object.defineProperty(notifier, 'forward', { get: () => (cloud.enabled ? (m) => cloud.forward(m) : null) });
@@ -97,11 +115,15 @@ async function startApp(opts = {}) {
 
   // Phone reminders: check every minute for due calls and visits.
   const notifyTimer = setInterval(() => { notifier.tick().catch(log); }, 60 * 1000);
+  // Waiting searches held by the daily cap start again after midnight.
+  const queueTimer = setInterval(() => { try { cloud.startPending(); } catch (_) { /* next time */ } }, 30 * 60 * 1000);
+  queueTimer.unref();
   notifyTimer.unref();
 
   const close = async () => {
     clearInterval(backupTimer);
     clearInterval(notifyTimer);
+    clearInterval(queueTimer);
     cloud.stop();
     server.close();
     store.flush();

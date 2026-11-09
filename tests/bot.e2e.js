@@ -392,6 +392,15 @@ const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350)
   const cancelled = await waitFor(async () => { const r = await getRun(r5.id); return r.status === 'stopped' ? r : null; }, 'cancel', 30000);
   assert.equal(cancelled.stats.opened || 0, 0, 'cancel during collecting opens no ad');
 
+  // Two searches sent together («خرید با بودجه» / phone) run one after the other.
+  const runsBefore = (await getJson('api/state')).runs.length;
+  const batchRes = await postJson('api/scan-batch', { items: [
+    { query: 'پژو ۲۰۶', speed: 'test', maxAds: 2, recheckAll: true, maxAgeDays: 0, batch: 'e2eq1' },
+    { query: 'پژو ۲۰۶', speed: 'test', maxAds: 2, recheckAll: true, maxAgeDays: 0, batch: 'e2eq1' },
+  ] });
+  assert.equal(batchRes.queued, true);
+  await waitFor(async () => { const st = await getJson('api/state'); return st.runs.length >= runsBefore + 2 && !st.busy && !st.queue.length; }, 'queued searches ran', 120000);
+
   // Cross-site requests to the local API are refused.
   const evil = await fetch(`${app.panelUrl}api/scan`, { method: 'POST', headers: { origin: 'https://evil.example' }, body: '{}' });
   assert.equal(evil.status, 403);

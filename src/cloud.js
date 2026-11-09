@@ -237,10 +237,29 @@ class Cloud {
   }
 
   /** A search or a command from the phone. */
+  /** Add searches to the waiting line (phone, «خرید با بودجه»). Returns how many are waiting. */
+  enqueue(list) {
+    for (const c of list) this.pending.push({ ...c, qid: Math.random().toString(36).slice(2, 10), queuedAt: Date.now() });
+    this.saveState({ pending: this.pending });
+    setTimeout(() => this.startPending(), 500);
+    return this.pending.length;
+  }
+
+  dequeue(qid) {
+    this.pending = this.pending.filter((c) => c.qid !== qid);
+    this.saveState({ pending: this.pending });
+  }
+
+  /** «پایان» on a search that is part of a batch stops the rest of that batch too. */
+  dropBatch(batch) {
+    if (!batch) return;
+    this.pending = this.pending.filter((c) => c.batch !== batch);
+    this.saveState({ pending: this.pending });
+  }
+
   take(q) {
     if (q.kind === 'scan') {
-      this.pending.push(cleanCriteria(q.body || {}));
-      this.saveState({ pending: this.pending });
+      this.enqueue([cleanCriteria(q.body || {})]);
     } else if (q.kind === 'cmd') {
       const { runId, action } = q.body || {};
       if (this.scanner.current && this.scanner.current.id === runId && ['continue', 'pause', 'resume', 'stop', 'cancel'].includes(action)) {
@@ -252,6 +271,9 @@ class Cloud {
 
   startPending() {
     if (!this.pending.length || this.scanner.busy) return;
+    // Daily cap reached: the rest waits until tomorrow (checked again every hour).
+    const cap = Number(this.pending[0].dailyLimit) || 300;
+    if (this.store.dailyCount() >= cap) return;
     try {
       this.scanner.start(this.pending[0]);
     } catch (e) { this.log(e); return; } // not started: it stays first in line

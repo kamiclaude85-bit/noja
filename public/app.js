@@ -131,7 +131,7 @@ function parseRoute() {
   const params = new URLSearchParams(query || '');
   const m = path.match(/^\/run\/([A-Za-z0-9_-]+)/);
   if (m) return { name: 'run', id: m[1], params };
-  const name = { '/': 'dash', '': 'dash', '/ads': 'ads', '/search': 'search', '/runs': 'runs', '/backup': 'backup', '/settings': 'settings', '/deals': 'deals', '/prices': 'prices' }[path] || 'dash';
+  const name = { '/': 'dash', '': 'dash', '/ads': 'ads', '/search': 'search', '/runs': 'runs', '/backup': 'backup', '/settings': 'settings', '/deals': 'deals', '/prices': 'prices', '/budget': 'budget' }[path] || 'dash';
   return { name, params };
 }
 
@@ -157,6 +157,7 @@ function render() {
       renderAds(view, route.params);
       PAGE.update = () => refreshAdsPage(route.params);
       break;
+    case 'budget': setTitle('خرید با بودجه'); renderBudget(view, route.params); PAGE.update = () => renderBudget(view, parseRoute().params); break;
     case 'prices': setTitle('قیمت‌یاب'); renderPrices(view, route.params); PAGE.update = () => renderPrices(view, parseRoute().params); break;
     case 'deals':
       setTitle('پیشنهاد ویژه');

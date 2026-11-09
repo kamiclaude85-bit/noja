@@ -79,3 +79,49 @@ test('price guide: buy / market / sell per model, trim and year; installments le
   assert.ok(D.myCarPrice(y1401, { body: 'paint' }).sellList < base.sellList);
   assert.ok(D.myCarPrice(y1401, { mileage: 20000, body: 'clean' }).sellList > base.sellList);
 });
+
+test('budget: best buys judged against their own model + year; gaps listed for follow-up searches', () => {
+  const D = require('../src/deals.js');
+  const { followUpSearches } = require('../src/budget.js');
+  const mk = (i, brand, year, price, extra = {}) => ({ token: `b${i}`, brand, year, price, mileage: 100000, title: brand, description: '', seller: 'personal', body: 'سالم و بی‌خط و خش', ...extra });
+  const posts = [
+    ...[960, 990, 1000, 1010, 1020, 1040].map((m, i) => mk(i, 'پژو 206 تیپ ۵', 1397, m * 1e6)),
+    mk(10, 'پژو 206 تیپ ۵', 1397, 900e6, { description: 'لاستیک نو، تسمه تایم تازه' }), // cheapest + extras
+    mk(11, 'پژو 206 تیپ ۵', 1397, 930e6, { body: 'رنگ‌شدگی در ۳ ناحیه' }),
+    mk(12, 'پراید 131 SE', 1399, 950e6), // no comparables
+    mk(13, 'پژو 206 تیپ ۵', 1397, 500e6, { description: 'اقساط بدون ضامن' }), // out of range
+  ];
+  const guide = D.priceGuide(posts);
+  const r = D.budgetPicks(posts, guide, { min: 850e6, max: 1000e6 });
+  assert.equal(r.picks[0].token, 'b10', 'cheapest healthy one with extras ranks first');
+  assert.match(r.picks[0].reasons.join(' '), /زیر قیمت/);
+  assert.match(r.picks[0].reasons.join(' '), /لاستیک نو/);
+  assert.ok(r.picks.find((x) => x.token === 'b11').score < r.picks[0].score, 'paint lowers the score');
+  assert.ok(!r.picks.some((x) => x.post.price > 1000e6), 'over budget left out');
+  assert.equal(r.missing.length, 1);
+  assert.equal(r.missing[0].label, 'پراید');
+  // After the price-range search, the bot lines up a search for the model without comparables.
+  const store = { db: { ads: Object.fromEntries(posts.map((p) => [p.token, { post: p }])) } };
+  const run = { criteria: { city: 'tehran', maxAgeDays: 30, speed: 'slow', batch: 'abc123', budget: { min: 850e6, max: 1000e6 } } };
+  const more = followUpSearches(store, run);
+  assert.deepEqual(more.map((c) => [c.query, c.yearMin, c.yearMax, c.batch]), [['پراید', 1399, 1399, 'abc123']]);
+});
+
+test('search queue: waits for the bot, keeps order, holds at the daily cap, drops a stopped batch', () => {
+  const os = require('node:os');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { Cloud } = require('../src/cloud.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'radyab-queue-'));
+  let today = 0;
+  const started = [];
+  const scanner = { busy: false, start: (c) => { started.push(c.query); return { id: 'x' }; } };
+  const cloud = new Cloud({ store: { dailyCount: () => today }, scanner, dataDir: dir });
+  cloud.enqueue([{ query: 'a', batch: 'b1' }, { query: 'b', batch: 'b1' }, { query: 'c', batch: 'b2' }]);
+  scanner.busy = true; cloud.startPending(); assert.deepEqual(started, [], 'waits while busy');
+  scanner.busy = false; cloud.startPending(); assert.deepEqual(started, ['a']);
+  today = 300; cloud.startPending(); assert.deepEqual(started, ['a'], 'holds at the daily cap');
+  today = 0; cloud.dropBatch('b1'); cloud.startPending(); assert.deepEqual(started, ['a', 'c'], 'the stopped batch is dropped');
+  // kept on disk
+  assert.deepEqual(new Cloud({ store: { dailyCount: () => 0 }, scanner, dataDir: dir }).pending.length, 0);
+});

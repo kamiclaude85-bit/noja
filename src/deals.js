@@ -201,7 +201,65 @@
     return { sellList: adj(g.sellList), sellFast: adj(g.sellFast), market: adj(g.market), buyGood: adj(g.buyGood) };
   }
 
-  const api = { computeDeals, modelName, priceGuide, myCarPrice, BODY_FACTORS, DEAL_MIN, HOT_MIN, TOO_CHEAP };
+  // ---------------------------------------------------------------------------
+  // «خرید با بودجه» — the best buys in a price range. Each car is judged only against its own
+  // model, trim and year (the «قیمت‌یاب» market, adjusted for its mileage), then for condition,
+  // recent repairs / extras and seller type. Cars without enough comparables are listed apart,
+  // so the bot can gather their same-model ads.
+  // ---------------------------------------------------------------------------
+  function budgetPicks(posts, guide, { min, max, personalOnly = false, kmMax = null } = {}) {
+    const byKey = new Map();
+    for (const g of guide || []) byKey.set(g.key, g);
+    const inRange = posts.filter((p) => p && p.price > 1e6 && !p.removed && p.price <= max && p.price >= (min || 0)
+      && (!personalOnly || p.seller !== 'dealer') && (kmMax == null || p.mileage == null || p.mileage <= kmMax));
+    const picks = [];
+    const missing = new Map();
+    for (const p of inRange) {
+      const m = P.modelOf(p);
+      const key = `${m.key}|${P.normalizeText(m.trim)}|${p.year}`;
+      const g = byKey.get(key);
+      if (!p.year || !g || !g.enough) {
+        const mk = `${m.key}|${p.year || ''}`;
+        const x = missing.get(mk) || { modelKey: m.key, label: m.label, year: p.year || null, count: 0, comparables: g ? g.n : 0 };
+        x.count++;
+        missing.set(mk, x);
+        continue;
+      }
+      // Market for this car: the guide's middle price, moved for its mileage.
+      let expected = g.market;
+      if (p.mileage != null && g.medKm != null) expected = Math.min(g.market * 1.2, Math.max(g.market * 0.8, g.market + g.perKm * (p.mileage - g.medKm)));
+      const discount = (expected - p.price) / expected;
+      const reasons = [];
+      const warnings = [];
+      let score = discount;
+      if (discount > 0.005) reasons.push(`${fa(Math.round(discount * 100))}٪ زیر قیمت ${fa(g.n)} آگهی هم‌مدل و هم‌سال (${priceFa(Math.round(expected))})`);
+      else if (discount < -0.005) warnings.push(`${fa(Math.round(-discount * 100))}٪ گران‌تر از هم‌مدل‌ها`);
+      if (p.mileage != null && g.medKm && p.mileage < g.medKm * 0.8) reasons.push(`کارکرد کم (${fa(Math.round(p.mileage / 1000))} هزار، معمول ${fa(Math.round(g.medKm / 1000))} هزار)`);
+      const body = badness(p.body); const engine = badness(p.engine); const chassis = badness(p.chassis);
+      if (body === 'bad') { score -= 0.06; warnings.push(`بدنه: ${p.body}`); } else if (body === 'good') reasons.push('بدنه سالم');
+      if (engine === 'bad') { score -= 0.1; warnings.push(`موتور: ${p.engine}`); }
+      if (chassis === 'bad') { score -= 0.12; warnings.push(`شاسی: ${p.chassis}`); }
+      const tags = P.valueTags ? P.valueTags(p) : [];
+      score += P.valueBoost ? P.valueBoost(tags) : 0;
+      const good = tags.filter((t) => !t.bad).map((t) => t.label);
+      if (good.length) reasons.push(good.join('، '));
+      for (const t of tags.filter((x) => x.bad)) warnings.push(t.label);
+      if (p.seller === 'dealer') { score -= 0.02; warnings.push('نمایشگاهی'); } else reasons.push('فروشنده شخصی');
+      const installment = INSTALLMENT_RE.test(`${p.title || ''} ${p.description || ''} ${p.priceText || ''}`);
+      const caution = installment || discount > TOO_CHEAP;
+      if (installment) warnings.unshift('قیمت احتمالاً پیش‌پرداخت یا اقساطی است');
+      else if (discount > TOO_CHEAP) warnings.unshift('خیلی ارزان‌تر از بقیه؛ با احتیاط');
+      picks.push({ token: p.token, post: p, guide: g, expected: Math.round(expected), discount, score, reasons, warnings, caution, sure: g.sure });
+    }
+    picks.sort((a, b) => Number(a.caution) - Number(b.caution) || b.score - a.score);
+    return {
+      total: inRange.length,
+      picks,
+      missing: Array.from(missing.values()).sort((a, b) => b.count - a.count),
+    };
+  }
+
+  const api = { computeDeals, modelName, priceGuide, myCarPrice, budgetPicks, BODY_FACTORS, DEAL_MIN, HOT_MIN, TOO_CHEAP };
   root.NojaDeals = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

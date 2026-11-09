@@ -528,11 +528,11 @@ function renderRuns(view) {
   const runs = App.state.runs || [];
   view.replaceChildren(h('div', { class: 'page' },
     pageHead('جستجوها', 'جستجوهای ذخیره‌شده و تاریخچهٔ اجرای ربات.', h('a', { class: 'btn primary', href: '#/search' }, icon('plus', 'sm'), 'جستجوی جدید')),
-    App.host && App.queue.length ? h('section', { class: 'card' },
+    App.queue.length ? h('section', { class: 'card' },
       h('div', { class: 'card-h' }, h('h2', null, icon('clock', 'sm'), 'در صف ربات')),
       h('ul', { class: 'items' }, App.queue.map((q) => h('li', { class: 'item' },
         h('div', { class: 'item-main' }, h('b', null, describeCriteria(q.criteria)),
-          h('small', null, `${agoFa(q.createdAt)} · ${App.bot.online ? 'الان شروع می‌شود' : 'با روشن شدن کامپیوتر شروع می‌شود'}`)),
+          h('small', null, `${agoFa(q.createdAt)} · ${!App.host ? 'در نوبت؛ بعد از جستجوی قبلی شروع می‌شود' : App.bot.online ? 'الان شروع می‌شود' : 'با روشن شدن کامپیوتر شروع می‌شود'}`)),
         h('div', { class: 'item-actions' }, h('button', { class: 'btn sm', type: 'button', onclick: async () => {
           try { await api(`/api/queue/${encodeURIComponent(q.id)}`, { method: 'DELETE' }); await App.refreshState(); renderRuns(view); } catch (e) { toast(e.message, 'err'); }
         } }, icon('x', 'sm'), 'لغو')))))) : null,
@@ -883,6 +883,109 @@ async function renderSettings(view) {
 // =========================================================
 // Special offers
 // =========================================================
+// =========================================================
+// «خرید با بودجه»: the best buys in a price range
+// =========================================================
+function budgetCity() { return (CITIES.find(([, n]) => n === reviewCity()) || ['tehran'])[0]; }
+
+function renderBudget(view, params) {
+  const saved = prefs.get('radyab.budget', { budget: '', personalOnly: false });
+  const budgetM = P.parseNumber(params.get('b') || saved.budget || '') || 0;
+  const max = budgetM ? (budgetM < 100000 ? budgetM * 1e6 : budgetM) : 0;
+  const min = Math.round(max * 0.85);
+  const personalOnly = params.has('personal') ? params.get('personal') === '1' : !!saved.personalOnly;
+  const caution = params.get('view') === 'caution';
+  const go = (patch) => {
+    const q = new URLSearchParams({ ...(budgetM ? { b: String(budgetM) } : {}), ...(personalOnly ? { personal: '1' } : {}), ...(caution ? { view: 'caution' } : {}), ...patch });
+    for (const [k, v] of Array.from(q.entries())) if (!v) q.delete(k);
+    location.hash = '#/budget?' + q;
+  };
+
+  const input = h('input', { name: 'budget', inputmode: 'numeric', placeholder: 'مثلاً ۱۰۰۰ (یعنی ۱ میلیارد)', value: budgetM ? String(budgetM) : '' });
+  const personal = h('input', { type: 'checkbox', checked: personalOnly });
+  const form = h('form', { class: 'search-card budget-form' },
+    h('div', { class: 'search-main' },
+      h('label', { class: 'field-big' }, h('span', { class: 'sr-only' }, 'بودجه'), icon('database', 'lg'), input,
+        h('span', { class: 'unit' }, 'میلیون تومان')),
+      h('button', { class: 'btn primary lg', type: 'submit' }, icon('search'), 'بهترین‌ها را نشان بده')),
+    h('label', { class: 'check' }, personal, 'فقط فروشنده‌های شخصی'));
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const b = P.parseNumber(input.value) || 0;
+    prefs.set('radyab.budget', { budget: b, personalOnly: personal.checked });
+    go({ b: String(b), personal: personal.checked ? '1' : '', view: '' });
+  });
+
+  const head = pageHead('خرید با بودجه', 'هر ماشین فقط با هم‌مدل و هم‌سال خودش مقایسه می‌شود؛ بعد سلامت، کارکرد، امکانات و نوع فروشنده حساب می‌شود.',
+    [citySelect(() => { App.computeGuide(); render(); }), periodSelect(() => { App.computeGuide(); render(); })]);
+  if (!max) { view.replaceChildren(h('div', { class: 'page' }, head, form)); input.focus(); return; }
+
+  const posts = allAds().filter((a) => inCity(a) && inPeriod(a) && stageOf(a) !== 'rejected').map((a) => ({ ...a.post, removed: a.removed }));
+  const r = NojaDeals.budgetPicks(posts, App.guide, { min, max, personalOnly });
+  const good = r.picks.filter((x) => !x.caution);
+  const bad = r.picks.filter((x) => x.caution);
+  const byToken = new Map(r.picks.map((x) => [x.token, x]));
+  const batchId = () => Math.random().toString(36).slice(2, 10);
+  const searchDivar = async () => {
+    try {
+      const c = { priceMin: min, priceMax: max, city: budgetCity(), maxAgeDays: reviewPeriod(),
+        maxAds: 100, speed: 'slow', batch: batchId(), budget: { min, max, personalOnly } };
+      await api('/api/scan-batch', { method: 'POST', body: { items: [c] } });
+      toast('جستجو در دیوار شروع شد؛ بعدش ربات آگهی‌های هم‌مدلِ ماشین‌های پیدا شده را هم می‌گردد.');
+      await App.refreshState();
+      location.hash = '#/runs';
+    } catch (e) { toast(e.message, 'err'); }
+  };
+  const gatherMissing = async () => {
+    const batch = batchId();
+    const items = r.missing.filter((m) => m.year && m.label !== 'نامشخص').slice(0, 6).map((m) => {
+      const ys = m.year > 1900 ? [m.year - 622, m.year - 621] : [m.year, m.year];
+      return { query: m.label, yearMin: ys[0], yearMax: ys[1], city: budgetCity(), maxAgeDays: reviewPeriod(), maxAds: 40, speed: 'slow', batch };
+    });
+    try {
+      await api('/api/scan-batch', { method: 'POST', body: { items } });
+      toast(fa(items.length) + ' جستجوی هم‌مدل در نوبت ربات گذاشته شد.');
+      await App.refreshState();
+      location.hash = '#/runs';
+    } catch (e) { toast(e.message, 'err'); }
+  };
+
+  const summary = h('div', { class: 'notice soft' }, icon('trend'), h('div', { class: 'grow' },
+    h('b', null, formatPrice(min) + ' تا ' + formatPrice(max) + ': '),
+    r.total ? fa(r.total) + ' آگهی در حافظه؛ ' + fa(r.picks.length) + ' تا با هم‌مدل‌هایشان مقایسه شدند.' : 'هنوز آگهی‌ای در این بازه نیست.'),
+    h('button', { class: 'btn sm primary', type: 'button', onclick: searchDivar }, icon('search', 'sm'), 'جستجو در دیوار برای این بودجه'));
+  const missing = r.missing.length ? h('div', { class: 'notice' }, icon('alert'), h('div', { class: 'grow' },
+    h('b', null, 'هم‌مدل کافی برای مقایسه ندارند: '),
+    r.missing.slice(0, 6).map((m, i) => [i ? '، ' : '', h('bdi', null, m.label + (m.year ? ' ' + faYear(m.year) : '')), ' (' + fa(m.count) + ')'])),
+    h('button', { class: 'btn sm', type: 'button', onclick: gatherMissing }, icon('refresh', 'sm'), 'جمع‌آوری هم‌مدل‌ها')) : null;
+  const tabs = h('div', { class: 'stage-tabs', role: 'tablist' },
+    h('button', { role: 'tab', type: 'button', 'aria-selected': String(!caution), onclick: () => go({ view: '' }) }, icon('flame', 'sm'), 'بهترین خریدها', h('small', { class: 'num' }, fa(good.length))),
+    h('button', { role: 'tab', type: 'button', 'aria-selected': String(caution), onclick: () => go({ view: 'caution' }) }, icon('alert', 'sm'), 'با احتیاط', h('small', { class: 'num' }, fa(bad.length))));
+
+  const box = h('div');
+  view.replaceChildren(h('div', { class: 'page wide' }, head, form, summary, missing, tabs, box));
+  const shown = caution ? bad : good;
+  mountBrowser({
+    root: box,
+    key: 'budget',
+    criteria: {},
+    getPosts: () => shown.map((x, i) => ({ ...x.post, isNew: false, priceChange: null, order: i })),
+    rowNote: (p) => {
+      const x = byToken.get(p.token);
+      if (!x) return null;
+      return h('div', { class: 'why-row' },
+        h('span', { class: 'rank num' }, fa(shown.indexOf(x) + 1)),
+        h('span', { class: 'why-good' }, x.reasons.slice(0, 3).join(' · ')),
+        x.warnings.length ? h('span', { class: 'why-bad' }, x.warnings.slice(0, 2).join(' · ')) : null);
+    },
+    title: (n) => (caution ? 'با احتیاط' : 'بهترین خریدها') + ' تا ' + formatPrice(max) + ' — ' + fa(n) + ' آگهی',
+    emptyTitle: r.total ? 'آگهی قابل مقایسه‌ای در این بازه نیست' : 'هنوز آگهی‌ای در این بازه نیست',
+    emptyText: '«جستجو در دیوار برای این بودجه» را بزنید؛ ربات آگهی‌های این بازه و هم‌مدل‌هایشان را جمع می‌کند.',
+  });
+  B.sort = 'default';
+  renderResults();
+}
+
 function renderDeals(view, params) {
   const caution = params.get('view') === 'caution';
   const searchKey = params.get('search') || '';
