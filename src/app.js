@@ -60,6 +60,18 @@ async function startApp(opts = {}) {
   });
   const log = opts.log || ((e) => console.error(e));
   const store = new Store(dataDir);
+  // A search that was still running when the bot was closed last time: mark it as stopped.
+  for (const r of store.listRuns()) {
+    if (['done', 'stopped', 'error'].includes(r.status)) continue;
+    const run = store.loadRun(r.id);
+    if (!run) continue;
+    run.status = 'stopped';
+    run.finishedAt = run.finishedAt || Date.now();
+    run.waitUntil = null;
+    run.activity = '';
+    run.message = `ربات وسط کار بسته شد؛ ${Object.keys(run.posts || {}).length.toLocaleString('fa-IR')} آگهی خوانده و ذخیره شد. برای ادامه، «بررسی جدیدها» را بزنید.`;
+    store.saveRunNow(run);
+  }
   const notifier = new Notifier({ store, dataDir, log, apiBases: opts.notifyApiBases });
   const scanner = new Scanner({ context, store, log, onEvent: (run, kind) => notifier.runEvent(run, kind) });
   // Online panel (optional): set up from «پنل آنلاین» in the PC panel.

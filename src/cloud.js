@@ -242,9 +242,11 @@ class Cloud {
 
   startPending() {
     if (!this.pending.length || this.scanner.busy) return;
-    const criteria = this.pending.shift();
+    try {
+      this.scanner.start(this.pending[0]);
+    } catch (e) { this.log(e); return; } // not started: it stays first in line
+    this.pending.shift();
     this.saveState({ pending: this.pending });
-    try { this.scanner.start(criteria); } catch (e) { this.log(e); }
   }
 }
 
