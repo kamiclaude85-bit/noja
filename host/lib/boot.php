@@ -9,7 +9,9 @@ declare(strict_types=1);
 if (!defined('RADYAB')) { http_response_code(403); exit('Forbidden'); }
 
 const RADYAB_ROOT = __DIR__ . '/..';
-const BOT_ONLINE_SECONDS = 75;          // bot syncs every ~20 s; offline after this long
+// The bot checks in every ~20 s. A slow connection can skip a few check-ins, so the panel says
+// «ربات خاموش» only after 3 minutes without one (the PC is really off or offline by then).
+const BOT_ONLINE_SECONDS = 180;
 const RUNS_KEEP = 30;
 
 date_default_timezone_set('Asia/Tehran');
