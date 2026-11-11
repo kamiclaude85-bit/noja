@@ -553,9 +553,20 @@ class Scanner {
         const card = attempt === 1 && !item.direct ? await this.findCard(page, item.token) : null;
         if (card && H.chance(0.25)) {
           // Open in a new tab (middle click), read there, close it.
-          const opened = this.context.waitForEvent('page', { timeout: 15000 });
-          await H.clickElement(page, card, { button: 'middle' });
-          adPage = await opened;
+          // The wait is given its error handler right away: if the click fails (or is slow),
+          // a late "no tab opened" error must not be left unhandled — that would close the bot.
+          let openErr = null;
+          const opened = this.context.waitForEvent('page', { timeout: 15000 })
+            .catch((e) => { openErr = e; return null; });
+          try {
+            await H.clickElement(page, card, { button: 'middle' });
+          } catch (e) {
+            opened.then((p) => p && p.close().catch(() => {})); // a tab that still opened late
+            throw e;
+          }
+          const tab = await opened;
+          if (!tab) throw openErr || new Error('تب تازه باز نشد');
+          adPage = tab;
           viaNewTab = true;
           await H.sleep(H.rand(300, 900));
           await adPage.bringToFront().catch(() => {});

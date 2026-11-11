@@ -4,6 +4,11 @@
 
 const { startApp } = require('./app');
 
+// A stray error in one background step must not close the bot in the middle of a search.
+process.on('unhandledRejection', (err) => {
+  console.error(`Radyab: an error was ignored — ${err && err.message ? err.message.split('\n')[0] : err}`);
+});
+
 (async () => {
   console.log('Radyab: opening Google Chrome…');
   const app = await startApp();
