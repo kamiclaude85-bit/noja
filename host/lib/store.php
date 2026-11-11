@@ -61,6 +61,32 @@ function export_ads(): array {
     return ['version' => (int) kv_get('seq', 0), 'ads' => $ads, 'searches' => $list];
 }
 
+/**
+ * «حذف جستجو» in the online panel: the search and the ads only it had found go at once
+ * (same rule as the PC: ads of another search and ads being followed up stay). The bot then
+ * does the same on the PC and also clears that search's run history.
+ */
+function delete_search(string $key): array {
+    $searches = kv_get('searches', []) ?: [];
+    $elsewhere = [];
+    foreach ($searches as $k => $s) if ((string) $k !== $key) foreach (($s['tokens'] ?? []) as $t) $elsewhere[$t] = true;
+    $removed = 0;
+    $kept = 0;
+    $del = db()->prepare('DELETE FROM radyab_ads WHERE token = ?');
+    foreach (($searches[$key]['tokens'] ?? []) as $t) {
+        if (isset($elsewhere[$t])) continue;
+        $rec = load_ad((string) $t);
+        if (!$rec) continue;
+        if (!empty($rec['crm']) && ($rec['crm']['stage'] ?? '') !== 'rejected') { $kept++; continue; }
+        $del->execute([(string) $t]);
+        $removed++;
+    }
+    unset($searches[$key]);
+    kv_set('searches', $searches);
+    next_seq();
+    return ['removedAds' => $removed, 'keptAds' => $kept];
+}
+
 // ---------- bot runs ----------
 function save_run(array $run): void {
     if (empty($run['id']) || !preg_match('/^[A-Za-z0-9_-]{1,64}$/', (string) $run['id'])) return;
@@ -183,6 +209,16 @@ function bot_sync(array $in): array {
         }
         $pdo->commit();
     }
+    // Ads and runs the bot deleted («حذف جستجو»). The bot keeps sending them until it reads 'gone' in the reply.
+    $goneDone = false;
+    if (!empty($in['gone']) && is_array($in['gone'])) {
+        $goneDone = true;
+        $delAd = $pdo->prepare('DELETE FROM radyab_ads WHERE token = ?');
+        foreach ((array) ($in['gone']['ads'] ?? []) as $t) if (is_string($t)) $delAd->execute([$t]);
+        $delRun = $pdo->prepare('DELETE FROM radyab_runs WHERE id = ?');
+        foreach ((array) ($in['gone']['runs'] ?? []) as $id) if (is_string($id)) $delRun->execute([$id]);
+        next_seq();
+    }
     if (isset($in['searches']) && is_array($in['searches'])) { kv_set('searches', $in['searches']); next_seq(); }
     foreach ((array) ($in['runs'] ?? []) as $run) if (is_array($run)) save_run($run);
     if (!empty($in['events']) && is_array($in['events'])) notify_bot_events($in['events']);
@@ -204,7 +240,7 @@ function bot_sync(array $in): array {
 
     notify_tick();
     backup_now(false);
-    return ['ok' => true, 'accepted' => $accepted, 'cursor' => (int) kv_get('seq', 0), 'crm' => $crm, 'queue' => $queue];
+    return ['ok' => true, 'accepted' => $accepted, 'gone' => $goneDone, 'cursor' => (int) kv_get('seq', 0), 'crm' => $crm, 'queue' => $queue];
 }
 
 // ---------- backups (one per day, kept 30 days; outside the web via .htaccess) ----------

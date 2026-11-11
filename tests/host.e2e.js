@@ -216,6 +216,51 @@ async function main() {
     const count = (await api('/api/backups/restore', { method: 'POST', body: restored })).count;
     assert.equal(count, 30);
 
+    // ---- delete a saved search: on the PC, then from the phone ----
+    const { searchKey } = require('../src/scanner');
+    const tiba = { query: 'تیبا', city: 'tehran' };
+    const tibaKey = searchKey(tiba);
+    const extra = ['XtraAd01', 'XtraAd02', 'XtraAd03'];
+    for (const t of extra) store.rememberAd(P.extractPost(posts[tokens[2]], t), tibaKey);
+    store.rememberAd(store.db.ads[tokens[1]].post, tibaKey); // also found by the other search: must stay
+    store.touchSearch(tibaKey, tiba);
+    store.applyCrm(extra[2], { action: 'stage', stage: 'shortlist' }); // followed up: must stay
+    store.saveRun({ id: '20261102100000_tiba', createdAt: Date.now(), criteria: tiba, status: 'done', items: [], posts: {}, errors: {}, stats: {} }, true);
+    await cloud.sync();
+    await cloud.sync();
+    assert.equal((await api('/api/ads')).ads.length, 33);
+    assert.ok((await api('/api/state')).runs.some((x) => x.id === '20261102100000_tiba'));
+    // Not while that very search is running.
+    scanner.busy = true;
+    scanner.current = { id: 'run_tiba', status: 'reading', criteria: tiba, posts: {}, items: [] };
+    await cloud.sync();
+    await assert.rejects(api('/api/search-delete', { method: 'POST', body: { key: tibaKey } }), /409/);
+    scanner.busy = false;
+    scanner.current = null;
+    // Deleted on the PC: gone from the online panel too (search, its own ads, its run).
+    assert.deepEqual(store.deleteSearch(tibaKey, searchKey), { removedAds: 2, keptAds: 1, removedRuns: 1 });
+    await cloud.sync();
+    ads = await api('/api/ads');
+    assert.equal(ads.ads.length, 31, 'only the two ads of that search are gone');
+    assert.ok(ads.ads.some((a) => a.token === extra[2]), 'the followed-up ad stays');
+    assert.ok(ads.ads.some((a) => a.token === tokens[1]), 'the ad of another search stays');
+    assert.ok(!ads.searches.some((s) => s.key === tibaKey));
+    assert.ok(!(await api('/api/state')).runs.some((x) => x.id === '20261102100000_tiba'), 'its run is gone');
+    assert.deepEqual(store.gone(), { ads: [], runs: [] }, 'nothing left to report');
+    // Deleted from the phone: gone there at once, then on the PC.
+    const del = await api('/api/search-delete', { method: 'POST', body: { key: 'q|tehran|206' } });
+    assert.equal(del.removedAds + del.keptAds, 30);
+    assert.ok(del.keptAds >= 2 && del.removedAds >= 20, JSON.stringify(del));
+    ads = await api('/api/ads');
+    assert.equal(ads.ads.length, del.keptAds + 1);
+    assert.equal(ads.searches.length, 0);
+    await cloud.sync();
+    await cloud.sync();
+    assert.deepEqual(Object.keys(store.db.searches), [], 'the bot deleted it too');
+    assert.equal(Object.keys(store.db.ads).length, del.keptAds + 1, 'same ads left on the PC');
+    assert.equal((await api('/api/ads')).ads.length, del.keptAds + 1, 'and nothing came back');
+    await assert.rejects(api('/api/search-delete', { method: 'POST', body: { key: 'nope' } }), /404/);
+
     // ---- update from inside the panel (update.php) ----
     const upd = async (fields, withCookie = true) => {
       const fd = new FormData();

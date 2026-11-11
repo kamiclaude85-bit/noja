@@ -98,6 +98,20 @@ try {
         queue_add('auto', ['key' => $key] + $auto);
         json_out(200, ['ok' => true, 'auto' => $auto]);
     }
+    // Delete a saved search for good: gone here at once, and the bot does the same on the PC.
+    if ($path === '/search-delete' && $method === 'POST') {
+        $key = (string) (body_json(10000)['key'] ?? '');
+        $searches = kv_get('searches', []) ?: [];
+        if ($key === '' || !isset($searches[$key])) json_out(404, ['error' => 'این جستجو پیدا نشد']);
+        $bot = bot_status();
+        if ($bot['online'] && ($bot['state']['busy'] ?? null) && ($bot['state']['busyKey'] ?? null) === $key) {
+            json_out(409, ['error' => 'این جستجو الان در حال اجراست؛ اول «پایان» را بزنید.']);
+        }
+        backup_now(true);
+        $r = delete_search($key);
+        queue_add('del', ['key' => $key]);
+        json_out(200, ['ok' => true] + $r);
+    }
     if (preg_match('#^/queue/([a-f0-9]+)$#', $path, $m) && $method === 'DELETE') {
         db()->prepare('DELETE FROM radyab_queue WHERE id = ? AND taken = 0')->execute([$m[1]]);
         json_out(200, ['ok' => true]);

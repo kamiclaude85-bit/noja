@@ -315,6 +315,67 @@ class Store {
     this.scheduleFlush();
   }
 
+  /**
+   * Delete a saved search for good: the search itself, its run history, and the ads only this
+   * search had found. Kept: ads another search also found, and ads you are following up
+   * (any follow-up except «حذف‌شده»). `keyOf(criteria)` gives a run's search key.
+   * A backup is written first. What was deleted is remembered for the online panel (db.gone).
+   */
+  deleteSearch(key, keyOf) {
+    const s = this.db.searches[key];
+    if (!s) throw new Error('این جستجو پیدا نشد');
+    try { this.backupNow(true); } catch (_) { /* the daily backup is still there */ }
+    const elsewhere = new Set();
+    for (const [k, o] of Object.entries(this.db.searches)) if (k !== key) for (const t of o.tokens) elsewhere.add(t);
+    const gone = this.gone();
+    const out = { removedAds: 0, keptAds: 0, removedRuns: 0 };
+    for (const t of s.tokens) {
+      const rec = this.db.ads[t];
+      if (!rec || elsewhere.has(t)) continue;
+      if (rec.crm && rec.crm.stage !== 'rejected') { out.keptAds++; continue; }
+      delete this.db.ads[t];
+      this.changes.ads.delete(t);
+      this.changes.crm.delete(t);
+      gone.ads.push(t);
+      out.removedAds++;
+    }
+    delete this.db.searches[key];
+    for (const f of fs.readdirSync(this.runsDir)) {
+      if (!f.endsWith('.json')) continue;
+      const id = f.replace(/\.json$/, '');
+      const run = this.loadRun(id);
+      let same = false;
+      try { same = !!(run && keyOf && keyOf(run.criteria || {}) === key); } catch (_) { /* not this search */ }
+      if (!same) continue;
+      clearTimeout(this.timers.get(id));
+      this.timers.delete(id);
+      fs.rmSync(path.join(this.runsDir, f), { force: true });
+      this.changes.runs.delete(id);
+      gone.runs.push(id);
+      out.removedRuns++;
+    }
+    gone.ads = gone.ads.slice(-5000);
+    gone.runs = gone.runs.slice(-500);
+    this.changes.searches = true;
+    this.bump();
+    this.flush();
+    return out;
+  }
+
+  /** Deleted ads and runs the online panel has not heard about yet. */
+  gone() {
+    return this.db.gone || (this.db.gone = { ads: [], runs: [] });
+  }
+
+  /** The online panel has deleted these too. */
+  clearGone(sent) {
+    if (!sent || !this.db.gone) return;
+    const ads = new Set(sent.ads); const runs = new Set(sent.runs);
+    this.db.gone.ads = this.db.gone.ads.filter((t) => !ads.has(t));
+    this.db.gone.runs = this.db.gone.runs.filter((id) => !runs.has(id));
+    this.scheduleFlush();
+  }
+
   touchSearch(key, criteria) {
     const s = this.db.searches[key] || (this.db.searches[key] = { tokens: [], createdAt: Date.now() });
     s.criteria = { ...criteria, recheckAll: false };

@@ -160,17 +160,55 @@ class Cloud {
       if (run) runs.push(this.slimRun(run));
     }
     const busy = this.scanner.busy && this.scanner.current ? this.scanner.current.id : null;
+    // Ads and runs deleted here («حذف جستجو»), so the online panel deletes them too.
+    const g = s.gone();
+    const gone = { ads: g.ads.filter((t) => !s.db.ads[t]).slice(0, 500), runs: g.runs.slice(0, 100) };
+    const hasGone = gone.ads.length || gone.runs.length;
     return {
       payload: {
         since: this.st.cursor,
-        state: { busy, loggedIn: this.loggedIn == null ? null : this.loggedIn, today: s.dailyCount(), dailyLimit: this.dailyLimit || 300, pending: this.pending.length },
+        state: { busy, busyKey: this.busyKey(), loggedIn: this.loggedIn == null ? null : this.loggedIn, today: s.dailyCount(), dailyLimit: this.dailyLimit || 300, pending: this.pending.length },
         ads,
+        gone: hasGone ? gone : undefined,
         searches: ch.searches ? s.db.searches : undefined,
         runs,
         events: this.events.slice(),
       },
-      sent: { tokens, runs: runs.map((r) => r.id), searches: ch.searches, events: this.events.length },
+      sent: { tokens, runs: runs.map((r) => r.id), searches: ch.searches, events: this.events.length, gone: hasGone ? gone : null },
     };
+  }
+
+  /** The saved search being run right now (or null). */
+  busyKey() {
+    if (!this.scanner.busy || !this.scanner.current || !this.scanner.current.criteria) return null;
+    try { return require('./scanner').searchKey(this.scanner.current.criteria); } catch (_) { return null; }
+  }
+
+  /** Take a deleted search out of the waiting line. */
+  dropKey(key) {
+    const { searchKey } = require('./scanner');
+    this.pending = this.pending.filter((c) => { try { return searchKey(c) !== key; } catch (_) { return true; } });
+    this.saveState({ pending: this.pending });
+  }
+
+  /** «حذف جستجو» asked for in the online panel; waits if that search is running right now. */
+  deleteSearch(key) {
+    if (this.busyKey() === key) {
+      const later = new Set(this.st.delLater || []);
+      later.add(key);
+      this.saveState({ delLater: Array.from(later) });
+      return;
+    }
+    try { this.store.deleteSearch(key, require('./scanner').searchKey); } catch (_) { /* already gone */ }
+    this.dropKey(key);
+  }
+
+  /** Deletions that were waiting for their search to finish. */
+  deleteWaiting() {
+    const later = this.st.delLater || [];
+    if (!later.length) return;
+    this.saveState({ delLater: [] });
+    for (const key of later) this.deleteSearch(key);
   }
 
   /** Ads in a run are sent separately; the run itself only keeps what belongs to it. */
@@ -193,6 +231,7 @@ class Cloud {
         const { isLoggedIn } = require('./scanner');
         this.loggedIn = await isLoggedIn(this.context).catch(() => null);
       }
+      this.deleteWaiting();
       const { payload, sent } = this.buildPayload();
       const body1 = JSON.stringify(payload);
       // A new connection to the host sometimes times out; try again right away before giving up.
@@ -217,6 +256,7 @@ class Cloud {
       for (const t of sent.tokens) { ch.ads.delete(t); ch.crm.delete(t); }
       for (const id of sent.runs) if (!(this.scanner.busy && this.scanner.current && this.scanner.current.id === id)) ch.runs.delete(id);
       if (sent.searches) ch.searches = false;
+      if (sent.gone && body.gone) this.store.clearGone(sent.gone); // an older panel does not answer: keep them for later
       this.events.splice(0, sent.events);
       if (!ch.ads.size && !ch.crm.size && !this.st.uploaded) this.saveState({ uploaded: true });
 
@@ -264,6 +304,10 @@ class Cloud {
       // Daily automatic check switched on/off in the online panel.
       const { cleanAuto } = require('./daily');
       try { this.store.setAuto(String((q.body || {}).key || ''), cleanAuto(q.body)); } catch (_) { /* search gone */ }
+      this.syncSoon();
+    } else if (q.kind === 'del') {
+      // «حذف جستجو» in the online panel.
+      this.deleteSearch(String((q.body || {}).key || ''));
       this.syncSoon();
     } else if (q.kind === 'cmd') {
       const { runId, action } = q.body || {};

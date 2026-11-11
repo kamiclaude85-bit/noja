@@ -561,6 +561,30 @@ function autoDialog(s, done) {
   ]);
 }
 
+// ---------- delete a saved search for good ----------
+function deleteSearchDialog(s, done) {
+  // Ads only this search had found; the ones being followed up stay.
+  const mine = Array.from(App.ads.values()).filter((a) => a.searches.length === 1 && a.searches[0] === s.key);
+  const kept = mine.filter((a) => a.crm && a.crm.stage !== 'rejected').length;
+  const removed = mine.length - kept;
+  openDialog('حذف جستجو', h('div', { class: 'auto-dialog' },
+    h('p', null, h('b', null, describeCriteria(s.criteria))),
+    h('p', { class: 'muted' }, `این جستجو${removed ? ` با ${fa(removed)} آگهی‌اش` : ''} و تاریخچهٔ اجرایش پاک می‌شود.`),
+    kept ? h('p', { class: 'muted' }, `${fa(kept)} آگهی که پیگیری می‌کنید می‌ماند.`) : null),
+  (close) => [
+    h('button', { class: 'btn', type: 'button', onclick: close }, 'انصراف'),
+    h('button', { class: 'btn danger', type: 'button', onclick: async () => {
+      try {
+        await api('/api/search-delete', { method: 'POST', body: { key: s.key } });
+        close();
+        toast('جستجو پاک شد.');
+        await Promise.all([App.refreshAds(true), App.refreshState()]);
+        done();
+      } catch (e) { toast(e.message, 'err'); }
+    } }, icon('trash', 'sm'), 'حذف'),
+  ]);
+}
+
 function renderRuns(view) {
   const STATUS = { done: 'تمام شده', stopped: 'متوقف شده', error: 'خطا' };
   const runs = App.state.runs || [];
@@ -581,7 +605,9 @@ function renderRuns(view) {
           s.auto && s.auto.on ? h('small', { class: 'auto-line' }, icon('clock', 'sm'), autoLabel(s.auto)) : null),
         h('div', { class: 'item-actions' }, s.criteria ? h('button', { class: `btn sm${s.auto && s.auto.on ? ' on' : ''}`, type: 'button', 'aria-label': 'بررسی خودکار روزانه', title: 'بررسی خودکار روزانه', onclick: () => autoDialog(s, () => renderRuns(view)) },
           icon('clock', 'sm'), 'خودکار') : null, s.criteria ? h('button', { class: 'btn sm', type: 'button', disabled: !!App.state.busy && !App.host, onclick: () => rerunSearch(s.criteria) },
-          icon('refresh', 'sm'), 'بررسی جدیدها') : null))))) : null,
+          icon('refresh', 'sm'), 'بررسی جدیدها') : null,
+        h('button', { class: 'btn danger-ghost sm', type: 'button', 'aria-label': 'حذف جستجو', title: 'حذف جستجو', onclick: () => deleteSearchDialog(s, () => renderRuns(view)) },
+          icon('trash', 'sm'))))))) : null,
     h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h2', null, icon('history', 'sm'), 'اجراهای ربات')),
       runs.length ? h('ul', { class: 'items' }, runs.map((r) => h('li', { class: 'item' },
         h('a', { class: 'item-main', href: `#/run/${encodeURIComponent(r.id)}` }, h('b', null, describeCriteria(r.criteria)),

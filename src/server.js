@@ -5,7 +5,7 @@ const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
 const P = require('./parser');
-const { isLoggedIn, DEFAULT_DAILY_LIMIT } = require('./scanner');
+const { isLoggedIn, DEFAULT_DAILY_LIMIT, searchKey } = require('./scanner');
 const { cleanAuto } = require('./daily');
 const CRM = require('./crm');
 
@@ -140,6 +140,18 @@ function createServer({ scanner, store, context, notifier, cloud }) {
         try {
           const s = store.setAuto(String(b.key || ''), cleanAuto(b));
           return send(res, 200, { ok: true, auto: s.auto });
+        } catch (e) { return send(res, 404, { error: e.message }); }
+      }
+      // Delete a saved search for good (its run history and the ads only it had found): { key }.
+      if (p === '/api/search-delete' && req.method === 'POST') {
+        const key = String((await readBody(req)).key || '');
+        if (scanner.busy && scanner.current && searchKey(scanner.current.criteria || {}) === key) {
+          return send(res, 409, { error: 'این جستجو الان در حال اجراست؛ اول «پایان» را بزنید.' });
+        }
+        try {
+          const r = store.deleteSearch(key, searchKey);
+          if (cloud) { cloud.dropKey(key); cloud.syncSoon(); }
+          return send(res, 200, { ok: true, ...r });
         } catch (e) { return send(res, 404, { error: e.message }); }
       }
       const qm = p.match(/^\/api\/queue\/([a-z0-9]+)$/);
