@@ -216,9 +216,17 @@ class Scanner {
 
       // ---- 4. Decide what to open: only new ads, and old ads whose price changed ----
       const toVisit = [];
+      const doors = P.doorsOf(c.query || '');
       for (const item of run.items) {
         const rec = c.recheckAll ? null : this.store.knownAd(item.token);
         if (rec && rec.removed) continue;
+        // Not what was asked for, and the list card already says so: a made-up price («۱٬۰۰۰ تومان»),
+        // or the other door count in its title. Not opened (one visit less), not kept.
+        const cardDoors = doors ? P.doorsOf(item.title || '') : null;
+        if (!(rec && rec.post) && (P.fakePrice(cardPrice(item)) || (cardDoors && cardDoors !== doors))) {
+          run.stats.skipped = (run.stats.skipped || 0) + 1;
+          continue;
+        }
         if (rec && rec.post) {
           const now = cardPrice(item);
           const before = rec.post.price;
@@ -621,10 +629,19 @@ class Scanner {
     run.waitUntil = null;
     const errs = Object.keys(run.errors).length;
     const st = run.stats || {};
+    // New ads that turned out to be something else once read (the brand field says «4 در», «پاژن»):
+    // they stay in memory, but are not counted as found.
+    if (st.offTarget == null) {
+      const posts = Object.values(run.posts || {});
+      const rule = P.searchRule(run.criteria, posts);
+      st.offTarget = posts.filter((p) => p.isNew && P.offReason(p, rule)).length;
+      st.newAds = Math.max(0, (st.newAds || 0) - st.offTarget);
+    }
     const parts = [`${fa(st.newAds || 0)} آگهی جدید`];
     if (st.priceChanged) parts.push(`${fa(st.priceChanged)} تغییر قیمت`);
     if (st.sold) parts.push(`${fa(st.sold)} آگهی پیگیری‌شده از دیوار حذف شد`);
     if (st.known) parts.push(`${fa(st.known)} آگهی از قبل`);
+    if (st.offTarget + (st.skipped || 0)) parts.push(`${fa(st.offTarget + (st.skipped || 0))} آگهی نامربوط کنار گذاشته شد`);
     if (st.tooOld) parts.push(`${fa(st.tooOld)} آگهی قدیمی‌تر از بازه باز نشد`);
     run.message = message || (status === 'stopped'
       ? `متوقف شد. ${parts.join('، ')}.`

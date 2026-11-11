@@ -20,6 +20,9 @@
   const TOO_CHEAP = 0.3; // more than 30% under: suspicious
   const INSTALLMENT_RE = /پیش\s?پرداخت|اقساط|قسطی|وام|لیزینگ|بیعانه|چک\s?(صیادی|ماهانه)/;
 
+  /** A price that can be compared: there is one, and it is not a made-up one («۱٬۰۰۰ تومان»). */
+  const realPrice = (p) => !!p && p.price > 0 && !P.fakePrice(p.price);
+
   function badness(text) {
     if (!text) return null;
     if (/تصادفی|تعویض شده|ضربه|رنگ‌?شدگی|رنگ شدگی|صافکاری|نیاز به تعمیر|خوردگی|اوراقی|لکه/.test(text)) return 'bad';
@@ -64,7 +67,7 @@
    * Returns Map token → { model, peers, expected, discount, score, level, deal, caution, reasons[], warnings[] }.
    */
   function computeDeals(posts) {
-    const priced = posts.filter((p) => p && p.price > 1e6 && !p.removed);
+    const priced = posts.filter((p) => realPrice(p) && !p.removed);
     const groups = new Map();
     for (const p of priced) {
       const key = `${modelName(p)}|${p.year || '?'}`;
@@ -177,7 +180,7 @@
   function priceGuide(posts) {
     const groups = new Map();
     for (const p of posts) {
-      if (!p || !(p.price > 1e6) || !p.year) continue;
+      if (!realPrice(p) || !p.year) continue;
       const m = P.modelOf(p);
       const key = `${m.key}|${P.normalizeText(m.trim)}|${p.year}`;
       if (!groups.has(key)) groups.set(key, { key, modelKey: m.key, label: m.label, trim: m.trim, year: p.year, list: [] });
@@ -210,7 +213,7 @@
   function budgetPicks(posts, guide, { min, max, personalOnly = false, kmMax = null } = {}) {
     const byKey = new Map();
     for (const g of guide || []) byKey.set(g.key, g);
-    const inRange = posts.filter((p) => p && p.price > 1e6 && !p.removed && p.price <= max && p.price >= (min || 0)
+    const inRange = posts.filter((p) => realPrice(p) && !p.removed && p.price <= max && p.price >= (min || 0)
       && (!personalOnly || p.seller !== 'dealer') && (kmMax == null || p.mileage == null || p.mileage <= kmMax));
     const picks = [];
     const missing = new Map();

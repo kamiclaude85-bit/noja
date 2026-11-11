@@ -196,3 +196,62 @@ test('value tags: recent repairs and extras from the ad text; negations and bad 
   assert.equal(boost, 0.05, 'capped at 5%');
   assert.ok(P.valueBoost(P.valueTags({ description: 'روغن سوزی دارد، نیاز به تعمیر' })) < 0);
 });
+
+test('model year: a Western year («۲۰۰۱») and a Persian one («۱۳۸۰») are the same year', () => {
+  assert.equal(P.shamsiYear(2001), 1380);
+  assert.equal(P.shamsiYear(1378), 1378);
+  assert.equal(P.shamsiYear(null), null);
+  assert.ok(P.yearInRange(2001, 1376, 1380));
+  assert.ok(P.yearInRange(1997, 1376, 1380));
+  assert.ok(!P.yearInRange(2002, 1376, 1380));
+  assert.ok(!P.yearInRange(1996, 1376, 1380));
+  assert.ok(P.yearInRange(1379, 1997, 2001), 'a range typed in Western years');
+  assert.ok(P.yearInRange(null, 1376, 1380), 'unknown year is kept');
+  const c = { query: 'پاترول 2 در', yearMin: 76, yearMax: 80 };
+  assert.ok(P.matchesCriteria({ year: 2000, price: 2e9, brand: 'نیسان پاترول 2 در 4 سیلندر', title: 'پاترول مدل ۷۹' }, c));
+  assert.ok(!P.matchesCriteria({ year: 2003, price: 2e9, brand: 'نیسان پاترول 2 در 4 سیلندر', title: 'پاترول' }, c));
+});
+
+test('a made-up price («۱٬۰۰۰ تومان») is not a price', () => {
+  for (const n of [1000, 2000000, 9999999, 111111111, 1234567890]) assert.ok(P.fakePrice(n), String(n));
+  for (const n of [10000000, 245000000, 1290000000, 2200000000, null, undefined, 0]) assert.ok(!P.fakePrice(n), String(n));
+  assert.equal(P.offReason({ price: 1000, brand: 'نیسان پاترول 2 در 4 سیلندر' }, null), 'price');
+});
+
+test('door count: «2 در», «چهار درب», and «۴ در ۴» is four-wheel drive', () => {
+  const d = P.doorsOf;
+  assert.equal(d('نیسان پاترول 2 در 4 سیلندر'), 2);
+  assert.equal(d('نیسان پاترول 4 در 6 سیلندر'), 4);
+  assert.equal(d('پاترول ۴در ۴سیلندر موتور z'), 4);
+  assert.equal(d('پاترول2در77تمام فابریک'), 2);
+  assert.equal(d('پاترول چهار درب چهار سیلندر'), 4);
+  assert.equal(d('پاترول دودر'), 2);
+  assert.equal(d('دو درب'), 2);
+  assert.equal(d('پاترول ۴ در ۴'), null);
+  assert.equal(d('چهار در چهار'), null);
+  assert.equal(d('هر دو درصد'), null);
+  assert.equal(d('پژو 206 تیپ 2'), null);
+  assert.equal(d(''), null);
+  assert.equal(d(null), null);
+});
+
+test('a search keeps its own car: «پاترول 2 در» drops the 4-door, «پاژن» and a «پرادو»', () => {
+  const two = { brand: 'نیسان پاترول 2 در 4 سیلندر', title: 'پاترول ۷۹', price: 2e9 };
+  const posts = [two, two, two, two,
+    { brand: 'نیسان پاترول 4 در 4 سیلندر', title: 'پاترول ۷۷ سالم', price: 2e9 },
+    { brand: 'پاژن 2 در', title: 'پاژن موتور پاترول', price: 1e9 },
+    { brand: 'تویوتا پرادو ۴ در ۴ سلیندر', title: 'پرادو ۲۰۰۱، پاترول', price: 5e9 }];
+  const rule = P.searchRule({ query: 'پاترول 2 در' }, posts);
+  assert.deepEqual(rule, { doors: 2, words: ['پاترول'] });
+  assert.deepEqual(posts.map((p) => P.offReason(p, rule)), [null, null, null, null, 'model', 'model', 'model']);
+  assert.equal(P.offReason({ brand: '', title: 'پاترول دو در مدل ۸۰', price: 2e9 }, rule), null, 'no brand field: the title decides');
+  assert.equal(P.offReason({ brand: '', title: 'پاترول چهار در', price: 2e9 }, rule), 'model');
+
+  // A nickname that is not in «برند و مدل» is not used, so nothing is lost.
+  const l90 = [1, 2, 3, 4, 5].map(() => ({ brand: 'رنو تندر 90 E2', title: 'ال نود', price: 6e8 }));
+  assert.equal(P.searchRule({ query: 'ال نود' }, l90), null);
+  // Too few ads to judge by: only the door count.
+  assert.deepEqual(P.searchRule({ query: 'پاترول 2 در' }, posts.slice(0, 2)), { doors: 2, words: [] });
+  assert.equal(P.searchRule({ query: '' }, posts), null);
+  assert.equal(P.searchRule(null, posts), null);
+});

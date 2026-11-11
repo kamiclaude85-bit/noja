@@ -41,6 +41,8 @@ function icon(name, cls) {
 // ---------- numbers & dates ----------
 const fa = (n, opts) => (n == null || Number.isNaN(n) ? '—' : Number(n).toLocaleString('fa-IR', opts));
 const faYear = (n) => fa(n, { useGrouping: false });
+/** Model year as shown on an ad. A Western year also says the Persian one: «۲۰۰۱ (۱۳۸۰)». */
+const yearFa = (y) => (y > 1700 ? `${faYear(y)} (${faYear(P.shamsiYear(y))})` : faYear(y));
 const faDigits = (s) => String(s).replace(/\d/g, (d) => '۰۱۲۳۴۵۶۷۸۹'[d]);
 
 function formatPrice(n) {
@@ -295,15 +297,45 @@ App.refreshState = async () => {
   App.emit('state');
 };
 
+/**
+ * Leaves out what Divar's search returned but nobody asked for: a made-up price («۱٬۰۰۰ تومان»),
+ * and for each search the look-alikes (the 4-door in «پاترول 2 در», «پاژن»). Nothing is deleted:
+ * the ads stay in memory, and an ad you have followed up (a stage, a note) always stays on screen.
+ * Sets `count` and `hidden` on each search, and App.rules (search key → its rule).
+ */
+App.relevant = (ads, searches) => {
+  const mine = new Map(searches.map((s) => [s.key, []]));
+  for (const a of ads) for (const k of a.searches || []) if (mine.has(k)) mine.get(k).push(a.post);
+  App.rules = new Map(searches.map((s) => [s.key, P.searchRule(s.criteria, mine.get(s.key))]));
+  const hidden = new Map();
+  const out = [];
+  for (const a of ads) {
+    const all = a.searches || [];
+    const fake = !a.crm && P.fakePrice(a.post.price);
+    const fits = a.crm ? all : fake ? [] : all.filter((k) => !P.offReason(a.post, App.rules.get(k)));
+    for (const k of all) if (!fits.includes(k)) hidden.set(k, (hidden.get(k) || 0) + 1);
+    if (fits.length ? true : !all.length && !fake) out.push(fits.length === all.length ? a : { ...a, searches: fits });
+  }
+  for (const s of searches) { s.hidden = hidden.get(s.key) || 0; s.count = Math.max(0, mine.get(s.key).length - s.hidden); }
+  return out;
+};
+
+/** The run page: the same rule for the ads one search read. */
+App.relevantPosts = (posts, criteria) => {
+  const rule = P.searchRule(criteria, posts);
+  return posts.filter((p) => (App.ads.get(p.token) || {}).crm || !P.offReason(p, rule));
+};
+
 App.refreshAds = async (force) => {
   try {
     const r = await api(`/api/ads${!force && App.version ? `?since=${App.version}` : ''}`);
     if (r.unchanged) return false;
     App.version = r.version;
-    App.ads = new Map(r.ads.map((a) => [a.token, a]));
+    const ads = App.relevant(r.ads, r.searches);
+    App.ads = new Map(ads.map((a) => [a.token, a]));
     App.searches = r.searches.sort((a, b) => (b.lastRunAt || 0) - (a.lastRunAt || 0));
     App.meta = { stages: r.stages, activeStages: r.activeStages, rejectReasons: r.rejectReasons, callResults: r.callResults };
-    App.deals = globalThis.NojaDeals.computeDeals(r.ads.map((a) => ({ ...a.post, removed: a.removed })));
+    App.deals = globalThis.NojaDeals.computeDeals(ads.map((a) => ({ ...a.post, removed: a.removed })));
     App.computeGuide();
     App.emit('ads');
     return true;

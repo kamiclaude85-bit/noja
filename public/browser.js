@@ -71,8 +71,7 @@ function passes(p, f, skip) {
   const yMin = numIn(f.yearMin) != null ? P.normalizeYear(numIn(f.yearMin)) : null;
   const yMax = numIn(f.yearMax) != null ? P.normalizeYear(numIn(f.yearMax)) : null;
   if (p.year != null) {
-    if (yMin != null && p.year < yMin) return false;
-    if (yMax != null && p.year > yMax) return false;
+    if (!P.yearInRange(p.year, yMin, yMax)) return false;
   } else if (f.strictYear && (yMin != null || yMax != null)) return false;
   const pMin = numIn(f.priceMin); const pMax = numIn(f.priceMax);
   if (p.price != null) {
@@ -210,7 +209,7 @@ function sortList(list) {
     case 'price-asc': return list.sort(by((p) => p.price, 1));
     case 'price-desc': return list.sort(by((p) => p.price, -1));
     case 'km-asc': return list.sort(by((p) => p.mileage, 1));
-    case 'year-desc': return list.sort(by((p) => p.year, -1));
+    case 'year-desc': return list.sort(by((p) => P.shamsiYear(p.year), -1));
     case 'published': return list.sort(by((p) => p.publishedAt || null, -1));
     case 'model-year': {
       // biggest model first, then the newest model year, then the best deal / cheapest
@@ -218,7 +217,7 @@ function sortList(list) {
       for (const p of list) { const k = P.modelOf(p).key; size.set(k, (size.get(k) || 0) + 1); }
       return list.sort((a, b) => {
         const ka = P.modelOf(a).key; const kb = P.modelOf(b).key;
-        return (size.get(kb) - size.get(ka)) || ka.localeCompare(kb) || (b.year || 0) - (a.year || 0)
+        return (size.get(kb) - size.get(ka)) || ka.localeCompare(kb) || (P.shamsiYear(b.year) || 0) - (P.shamsiYear(a.year) || 0)
           || ((b._deal ? b._deal.score : -1) - (a._deal ? a._deal.score : -1)) || (a.price || 0) - (b.price || 0);
       });
     }
@@ -331,7 +330,7 @@ function renderResults() {
       const el = B.rows.get(p.token).el;
       const m = P.modelOf(p);
       const key = `${m.key}|${p.year || ''}`;
-      if (B.sort === 'model-year' && key !== prev) el.dataset.group = `${m.label}${p.year ? ` · ${faYear(p.year)}` : ''}`;
+      if (B.sort === 'model-year' && key !== prev) el.dataset.group = `${m.label}${p.year ? ` · ${yearFa(p.year)}` : ''}`;
       else delete el.dataset.group;
       prev = key;
     });
@@ -380,7 +379,7 @@ function renderRow(p, d) {
       B.opts.rowNote ? B.opts.rowNote(p) : null,
       publishedLine(p),
       h('div', { class: 'facts' },
-        p.year || p.yearText ? h('span', null, icon('calendar'), p.year ? faYear(p.year) : p.yearText) : null,
+        p.year || p.yearText ? h('span', null, icon('calendar'), p.year ? yearFa(p.year) : p.yearText) : null,
         p.mileage != null || p.mileageText ? h('span', { class: 'num' }, icon('gauge'), p.mileage != null ? `${fa(p.mileage)} کیلومتر` : p.mileageText) : null,
         p.gearbox ? h('span', null, icon('gear'), p.gearbox) : null,
         p.color ? h('span', null, icon('palette'), p.color) : null),
@@ -419,7 +418,7 @@ function renderTable(list, med) {
       h('td', null, stageChip(p._f.stage)),
       h('td', null, sellerBadge(p)),
       h('td', { class: 'num' }, p.price ? formatPrice(p.price) : (p.priceText || '—'), d ? h('div', null, h('span', { class: `delta ${d.cls}` }, d.text)) : null),
-      cell(p.year ? faYear(p.year) : p.yearText),
+      cell(p.year ? yearFa(p.year) : p.yearText),
       cell(p.mileage != null ? fa(p.mileage) : p.mileageText, 'num'),
       cell(p.color), cell(p.gearbox), cell(p.body, conditionClass(p.body)),
       cell(c.nextCallAt ? whenFa(c.nextCallAt) : '', p._f.callDue ? 'bad' : null),
@@ -676,7 +675,7 @@ function openDrawer(token, keepScroll) {
   const cmp = B.compare.has(p.token);
 
   const specRows = [
-    ['مدل', p.year ? faYear(p.year) : p.yearText], ['کارکرد', p.mileage != null ? `${fa(p.mileage)} کیلومتر` : p.mileageText],
+    ['مدل', p.year ? yearFa(p.year) : p.yearText], ['کارکرد', p.mileage != null ? `${fa(p.mileage)} کیلومتر` : p.mileageText],
     ['رنگ', p.color], ['گیربکس', p.gearbox], ['سوخت', p.fuel], ['برند و تیپ', p.brand],
     ['بدنه', p.body], ['موتور', p.engine], ['شاسی', p.chassis], ['بیمهٔ شخص ثالث', p.insurance], ['معاوضه', p.exchange],
   ].filter(([, v]) => v);
@@ -744,13 +743,13 @@ function openCompare() {
   };
   const minPrice = best((p) => p.price, -1);
   const minKm = best((p) => p.mileage, -1);
-  const maxYear = best((p) => p.year, 1);
+  const maxYear = best((p) => P.shamsiYear(p.year), 1);
   const rows = [
     ['', (p) => { const img = safeImg((p.images || [])[0]); return img ? h('img', { src: img, alt: '', referrerpolicy: 'no-referrer' }) : ''; }],
     ['عنوان', (p) => h('b', null, p.title)],
     ['مرحله', (p) => stageChip(p._f.stage)],
     ['قیمت', (p) => h('span', { class: p.price != null && p.price === minPrice ? 'best' : null }, p.price ? `${formatPrice(p.price)} تومان` : (p.priceText || '—'))],
-    ['مدل', (p) => h('span', { class: p.year != null && p.year === maxYear ? 'best' : null }, p.year ? faYear(p.year) : '—')],
+    ['مدل', (p) => h('span', { class: p.year != null && P.shamsiYear(p.year) === maxYear ? 'best' : null }, p.year ? yearFa(p.year) : '—')],
     ['کارکرد', (p) => h('span', { class: p.mileage != null && p.mileage === minKm ? 'best' : null }, p.mileage != null ? `${fa(p.mileage)} کیلومتر` : '—')],
     ['فروشنده', (p) => sellerBadge(p)],
     ['رنگ', (p) => p.color || '—'], ['گیربکس', (p) => p.gearbox || '—'],

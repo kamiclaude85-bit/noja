@@ -265,7 +265,8 @@ class Notifier {
   runSummary(run) {
     const st = run.stats || {};
     const posts = Object.values(run.posts || {});
-    const fresh = posts.filter((p) => p.isNew && P.matchesCriteria(p, run.criteria));
+    const rule = P.searchRule(run.criteria, posts);
+    const fresh = posts.filter((p) => p.isNew && P.matchesCriteria(p, run.criteria, rule));
     const drops = posts.filter((p) => p.priceChange && p.priceChange.to < p.priceChange.from);
     const what = run.criteria && run.criteria.query ? run.criteria.query : 'جستجو';
     const lines = [`🔎 ردیاب — بررسی «${what}» تمام شد`];

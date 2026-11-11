@@ -521,17 +521,99 @@
     return Array.from(new Set(arr));
   }
 
-  /** True when the post fits the user's criteria. Unknown values are kept. */
-  function matchesCriteria(post, c) {
+  // ---------- what belongs in a search ----------
+  /**
+   * Western year -> Persian year (2001 -> 1380); a Persian year stays as it is. Divar shows
+   * imported cars by their Western year only, while sellers and buyers say «مدل ۸۰».
+   */
+  function shamsiYear(y) {
+    return y != null && y > 1700 ? y - 621 : y;
+  }
+
+  /** Is the model year inside the range? Either side may be a Persian or a Western year. */
+  function yearInRange(year, min, max) {
+    const y = shamsiYear(year);
+    if (y == null) return true;
+    if (min != null && y < shamsiYear(min)) return false;
+    if (max != null && y > shamsiYear(max)) return false;
+    return true;
+  }
+
+  /**
+   * A price nobody means («۱٬۰۰۰ تومان», «۱۱۱٬۱۱۱٬۱۱۱», «۱۲۳٬۴۵۶٬۷۸۹»): the seller typed
+   * something only to fill the box. No car costs less than ten million tomans.
+   */
+  function fakePrice(n) {
+    if (typeof n !== 'number' || !(n > 0)) return false;
+    if (n < 10e6) return true;
+    const s = String(Math.round(n));
+    return /^(\d)\1+$/.test(s) || '1234567890123'.startsWith(s);
+  }
+
+  // «2 در», «۴در», «دو درب», «دودر». A number right after it («۴ در ۴») means four-wheel drive,
+  // unless it counts cylinders («2 در 4 سیلندر»).
+  const DOORS_RE = /(?:(?:^|[^\d])([2-5])|(?:^|[^آ-ی])(دو|سه|چهار|پنج))\s*درب?(?![آ-ی])(\s*(?:[2-5]|دو|چهار)(?![\dآ-ی])(?!\s*س))?/g;
+  const DOOR_WORDS = { دو: 2, سه: 3, چهار: 4, پنج: 5 };
+
+  /** How many doors the text names, or null. */
+  function doorsOf(text) {
+    const s = normalizeText(text);
+    DOORS_RE.lastIndex = 0;
+    let m;
+    while ((m = DOORS_RE.exec(s))) {
+      if (!m[3]) return m[1] ? Number(m[1]) : DOOR_WORDS[m[2]];
+    }
+    return null;
+  }
+
+  /**
+   * What a search is really after: the door count it names («پاترول 2 در»), and the words of
+   * its name that most of the ads it found carry in «برند و مدل» («پاترول»). Divar's own search
+   * also returns look-alikes (the 4-door, «پاژن», a «پرادو» with «پاترول» in its title).
+   * A word is only used when more than half of the ads have it, so a search can never lose
+   * most of its ads to this rule (a nickname like «ال نود» is simply not used).
+   */
+  function searchRule(c, posts) {
+    const q = normalizeText(c && c.query);
+    if (!q) return null;
+    const doors = doorsOf(q);
+    const brands = (posts || []).map((p) => normalizeText(p && p.brand)).filter(Boolean);
+    const words = brands.length < 4 ? [] : q.replace(DOORS_RE, ' ').split(' ')
+      .filter((w) => w.length >= 3 && !/\d/.test(w) && brands.filter((b) => b.includes(w)).length > brands.length / 2);
+    return doors || words.length ? { doors, words } : null;
+  }
+
+  /**
+   * Why an ad does not belong in a search's results: 'price' (a made-up price), 'model'
+   * (another car or another door count), or null when it belongs. `rule` comes from searchRule.
+   */
+  function offReason(post, rule) {
+    if (!post) return null;
+    if (fakePrice(post.price)) return 'price';
+    if (!rule) return null;
+    if (rule.doors) {
+      const d = doorsOf(post.brand) || doorsOf(post.title);
+      if (d && d !== rule.doors) return 'model';
+    }
+    const brand = normalizeText(post.brand);
+    if (brand && rule.words.some((w) => !brand.includes(w))) return 'model';
+    return null;
+  }
+
+  /**
+   * True when the post fits the user's criteria. Unknown values are kept.
+   * `rule` (searchRule with the search's ads) is optional; without it only the door count is checked.
+   */
+  function matchesCriteria(post, c, rule) {
     if (!c) return true;
     const yMin = c.yearMin ? normalizeYear(c.yearMin) : null;
     const yMax = c.yearMax ? normalizeYear(c.yearMax) : null;
     if (post.year != null) {
-      if (yMin != null && post.year < yMin) return false;
-      if (yMax != null && post.year > yMax) return false;
+      if (!yearInRange(post.year, yMin, yMax)) return false;
     } else if (c.strictYear && (yMin != null || yMax != null)) {
       return false;
     }
+    if (offReason(post, rule === undefined ? searchRule(c, []) : rule)) return false;
     if (c.priceMax && post.price != null && post.price > Number(c.priceMax)) return false;
     if (c.priceMin && post.price != null && post.price < Number(c.priceMin)) return false;
     if (c.mileageMax && post.mileage != null && post.mileage > Number(c.mileageMax)) return false;
@@ -583,6 +665,12 @@
     modelOf,
     valueTags,
     valueBoost,
+    shamsiYear,
+    yearInRange,
+    fakePrice,
+    doorsOf,
+    searchRule,
+    offReason,
     matchesCriteria,
     buildSearchUrl,
     median,
