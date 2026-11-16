@@ -26,6 +26,25 @@ function catalogItems() {
   return out;
 }
 
+/**
+ * Divar's models, grouped the way ads are grouped here («نیسان پاترول 2 در» and «… 4 در» are both
+ * «نیسان پاترول»): Map of model key → { key, label, names } (names: every Divar name of it, for searching).
+ */
+function catalogModels() {
+  if (CATALOG.models) return CATALOG.models;
+  const out = new Map();
+  for (const b of CATALOG.brands || []) {
+    for (const x of (b.models && b.models.length ? b.models : [b])) {
+      const m = P.modelOf({ brand: x.fa });
+      if (!m.key) continue;
+      const e = out.get(m.key) || { key: m.key, label: m.label, names: '' };
+      e.names += ` ${P.normalizeText(x.fa)}`;
+      out.set(m.key, e);
+    }
+  }
+  return (CATALOG.models = out);
+}
+
 // Shown before typing: popular Iranian and imported choices (only those Divar actually lists).
 const POPULAR = ['peugeot/206', 'pride', 'runna', 'dena', 'samand', 'tiba', 'saipa-shahin', 'quick', 'peugeot/pars',
   'renault/megan', 'nissan/maxima-im', 'hyundai/elantra', 'kia/cerato', 'toyota/corolla'];
@@ -46,6 +65,7 @@ function divarBudgetUrl(path, o) {
   if (o.bodyOk) q.set('body_status', 'intact');
   if (o.chassisOk) q.set('chassis_status', 'both-healthy');
   if (o.kmMax) q.set('usage', `-${o.kmMax}`);
+  if (o.q) q.set('q', o.q);
   return `https://divar.ir/s/${city}/car${path ? `/${path}` : ''}?${q}`;
 }
 
@@ -64,7 +84,10 @@ function renderBudget(view, params) {
   const toIn = h('input', { inputmode: 'numeric', placeholder: 'مثلاً ۲۰۰۰', value: s.to });
 
   // ---- 2. which cars ----
-  let picks = (s.picks || []).filter((k) => byKey.has(k));
+  // A pick is one of Divar's makes or models, or just the words typed («پاترول»: every ad that says so).
+  const pickOf = (k) => byKey.get(k) || (/^t:./.test(k) ? { key: k, fa: k.slice(2), text: true } : null);
+  const matching = (q) => items.filter((i) => P.normalizeText(i.fa).includes(q) || i.key.includes(q)).sort((a, b) => Number(!!b.brand) - Number(!!a.brand) || a.fa.length - b.fa.length);
+  let picks = (s.picks || []).filter(pickOf);
   const chips = h('div', { class: 'pick-chips' });
   const sugg = h('div', { class: 'pick-sugg', role: 'listbox' });
   const search = h('input', { placeholder: 'مثلاً ۲۰۶، رانا، مگان، ماکسیما…', 'aria-label': 'جستجوی مدل' });
@@ -73,23 +96,35 @@ function renderBudget(view, params) {
   }, t)));
   const drawPicks = () => {
     chips.replaceChildren(...picks.map((k) => h('button', { class: 'pick-chip', type: 'button', title: 'حذف', onclick: () => { picks = picks.filter((x) => x !== k); save({ picks }); drawPicks(); drawSugg(); } },
-      byKey.get(k).fa, icon('x', 'sm'))));
+      pickOf(k).fa, icon('x', 'sm'))));
     originSeg.hidden = picks.length > 0; // with chosen models, «ایرانی / وارداتی» is not needed
+  };
+  const addPick = (key) => { if (!picks.includes(key)) picks = [...picks, key].slice(0, 8); save({ picks }); search.value = ''; drawPicks(); drawSugg(); };
+  // Words typed but no suggestion tapped still count: the one model they name, else the words themselves.
+  const takeTyped = () => {
+    const text = search.value.replace(/\s+/g, ' ').trim();
+    const q = P.normalizeText(text);
+    if (!q) return;
+    const list = matching(q);
+    const one = list.find((i) => P.normalizeText(i.fa) === q) || (list.length === 1 ? list[0] : null);
+    addPick(one ? one.key : `t:${text}`);
   };
   const drawSugg = () => {
     const q = P.normalizeText(search.value);
     let list;
     if (q) {
-      list = items.filter((i) => P.normalizeText(i.fa).includes(q) || i.key.includes(q)).sort((a, b) => Number(!!b.brand) - Number(!!a.brand) || a.fa.length - b.fa.length).slice(0, 8);
+      list = matching(q).slice(0, 8);
     } else {
       list = POPULAR.map((k) => byKey.get(k)).filter(Boolean);
     }
     list = list.filter((i) => !picks.includes(i.key));
-    sugg.replaceChildren(...list.map((i) => h('button', { class: 'chip-btn', type: 'button', role: 'option', onclick: () => { picks = [...picks, i.key].slice(0, 8); save({ picks }); search.value = ''; drawPicks(); drawSugg(); search.focus(); } },
+    const all = q && list.length > 1 ? [h('button', { class: 'chip-btn', type: 'button', role: 'option', onclick: () => { takeTyped(); search.focus(); } }, h('b', null, `همهٔ «${search.value.trim()}»ها`))] : [];
+    sugg.replaceChildren(...all, ...list.map((i) => h('button', { class: 'chip-btn', type: 'button', role: 'option', onclick: () => { addPick(i.key); search.focus(); } },
       i.brand ? h('b', null, i.fa) : i.fa, i.brand ? h('small', null, 'همهٔ مدل‌ها') : null)),
     ...(q && !list.length ? [h('span', { class: 'muted' }, 'در فهرست دیوار پیدا نشد.')] : []));
   };
   search.addEventListener('input', drawSugg);
+  search.addEventListener('keydown', (e) => { if (e.key === 'Enter' && search.value.trim()) { e.preventDefault(); takeTyped(); } });
 
   // ---- 3. more filters (folded) ----
   const gear = h('select', null, [['', 'فرقی نمی‌کند'], ['automatic', 'اتوماتیک'], ['manual', 'دنده‌ای']].map(([v, t]) => h('option', { value: v, selected: s.gearbox === v }, t)));
@@ -120,6 +155,7 @@ function renderBudget(view, params) {
       h('button', { class: 'btn primary lg', type: 'submit' }, icon('flame'), 'بهترین‌ها را نشان بده')),
     err);
   const readForm = () => {
+    takeTyped();
     const o = { from: fromIn.value.trim(), to: toIn.value.trim(), picks, origin: s.origin || '', gearbox: gear.value, personal: personal.checked, bodyOk: bodyOk.checked, chassisOk: chassisOk.checked, kmMax: km.value.trim() };
     save(o);
     return o;
@@ -141,11 +177,19 @@ function renderBudget(view, params) {
   if (!shown || !max) { view.replaceChildren(h('div', { class: 'page' }, head, form)); return; }
 
   // ---- results from the ads already read ----
-  const pickItems = picks.map((k) => byKey.get(k));
+  const pickItems = picks.map(pickOf);
   const wanted = (p) => {
     if (!pickItems.length) return true;
     const name = P.normalizeText(`${p.brand || ''} ${p.title || ''}`);
-    return pickItems.some((i) => name.includes(P.normalizeText(i.fa.replace(/^(?:خودرو\s*)/, ''))));
+    return pickItems.some((i) => (i.text ? P.normalizeText(i.fa).split(' ').every((w) => name.includes(w)) : false) || name.includes(P.normalizeText(i.fa.replace(/^(?:خودرو\s*)/, ''))));
+  };
+  // Where on Divar a pick is searched: its own page; typed words → the models they name, else Divar's text search.
+  const divarTargets = (i) => {
+    if (!i.text) return [{ path: i.path }];
+    const list = matching(P.normalizeText(i.fa));
+    const models = list.filter((x) => !x.brand);
+    const paths = (models.length ? models : list).slice(0, 4).map((x) => ({ path: x.path }));
+    return paths.length ? paths : [{ path: '', q: i.fa }];
   };
   const kmMax = P.parseNumber(s.kmMax);
   const posts = allAds().filter((a) => inCity(a) && inPeriod(a) && stageOf(a) !== 'rejected').map((a) => ({ ...a.post, removed: a.removed }))
@@ -162,8 +206,9 @@ function renderBudget(view, params) {
   const searchDivar = async () => {
     const o = { min, max, origin: s.origin, gearbox: s.gearbox, personal: s.personal, bodyOk: s.bodyOk, chassisOk: s.chassisOk, kmMax: kmMax || null };
     const batch = batchId();
-    const paths = pickItems.length ? pickItems.map((i) => i.path) : [''];
-    const items = paths.map((p) => ({ searchUrl: divarBudgetUrl(p, o), city: budgetCity(), maxAgeDays: reviewPeriod(), maxAds: pickItems.length ? 50 : 100,
+    const seen = new Set();
+    const targets = (pickItems.length ? pickItems.flatMap(divarTargets) : [{ path: '' }]).filter((t) => !seen.has(t.path + (t.q || '')) && seen.add(t.path + (t.q || ''))).slice(0, 12);
+    const items = targets.map((t) => ({ searchUrl: divarBudgetUrl(t.path, { ...o, q: t.q }), city: budgetCity(), maxAgeDays: reviewPeriod(), maxAds: pickItems.length ? 50 : 100,
       speed: 'slow', batch, budget: { min, max, personalOnly: !!s.personal } }));
     try {
       await api('/api/scan-batch', { method: 'POST', body: { items } });

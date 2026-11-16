@@ -241,29 +241,60 @@ function guideOf(p) {
 }
 
 function renderPrices(view, params) {
+  if (!CATALOG.brands) { view.replaceChildren(h('div', { class: 'page' }, h('p', { class: 'muted' }, 'در حال بارگذاری…'))); loadCatalog().then(() => render()); return; }
   const entries = App.guide || [];
-  if (!entries.length) {
-    view.replaceChildren(h('div', { class: 'page' }, pageHead('قیمت‌یاب', 'برای هر خودرو، قیمت خوب برای خرید و فروش.', [citySelect(() => { App.computeGuide(); render(); }), periodSelect(() => { App.computeGuide(); render(); })]),
-      h('div', { class: 'empty big' }, icon('trend', 'xl'), h('b', null, App.ads.size ? 'در این بازهٔ زمانی آگهی کافی نیست' : 'هنوز آگهی کافی نیست'),
-        h('p', null, App.ads.size ? 'بازهٔ زمانی بالای صفحه را بیشتر کنید، یا جستجوی تازه بزنید.' : 'وقتی ربات چند آگهی از یک خودرو بخواند، قیمت‌ها اینجا می‌آیند.'),
-        h('a', { class: 'btn primary lg', href: '#/search' }, icon('search'), 'جستجوی جدید'))));
-    return;
-  }
-  // Models, biggest first
+  // Models already read, biggest first
   const models = [];
   for (const g of entries) {
     let m = models.find((x) => x.key === g.modelKey);
     if (!m) models.push((m = { key: g.modelKey, label: g.label, total: 0 }));
     m.total += g.total;
   }
-  const modelKey = models.some((m) => m.key === params.get('model')) ? params.get('model') : models[0].key;
+  // The model asked for: one already read, or one of Divar's that has no ads here yet.
+  const cat = catalogModels();
+  const asked = params.get('model') || '';
+  const want = asked && !models.some((m) => m.key === asked) ? { key: asked, label: (cat.get(asked) || {}).label || asked } : null;
+  const modelKey = want ? want.key : (asked || (models[0] ? models[0].key : ''));
   const go = (k) => { location.hash = `#/prices?model=${encodeURIComponent(k)}`; };
   const mine = entries.filter((g) => g.modelKey === modelKey);
   const sure = mine.filter((g) => g.enough);
   const price = (n) => h('span', { class: 'num' }, formatPrice(n));
 
-  const chips = h('div', { class: 'quick' }, models.map((m) => h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(m.key === modelKey), onclick: () => go(m.key) },
-    m.label, h('small', null, fa(m.total)))));
+  // ---- which car: type its name, or tap one already read ----
+  const search = h('input', { placeholder: 'مدل ماشین را بنویسید؛ مثلاً ۲۰۶، پاترول، مگان…', 'aria-label': 'جستجوی مدل' });
+  const chips = h('div', { class: 'quick' });
+  const found = () => {
+    const q = P.normalizeText(search.value);
+    if (!q) return models;
+    const out = models.filter((m) => m.key.includes(q) || P.normalizeText(m.label).includes(q));
+    for (const c of cat.values()) {
+      if (c.names.includes(q) && !out.some((m) => m.key === c.key)) out.push(models.find((m) => m.key === c.key) || { key: c.key, label: c.label, total: 0 });
+    }
+    return out.sort((a, b) => b.total - a.total || a.label.length - b.label.length).slice(0, 10);
+  };
+  const drawChips = () => {
+    const list = found();
+    chips.replaceChildren(...list.map((m) => h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(m.key === modelKey), onclick: () => go(m.key) },
+      m.label, m.total ? h('small', null, fa(m.total)) : null)),
+    ...(search.value.trim() && !list.length ? [h('span', { class: 'muted' }, 'در فهرست دیوار پیدا نشد.')] : []));
+  };
+  search.addEventListener('input', drawChips);
+  search.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const l = found(); if (search.value.trim() && l.length) go(l[0].key); } });
+  drawChips();
+  const head = pageHead('قیمت‌یاب', 'قیمت‌ها از آگهی‌های دیوار است؛ آگهی‌های اقساطی حساب نمی‌شوند. پای معامله معمولاً چند درصد پایین‌تر بسته می‌شود.',
+    [citySelect(() => { App.computeGuide(); render(); }), periodSelect(() => { App.computeGuide(); render(); })]);
+  const picker = [h('label', { class: 'pick-search' }, icon('search'), search), chips];
+
+  if (want || !entries.length) {
+    const collect = () => startScan({ query: want.label, city: budgetCity(), maxAgeDays: reviewPeriod(), maxAds: 40, speed: 'slow' }).catch((e) => toast(e.message, 'err'));
+    view.replaceChildren(h('div', { class: 'page' }, head, picker, want
+      ? h('div', { class: 'empty big' }, icon('trend', 'xl'), h('b', null, 'از ', h('bdi', null, want.label), ' هنوز آگهی‌ای نخوانده‌ام'),
+        h('p', null, 'ربات آگهی‌های این مدل را آرام از دیوار می‌خواند؛ بعد قیمت خرید و فروشش همین‌جا می‌آید.'),
+        h('button', { class: 'btn primary lg', type: 'button', onclick: collect }, icon('search'), 'جمع‌آوری آگهی‌های این مدل'))
+      : h('div', { class: 'empty big' }, icon('trend', 'xl'), h('b', null, App.ads.size ? 'در این بازهٔ زمانی آگهی کافی نیست' : 'هنوز آگهی کافی نیست'),
+        h('p', null, App.ads.size ? 'بازهٔ زمانی بالای صفحه را بیشتر کنید، یا مدل ماشین را بالا بنویسید.' : 'مدل ماشین را بالا بنویسید تا ربات آگهی‌هایش را بخواند.'))));
+    return;
+  }
 
   // ---- «ماشین خودم» ----
   const myBox = h('div', { class: 'my-result' });
@@ -317,10 +348,7 @@ function renderPrices(view, params) {
       ] : h('p', { class: 'muted' }, 'آگهی کافی نیست (دست‌کم ۳ آگهی نقدی لازم است).'));
   });
 
-  view.replaceChildren(h('div', { class: 'page' },
-    pageHead('قیمت‌یاب', 'قیمت‌ها از آگهی‌های دیوار است؛ آگهی‌های اقساطی حساب نمی‌شوند. پای معامله معمولاً چند درصد پایین‌تر بسته می‌شود.',
-      [citySelect(() => { App.computeGuide(); render(); }), periodSelect(() => { App.computeGuide(); render(); })]),
-    chips, myCard, h('div', { class: 'guide-grid' }, cards)));
+  view.replaceChildren(h('div', { class: 'page' }, head, picker, myCard, h('div', { class: 'guide-grid' }, cards)));
   if (sure.length) { fillTrims(); calc(); }
 }
 
