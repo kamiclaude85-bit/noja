@@ -50,6 +50,7 @@ const POPULAR = ['peugeot/206', 'pride', 'runna', 'dena', 'samand', 'tiba', 'sai
   'renault/megan', 'nissan/maxima-im', 'hyundai/elantra', 'kia/cerato', 'toyota/corolla'];
 
 const BUDGET_PREF = 'radyab.budget2';
+let BUDGET_TYPED = ''; // words in the model box, kept while the page redraws itself
 function budgetPrefs() {
   return { from: '', to: '', picks: [], origin: '', gearbox: '', personal: false, bodyOk: false, chassisOk: false, kmMax: '', ...prefs.get(BUDGET_PREF, {}) };
 }
@@ -72,7 +73,7 @@ function divarBudgetUrl(path, o) {
 function renderBudget(view, params) {
   if (!CATALOG.brands) { view.replaceChildren(h('div', { class: 'page' }, h('p', { class: 'muted' }, 'در حال بارگذاری…'))); loadCatalog().then(() => render()); return; }
   const s = budgetPrefs();
-  const save = (patch) => prefs.set(BUDGET_PREF, { ...s, ...patch });
+  const save = (patch) => { Object.assign(s, patch); prefs.set(BUDGET_PREF, s); };
   const toToman = (v) => { const n = P.parseNumber(v); return n == null ? 0 : (n < 100000 ? n * 1e6 : n); };
   const shown = params.get('go') === '1';
   const caution = params.get('view') === 'caution';
@@ -90,7 +91,7 @@ function renderBudget(view, params) {
   let picks = (s.picks || []).filter(pickOf);
   const chips = h('div', { class: 'pick-chips' });
   const sugg = h('div', { class: 'pick-sugg', role: 'listbox' });
-  const search = h('input', { placeholder: 'مثلاً ۲۰۶، رانا، مگان، ماکسیما…', 'aria-label': 'جستجوی مدل' });
+  const search = h('input', { placeholder: 'مثلاً ۲۰۶، رانا، مگان، ماکسیما…', 'aria-label': 'جستجوی مدل', value: BUDGET_TYPED });
   const originSeg = h('div', { class: 'seg' }, [['', 'همه'], ['domestic', 'ایرانی'], ['foreign', 'وارداتی']].map(([v, t]) => h('button', {
     type: 'button', 'aria-pressed': String((s.origin || '') === v), onclick: (e) => { s.origin = v; save({ origin: v }); $$('button', originSeg).forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget))); },
   }, t)));
@@ -99,7 +100,7 @@ function renderBudget(view, params) {
       pickOf(k).fa, icon('x', 'sm'))));
     originSeg.hidden = picks.length > 0; // with chosen models, «ایرانی / وارداتی» is not needed
   };
-  const addPick = (key) => { if (!picks.includes(key)) picks = [...picks, key].slice(0, 8); save({ picks }); search.value = ''; drawPicks(); drawSugg(); };
+  const addPick = (key) => { if (!picks.includes(key)) picks = [...picks, key].slice(0, 8); save({ picks }); search.value = ''; BUDGET_TYPED = ''; drawPicks(); drawSugg(); };
   // Words typed but no suggestion tapped still count: the one model they name, else the words themselves.
   const takeTyped = () => {
     const text = search.value.replace(/\s+/g, ' ').trim();
@@ -118,7 +119,7 @@ function renderBudget(view, params) {
       list = POPULAR.map((k) => byKey.get(k)).filter(Boolean);
     }
     list = list.filter((i) => !picks.includes(i.key));
-    const all = q && list.length > 1 ? [h('button', { class: 'chip-btn', type: 'button', role: 'option', onclick: () => { takeTyped(); search.focus(); } }, h('b', null, `همهٔ «${search.value.trim()}»ها`))] : [];
+    const all = q && list.length > 1 && !picks.includes(`t:${search.value.trim()}`) ? [h('button', { class: 'chip-btn', type: 'button', role: 'option', onclick: () => { takeTyped(); search.focus(); } }, h('b', null, `همهٔ «${search.value.trim()}»ها`))] : [];
     sugg.replaceChildren(...all, ...list.map((i) => h('button', { class: 'chip-btn', type: 'button', role: 'option', onclick: () => { addPick(i.key); search.focus(); } },
       i.brand ? h('b', null, i.fa) : i.fa, i.brand ? h('small', null, 'همهٔ مدل‌ها') : null)),
     ...(q && !list.length ? [h('span', { class: 'muted' }, 'در فهرست دیوار پیدا نشد.')] : []));
@@ -160,6 +161,10 @@ function renderBudget(view, params) {
     save(o);
     return o;
   };
+  // What is typed stays, even if the page redraws itself before «نشان بده» is pressed.
+  const keep = () => { BUDGET_TYPED = search.value; save({ from: fromIn.value.trim(), to: toIn.value.trim(), gearbox: gear.value, personal: personal.checked, bodyOk: bodyOk.checked, chassisOk: chassisOk.checked, kmMax: km.value.trim() }); };
+  form.addEventListener('input', keep);
+  form.addEventListener('change', keep);
   form.addEventListener('submit', (e) => {
     e.preventDefault();
     const o = readForm();

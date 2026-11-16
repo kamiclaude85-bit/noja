@@ -786,3 +786,8 @@ tr.sold { opacity: .55; }
   .saved-list .item-main { flex-basis: 100%; }
   .saved-list .item-main b { white-space: normal; }
 }
+
+/* «قیمت‌یاب»: the model box, the models under it, then the page */
+.model-chips { margin: 10px 0 16px; }
+.model-chips:empty { margin: 0 0 16px; }
+.chip-btn.more { border-style: dashed; color: var(--text-3); }

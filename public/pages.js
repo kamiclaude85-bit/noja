@@ -231,6 +231,7 @@ function modelStrip(ads, modelKey, trimKey, go) {
 // =========================================================
 // «قیمت‌یاب»: what is a good price to buy, and to sell your own car
 // =========================================================
+let PRICE_TYPED = ''; // words in the model box, kept while the page redraws itself
 const BODY_OPTIONS = [['clean', 'سالم و بی‌رنگ'], ['scratches', 'خط و خش جزیی'], ['paint', 'رنگ‌شدگی'], ['accident', 'تصادفی']];
 
 /** The guide entry for an ad's model, trim and year (or for its model and year). */
@@ -255,17 +256,20 @@ function renderPrices(view, params) {
   const asked = params.get('model') || '';
   const want = asked && !models.some((m) => m.key === asked) ? { key: asked, label: (cat.get(asked) || {}).label || asked } : null;
   const modelKey = want ? want.key : (asked || (models[0] ? models[0].key : ''));
-  const go = (k) => { location.hash = `#/prices?model=${encodeURIComponent(k)}`; };
+  const go = (k) => { PRICE_TYPED = ''; location.hash = `#/prices?model=${encodeURIComponent(k)}`; };
   const mine = entries.filter((g) => g.modelKey === modelKey);
   const sure = mine.filter((g) => g.enough);
   const price = (n) => h('span', { class: 'num' }, formatPrice(n));
 
   // ---- which car: type its name, or tap one already read ----
-  const search = h('input', { placeholder: 'مدل ماشین را بنویسید؛ مثلاً ۲۰۶، پاترول، مگان…', 'aria-label': 'جستجوی مدل' });
-  const chips = h('div', { class: 'quick' });
+  const search = h('input', { placeholder: 'مدل ماشین را بنویسید؛ مثلاً ۲۰۶، پاترول، مگان…', 'aria-label': 'جستجوی مدل', value: PRICE_TYPED });
+  const chips = h('div', { class: 'quick model-chips' });
+  let showAll = false;
+  // Nothing typed: the chosen model first, then the ones already read.
+  const mineFirst = () => [...(want ? [{ ...want, total: 0 }] : []), ...models].sort((a, b) => Number(b.key === modelKey) - Number(a.key === modelKey));
   const found = () => {
     const q = P.normalizeText(search.value);
-    if (!q) return models;
+    if (!q) return mineFirst();
     const out = models.filter((m) => m.key.includes(q) || P.normalizeText(m.label).includes(q));
     for (const c of cat.values()) {
       if (c.names.includes(q) && !out.some((m) => m.key === c.key)) out.push(models.find((m) => m.key === c.key) || { key: c.key, label: c.label, total: 0 });
@@ -273,12 +277,15 @@ function renderPrices(view, params) {
     return out.sort((a, b) => b.total - a.total || a.label.length - b.label.length).slice(0, 10);
   };
   const drawChips = () => {
-    const list = found();
+    const every = found();
+    const typed = !!search.value.trim();
+    const list = typed || showAll || every.length <= 9 ? every : every.slice(0, 8);
     chips.replaceChildren(...list.map((m) => h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(m.key === modelKey), onclick: () => go(m.key) },
       m.label, m.total ? h('small', null, fa(m.total)) : null)),
-    ...(search.value.trim() && !list.length ? [h('span', { class: 'muted' }, 'در فهرست دیوار پیدا نشد.')] : []));
+    ...(list.length < every.length ? [h('button', { class: 'chip-btn more', type: 'button', onclick: () => { showAll = true; drawChips(); } }, `${fa(every.length - list.length)} مدل دیگر`)] : []),
+    ...(typed && !list.length ? [h('span', { class: 'muted' }, 'در فهرست دیوار پیدا نشد.')] : []));
   };
-  search.addEventListener('input', drawChips);
+  search.addEventListener('input', () => { PRICE_TYPED = search.value; drawChips(); });
   search.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const l = found(); if (search.value.trim() && l.length) go(l[0].key); } });
   drawChips();
   const head = pageHead('قیمت‌یاب', 'قیمت‌ها از آگهی‌های دیوار است؛ آگهی‌های اقساطی حساب نمی‌شوند. پای معامله معمولاً چند درصد پایین‌تر بسته می‌شود.',
