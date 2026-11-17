@@ -217,13 +217,16 @@ class Scanner {
       // ---- 4. Decide what to open: only new ads, and old ads whose price changed ----
       const toVisit = [];
       const doors = P.doorsOf(c.query || '');
+      const lim = P.limitsOf(c);
       for (const item of run.items) {
         const rec = c.recheckAll ? null : this.store.knownAd(item.token);
         if (rec && rec.removed) continue;
         // Not what was asked for, and the list card already says so: a made-up price («۱٬۰۰۰ تومان»),
-        // or the other door count in its title. Not opened (one visit less), not kept.
+        // a price outside the search's range (Divar pads a short list with «آگهی‌های مشابه» that
+        // ignore the filters), or the other door count in its title. Not opened (one visit less), not kept.
         const cardDoors = doors ? P.doorsOf(item.title || '') : null;
-        if (!(rec && rec.post) && (P.fakePrice(cardPrice(item)) || (cardDoors && cardDoors !== doors))) {
+        const card = cardPrice(item);
+        if (!(rec && rec.post) && (P.fakePrice(card) || P.outOfLimits({ price: card }, lim) || (cardDoors && cardDoors !== doors))) {
           run.stats.skipped = (run.stats.skipped || 0) + 1;
           continue;
         }
@@ -634,7 +637,8 @@ class Scanner {
     if (st.offTarget == null) {
       const posts = Object.values(run.posts || {});
       const rule = P.searchRule(run.criteria, posts);
-      st.offTarget = posts.filter((p) => p.isNew && P.offReason(p, rule)).length;
+      const lim = P.limitsOf(run.criteria);
+      st.offTarget = posts.filter((p) => p.isNew && P.offReason(p, rule, lim)).length;
       st.newAds = Math.max(0, (st.newAds || 0) - st.offTarget);
     }
     const parts = [`${fa(st.newAds || 0)} آگهی جدید`];

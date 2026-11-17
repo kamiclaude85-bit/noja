@@ -584,12 +584,46 @@
   }
 
   /**
-   * Why an ad does not belong in a search's results: 'price' (a made-up price), 'model'
-   * (another car or another door count), or null when it belongs. `rule` comes from searchRule.
+   * The limits a search was given: { priceMin, priceMax, yearMin, yearMax, mileageMax } (null = none).
+   * From the criteria's own fields, else its budget range, else the filters in its Divar link.
+   * Divar pads a short result list with «آگهی‌های مشابه» that ignore the filters; these limits
+   * are how such ads are told apart.
    */
-  function offReason(post, rule) {
+  function limitsOf(c) {
+    const out = { priceMin: null, priceMax: null, yearMin: null, yearMax: null, mileageMax: null };
+    if (!c) return out;
+    const num = (v) => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : null; };
+    let url = null;
+    try { url = c.searchUrl ? new URL(c.searchUrl).searchParams : null; } catch (_) { url = null; }
+    const pair = (k) => { const m = url && /^(\d*)-(\d*)$/.exec(url.get(k) || ''); return m ? [num(m[1]), num(m[2])] : [null, null]; };
+    const price = pair('price'); const year = pair('production-year'); const km = pair('usage');
+    out.priceMin = num(c.priceMin) || (c.budget ? num(c.budget.min) : null) || price[0];
+    out.priceMax = num(c.priceMax) || (c.budget ? num(c.budget.max) : null) || price[1];
+    out.yearMin = (c.yearMin ? normalizeYear(c.yearMin) : null) || year[0];
+    out.yearMax = (c.yearMax ? normalizeYear(c.yearMax) : null) || year[1];
+    out.mileageMax = num(c.mileageMax) || km[1];
+    return out;
+  }
+
+  /** True when a known price, year or mileage of the ad is outside those limits (unknown values pass). */
+  function outOfLimits(post, lim) {
+    if (!post || !lim) return false;
+    const p = post.price;
+    if (typeof p === 'number' && p > 0 && ((lim.priceMin && p < lim.priceMin) || (lim.priceMax && p > lim.priceMax))) return true;
+    if (post.year != null && !yearInRange(post.year, lim.yearMin, lim.yearMax)) return true;
+    if (lim.mileageMax && post.mileage != null && post.mileage > lim.mileageMax) return true;
+    return false;
+  }
+
+  /**
+   * Why an ad does not belong in a search's results: 'price' (a made-up price), 'range' (outside
+   * the search's price, year or mileage limits), 'model' (another car or another door count),
+   * or null when it belongs. `rule` comes from searchRule, `lim` from limitsOf.
+   */
+  function offReason(post, rule, lim) {
     if (!post) return null;
     if (fakePrice(post.price)) return 'price';
+    if (lim && outOfLimits(post, lim)) return 'range';
     if (!rule) return null;
     if (rule.doors) {
       const d = doorsOf(post.brand) || doorsOf(post.title);
@@ -613,10 +647,7 @@
     } else if (c.strictYear && (yMin != null || yMax != null)) {
       return false;
     }
-    if (offReason(post, rule === undefined ? searchRule(c, []) : rule)) return false;
-    if (c.priceMax && post.price != null && post.price > Number(c.priceMax)) return false;
-    if (c.priceMin && post.price != null && post.price < Number(c.priceMin)) return false;
-    if (c.mileageMax && post.mileage != null && post.mileage > Number(c.mileageMax)) return false;
+    if (offReason(post, rule === undefined ? searchRule(c, []) : rule, limitsOf(c))) return false;
     if (c.keyword) {
       const hay = normalizeText(`${post.title} ${post.brand}`);
       const words = normalizeText(c.keyword).split(' ').filter(Boolean);
@@ -671,6 +702,8 @@
     doorsOf,
     searchRule,
     offReason,
+    limitsOf,
+    outOfLimits,
     matchesCriteria,
     buildSearchUrl,
     median,

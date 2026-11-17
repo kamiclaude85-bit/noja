@@ -197,16 +197,23 @@ function sellerBadge(p) {
 function describeCriteria(c) {
   if (!c) return 'جستجو';
   const parts = [];
+  const lim = P.limitsOf(c);
   if (c.query) parts.push(c.query);
-  else if (c.searchUrl) parts.push('جستجوی دیوار');
-  else if (c.priceMin || c.priceMax) parts.push('همهٔ خودروها');
-  if (c.yearMin || c.yearMax) {
-    parts.push(c.yearMin === c.yearMax ? `مدل ${faYear(c.yearMin)}` : `مدل ${c.yearMin ? faYear(c.yearMin) : '…'} تا ${c.yearMax ? faYear(c.yearMax) : '…'}`);
+  else if (c.searchUrl) {
+    // A search made from Divar's own pages: name the car from the address («…/car/pride/132» → «پراید 132»).
+    let path = '';
+    try { path = decodeURIComponent(new URL(c.searchUrl).pathname).split('/car/')[1] || ''; } catch (_) { path = ''; }
+    const item = path && typeof catalogItems === 'function' ? catalogItems().find((i) => i.path === path) : null;
+    parts.push(item ? item.fa : path ? 'جستجوی دیوار' : 'همهٔ خودروها');
+  } else if (lim.priceMin || lim.priceMax) parts.push('همهٔ خودروها');
+  if (lim.yearMin || lim.yearMax) {
+    parts.push(lim.yearMin === lim.yearMax ? `مدل ${faYear(lim.yearMin)}` : `مدل ${lim.yearMin ? faYear(lim.yearMin) : '…'} تا ${lim.yearMax ? faYear(lim.yearMax) : '…'}`);
   }
-  if (c.priceMin || c.priceMax) {
-    parts.push(c.priceMin && c.priceMax ? `${formatPrice(c.priceMin)} تا ${formatPrice(c.priceMax)}`
-      : c.priceMin ? `از ${formatPrice(c.priceMin)}` : `تا ${formatPrice(c.priceMax)}`);
+  if (lim.priceMin || lim.priceMax) {
+    parts.push(lim.priceMin && lim.priceMax ? `${formatPrice(lim.priceMin)} تا ${formatPrice(lim.priceMax)}`
+      : lim.priceMin ? `از ${formatPrice(lim.priceMin)}` : `تا ${formatPrice(lim.priceMax)}`);
   }
+  if (lim.mileageMax) parts.push(`تا ${fa(Math.round(lim.mileageMax / 1000))} هزار کیلومتر`);
   return parts.join('، ') || 'جستجو';
 }
 
@@ -307,12 +314,13 @@ App.relevant = (ads, searches) => {
   const mine = new Map(searches.map((s) => [s.key, []]));
   for (const a of ads) for (const k of a.searches || []) if (mine.has(k)) mine.get(k).push(a.post);
   App.rules = new Map(searches.map((s) => [s.key, P.searchRule(s.criteria, mine.get(s.key))]));
+  const limits = new Map(searches.map((s) => [s.key, P.limitsOf(s.criteria)]));
   const hidden = new Map();
   const out = [];
   for (const a of ads) {
     const all = a.searches || [];
     const fake = !a.crm && P.fakePrice(a.post.price);
-    const fits = a.crm ? all : fake ? [] : all.filter((k) => !P.offReason(a.post, App.rules.get(k)));
+    const fits = a.crm ? all : fake ? [] : all.filter((k) => !P.offReason(a.post, App.rules.get(k), limits.get(k)));
     for (const k of all) if (!fits.includes(k)) hidden.set(k, (hidden.get(k) || 0) + 1);
     if (fits.length ? true : !all.length && !fake) out.push(fits.length === all.length ? a : { ...a, searches: fits });
   }
@@ -323,7 +331,8 @@ App.relevant = (ads, searches) => {
 /** The run page: the same rule for the ads one search read. */
 App.relevantPosts = (posts, criteria) => {
   const rule = P.searchRule(criteria, posts);
-  return posts.filter((p) => (App.ads.get(p.token) || {}).crm || !P.offReason(p, rule));
+  const lim = P.limitsOf(criteria);
+  return posts.filter((p) => (App.ads.get(p.token) || {}).crm || !P.offReason(p, rule, lim));
 };
 
 App.refreshAds = async (force) => {

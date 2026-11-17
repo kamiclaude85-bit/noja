@@ -431,102 +431,6 @@ function renderAds(view, params) {
 // =========================================================
 // New search
 // =========================================================
-function renderSearch(view) {
-  const saved = prefs.get('noja.form', {});
-  const val = (k, d = '') => (saved[k] != null ? saved[k] : d);
-  const cities = CITIES;
-  const select = h('select', { name: 'city' }, cities.map(([v, t]) => h('option', { value: v, selected: val('city', 'tehran') === v }, t)));
-  const speed = h('select', { name: 'speed' },
-    [['slow', 'آهسته — طبیعی‌ترین رفتار'], ['normal', 'معمولی'], ['fast', 'سریع']].map(([v, t]) => h('option', { value: v, selected: val('speed', 'normal') === v }, t)));
-
-  const err = h('p', { class: 'form-error', role: 'alert' });
-  const go = h('button', { class: 'btn primary lg', type: 'submit' }, icon('search'), 'پیدا کن');
-  const form = h('form', { class: 'search-card', autocomplete: 'off', novalidate: true },
-    h('div', { class: 'search-main' },
-      h('label', { class: 'field-big' }, h('span', { class: 'sr-only' }, 'نام خودرو'), icon('car', 'lg'),
-        h('input', { name: 'query', placeholder: 'چه ماشینی؟ مثلاً پژو ۲۰۶ (یا خالی، فقط با محدودهٔ قیمت)', value: val('query'), autofocus: true })),
-      go),
-    h('div', { class: 'search-row' },
-      h('label', { class: 'field' }, h('span', null, 'شهر'), select),
-      h('label', { class: 'field' }, h('span', null, 'مدل از سال'), h('input', { name: 'yearMin', inputmode: 'numeric', placeholder: 'مثلاً ۹۷', value: val('yearMin') })),
-      h('label', { class: 'field' }, h('span', null, 'تا سال'), h('input', { name: 'yearMax', inputmode: 'numeric', placeholder: 'مثلاً ۹۷', value: val('yearMax') }))),
-    h('div', { class: 'search-row' },
-      h('label', { class: 'field' }, h('span', null, 'آگهی‌های تا چه مدت پیش؟'),
-        h('select', { name: 'maxAgeDays' }, PERIODS.map(([d, t]) => h('option', { value: d, selected: Number(val('maxAgeDays', DEFAULT_PERIOD)) === d }, t)))),
-      h('label', { class: 'field' }, h('span', null, 'قیمت از (میلیون تومان)'), h('input', { name: 'priceMinM', inputmode: 'numeric', placeholder: 'مثلاً ۴۰۰', value: val('priceMinM') })),
-      h('label', { class: 'field' }, h('span', null, 'قیمت تا (میلیون تومان)'), h('input', { name: 'priceMaxM', inputmode: 'numeric', placeholder: 'مثلاً ۵۰۰', value: val('priceMaxM') }))),
-    h('details', { class: 'adv' },
-      h('summary', null, icon('sliders', 'sm'), 'تنظیمات بیشتر', icon('down', 'sm')),
-      h('div', { class: 'adv-grid' },
-        h('label', { class: 'field' }, h('span', null, 'کلمهٔ لازم در عنوان'), h('input', { name: 'keyword', placeholder: 'مثلاً 206', value: val('keyword') }),
-          h('span', { class: 'help' }, 'آگهی‌هایی که این کلمه را ندارند کنار می‌روند')),
-        h('label', { class: 'field' }, h('span', null, 'حداکثر آگهی جدید در هر بار'), h('input', { name: 'maxAds', inputmode: 'numeric', value: val('maxAds', '150') }),
-          h('span', { class: 'help' }, 'آگهی‌هایی که قبلاً خوانده شده‌اند دوباره باز نمی‌شوند')),
-        h('label', { class: 'field' }, h('span', null, 'سرعت ربات'), speed),
-        h('label', { class: 'field' }, h('span', null, 'سقف آگهی در روز'), h('input', { name: 'dailyLimit', inputmode: 'numeric', value: val('dailyLimit', String(App.state.dailyLimit || 300)) }),
-          h('span', { class: 'help' }, `امروز ${fa(App.state.today || 0)} آگهی باز شده`)),
-        h('label', { class: 'field wide' }, h('span', null, 'یا لینک یک جستجوی فیلترشده در دیوار'),
-          h('input', { name: 'searchUrl', dir: 'ltr', placeholder: 'https://divar.ir/s/tehran/car/peugeot/206?...', value: val('searchUrl') }),
-          h('span', { class: 'help' }, 'اگر خودتان در دیوار برند، تیپ یا رنگ را فیلتر کرده‌اید، لینک صفحه را اینجا بگذارید.')),
-        h('label', { class: 'check wide' }, h('input', { type: 'checkbox', name: 'strictYear', checked: !!saved.strictYear }), 'آگهی‌هایی که سالشان معلوم نیست حذف شوند'),
-        h('label', { class: 'check wide' }, h('input', { type: 'checkbox', name: 'recheckAll' }), 'این بار همهٔ آگهی‌ها دوباره باز شوند (کندتر؛ معمولاً لازم نیست)'))),
-    err);
-
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    err.textContent = '';
-    const data = Object.fromEntries(new FormData(form).entries());
-    data.strictYear = form.elements.strictYear.checked;
-    data.recheckAll = form.elements.recheckAll.checked;
-    prefs.set('noja.form', { ...data, recheckAll: false });
-    // Prices are typed in millions; a big number is taken as toman.
-    const toToman = (v) => { const n = P.parseNumber(v); return n == null ? null : (n < 100000 ? n * 1e6 : n); };
-    data.priceMin = toToman(data.priceMinM);
-    data.priceMax = toToman(data.priceMaxM);
-    delete data.priceMinM; delete data.priceMaxM;
-    if (data.priceMin && data.priceMax && data.priceMin > data.priceMax) { err.textContent = 'قیمت «از» بیشتر از «تا» است.'; return; }
-    if (!data.query.trim() && !data.searchUrl.trim() && !data.priceMin && !data.priceMax) {
-      err.textContent = 'نام خودرو یا محدودهٔ قیمت را بنویسید (یا لینک جستجوی دیوار را در «تنظیمات بیشتر» بگذارید).';
-      form.elements.query.focus();
-      return;
-    }
-    go.disabled = true;
-    go.replaceChildren(icon('loader'), 'در حال شروع…');
-    try {
-      await startScan(data);
-    } catch (ex) {
-      err.textContent = ex.body && ex.body.id ? 'یک جستجو در حال انجام است.' : ex.message;
-      go.disabled = false;
-      go.replaceChildren(icon('search'), 'پیدا کن');
-    }
-  });
-
-  const notices = [];
-  if (App.state.busy) {
-    notices.push(h('div', { class: 'notice' }, icon('loader'), h('div', { class: 'grow' }, 'ربات در حال یک جستجوی دیگر است.'),
-      h('a', { class: 'btn sm', href: `#/run/${encodeURIComponent(App.state.busy)}` }, 'دیدن پیشرفت')));
-  }
-  if (App.host && !App.bot.online) {
-    notices.push(h('div', { class: 'notice' }, icon('clock'),
-      h('div', { class: 'grow' }, h('b', null, 'کامپیوتر خاموش است. '), 'جستجو در صف می‌ماند و با روشن شدن ربات شروع می‌شود.')));
-  }
-  if (App.state.loggedIn === false && !App.offline && !App.host) {
-    notices.push(h('div', { class: 'notice' }, icon('login'),
-      h('div', { class: 'grow' }, h('b', null, 'یک بار وارد حساب دیوار شوید. '), 'می‌توانید همین حالا جستجو را شروع کنید؛ ربات صبر می‌کند تا وارد شوید.'),
-      h('button', { class: 'btn sm', type: 'button', onclick: () => api('/api/login', { method: 'POST' }).catch(() => {}) }, 'ورود به دیوار')));
-  }
-  const steps = [
-    ['دیوار را باز می‌کند', 'در کروم خودش و با حساب شما، مثل یک کاربر معمولی جستجو می‌کند.'],
-    ['فقط آگهی‌های جدید را می‌خواند', 'آگهی‌ای که یک بار خوانده شده دیگر باز نمی‌شود؛ مگر قیمتش عوض شده باشد.'],
-    ['برای پیگیری آماده می‌کند', 'شخصی و نمایشگاهی جدا، با قیمت میانه؛ بعد تماس و بازدید را پیگیری کنید.'],
-  ];
-  view.replaceChildren(h('div', { class: 'page narrow' },
-    h('h1', { class: 'hero-title' }, 'همهٔ آگهی‌های ماشینِ موردنظرت، یک‌جا'),
-    h('p', { class: 'lead' }, 'ردیاب در دیوار می‌گردد، آگهی‌ها را باز می‌کند و مشخصات را برایت مرتب می‌کند. تو فقط انتخاب کن.'),
-    form, ...notices,
-    h('div', { class: 'steps' }, steps.map(([t, s], i) => h('div', { class: 'step' }, h('span', { class: 'n' }, fa(i + 1)), h('div', null, h('b', null, t), h('span', null, s)))))));
-}
-
 // =========================================================
 // Runs (history)
 // =========================================================
@@ -624,7 +528,7 @@ function renderRuns(view) {
   const STATUS = { done: 'تمام شده', stopped: 'متوقف شده', error: 'خطا' };
   const runs = App.state.runs || [];
   view.replaceChildren(h('div', { class: 'page' },
-    pageHead('جستجوها', 'جستجوهای ذخیره‌شده و تاریخچهٔ اجرای ربات.', h('a', { class: 'btn primary', href: '#/search' }, icon('plus', 'sm'), 'جستجوی جدید')),
+    pageHead('جستجوهای من', 'جستجوهای ذخیره‌شده و تاریخچهٔ اجرای ربات.', h('a', { class: 'btn primary', href: '#/search' }, icon('plus', 'sm'), 'جستجوی جدید')),
     App.queue.length ? h('section', { class: 'card' },
       h('div', { class: 'card-h' }, h('h2', null, icon('clock', 'sm'), 'در صف ربات')),
       h('ul', { class: 'items' }, App.queue.map((q) => h('li', { class: 'item' },

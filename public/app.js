@@ -131,7 +131,7 @@ function parseRoute() {
   const params = new URLSearchParams(query || '');
   const m = path.match(/^\/run\/([A-Za-z0-9_-]+)/);
   if (m) return { name: 'run', id: m[1], params };
-  const name = { '/': 'dash', '': 'dash', '/ads': 'ads', '/search': 'search', '/runs': 'runs', '/backup': 'backup', '/settings': 'settings', '/deals': 'deals', '/prices': 'prices', '/budget': 'budget' }[path] || 'dash';
+  const name = { '/': 'dash', '': 'dash', '/ads': 'ads', '/search': 'search', '/runs': 'runs', '/backup': 'backup', '/settings': 'settings', '/deals': 'deals', '/prices': 'prices', '/budget': 'search' }[path] || 'dash';
   return { name, params };
 }
 
@@ -157,15 +157,14 @@ function render() {
       renderAds(view, route.params);
       PAGE.update = () => refreshAdsPage(route.params);
       break;
-    case 'budget': setTitle('خرید با بودجه'); renderBudget(view, route.params); PAGE.update = () => renderBudget(view, parseRoute().params); break;
     case 'prices': setTitle('قیمت‌یاب'); renderPrices(view, route.params); PAGE.update = () => renderPrices(view, parseRoute().params); break;
     case 'deals':
       setTitle('پیشنهاد ویژه');
       renderDeals(view, route.params);
       PAGE.update = () => refreshBrowser();
       break;
-    case 'search': setTitle('جستجوی جدید'); renderSearch(view); break;
-    case 'runs': setTitle('جستجوها'); renderRuns(view); PAGE.update = () => renderRuns(view); break;
+    case 'search': setTitle('جستجوی ماشین'); renderBudget(view, route.params); PAGE.update = () => renderBudget(view, parseRoute().params); break;
+    case 'runs': setTitle('جستجوهای من'); renderRuns(view); PAGE.update = () => renderRuns(view); break;
     case 'run': setTitle('جستجو'); renderRun(view, route.id); break;
     case 'backup': setTitle('پشتیبان'); renderBackup(view); break;
     case 'settings': setTitle('تنظیمات'); renderSettings(view); break;
@@ -205,7 +204,7 @@ App.onChange((what) => {
 window.addEventListener('hashchange', render);
 
 (async () => {
-  await Promise.all([App.refreshState(), App.refreshAds(true)]);
+  await Promise.all([App.refreshState(), App.refreshAds(true), loadCatalog()]);
   render();
   setInterval(() => { App.refreshState(); App.refreshAds(); }, 15000);
   setInterval(updateShell, 60000); // due-call times move on even without new data
