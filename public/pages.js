@@ -952,7 +952,7 @@ function budgetCity() { return (CITIES.find(([, n]) => n === reviewCity()) || ['
 // renderBudget: see budget.js
 
 function renderDeals(view, params) {
-  const tab = ['caution', 'dealer'].includes(params.get('view')) ? params.get('view') : '';
+  const tab = ['caution', 'dealer', 'drops'].includes(params.get('view')) ? params.get('view') : '';
   const caution = tab === 'caution';
   const searchKey = params.get('search') || '';
   const modelKey = params.get('model') || '';
@@ -960,7 +960,8 @@ function renderDeals(view, params) {
   const city = reviewCity();
   const period = reviewPeriod();
   const base = (a) => (!searchKey || a.searches.includes(searchKey)) && inCity(a, city) && inPeriod(a, period) && !a.removed && stageOf(a) !== 'rejected';
-  const isPick = (a, t) => { const d = App.deals.get(a.token); return !!d && (t ? d.level === t : d.deal); };
+  // «ارزان‌شده»: the seller lowered the price in the last 7 days (judged on the price bar).
+  const isPick = (a, t) => { if (t === 'drops') return !!adFlags(a).priceDrop; const d = App.deals.get(a.token); return !!d && (t ? d.level === t : d.deal); };
   const picks = allAds().filter((a) => base(a) && isPick(a, tab));
   const count = (c) => allAds().filter((a) => base(a) && isPick(a, c)).length;
   const nav = (patch) => {
@@ -969,6 +970,7 @@ function renderDeals(view, params) {
   };
   const tabs = h('div', { class: 'stage-tabs', role: 'tablist' },
     h('button', { role: 'tab', type: 'button', 'aria-selected': String(!tab), onclick: () => nav({ view: '' }) }, icon('flame', 'sm'), 'پیشنهاد ویژه', h('small', { class: 'num' }, fa(count('')))),
+    h('button', { role: 'tab', type: 'button', 'aria-selected': String(tab === 'drops'), onclick: () => nav({ view: 'drops' }) }, icon('trend', 'sm'), 'ارزان‌شده', h('small', { class: 'num' }, fa(count('drops')))),
     h('button', { role: 'tab', type: 'button', 'aria-selected': String(tab === 'dealer'), onclick: () => nav({ view: 'dealer' }) }, icon('store', 'sm'), 'نمایشگاهی', h('small', { class: 'num' }, fa(count('dealer')))),
     h('button', { role: 'tab', type: 'button', 'aria-selected': String(caution), onclick: () => nav({ view: 'caution' }) }, icon('alert', 'sm'), 'با احتیاط', h('small', { class: 'num' }, fa(count('caution')))));
   const searchSel = App.searches.length > 1 ? h('select', { class: 'search-sel', 'aria-label': 'جستجو', onchange: (e) => nav({ search: e.target.value }) },
@@ -1002,6 +1004,8 @@ function renderDeals(view, params) {
       ? 'خیلی ارزان‌تر از بقیه، تصادفی، یا قیمتی که احتمالاً پیش‌پرداخت/اقساطی است. قبل از هر کاری با دقت بررسی کنید.'
       : tab === 'dealer'
         ? 'ارزان‌تر از هم‌مدل‌ها، ولی فروشنده نمایشگاه، واسطه یا فروشندهٔ حواله است.'
+        : tab === 'drops'
+          ? 'فروشنده در ۷ روز گذشته قیمت را پایین آورده. در صفحهٔ هر آگهی، نوار قیمت می‌گوید قیمت تازه عالی، خوب، منصفانه یا گران است.'
         : 'فقط فروشندهٔ شخصی. هر آگهی با آگهی‌های همان مدل، تیپ و سال مقایسه شده؛ کارکرد و رنگ و تعویضی (از مشخصات و توضیحات) در قیمت معمولش حساب شده.',
     [citySelect(() => render()), periodSelect(() => render()), searchSel]),
     tabs, modelChips, yearChips, marketLine, box));
@@ -1013,9 +1017,14 @@ function renderDeals(view, params) {
       .filter((a) => !modelKey || P.modelOf(a.post).key === modelKey)
       .filter((a) => !year || a.post.year === year)
       .map((a, i) => ({ ...a.post, isNew: false, priceChange: null, order: i })),
-    title: (n) => `${caution ? 'با احتیاط' : tab === 'dealer' ? 'نمایشگاهی' : 'پیشنهاد ویژه'}${sel ? ` — ${sel.label}${year ? ` ${faYear(year)}` : ''}` : ''} — ${fa(n)} آگهی`,
-    emptyTitle: caution ? 'آگهی مشکوکی نیست' : tab === 'dealer' ? 'آگهی نمایشگاهیِ ارزانی نیست' : 'فعلاً پیشنهاد ویژه‌ای نیست',
-    emptyText: 'وقتی آگهی‌ای از هم‌مدل‌ها و هم‌سال‌هایش ارزان‌تر باشد، اینجا می‌آید.',
+    title: (n) => `${caution ? 'با احتیاط' : tab === 'dealer' ? 'نمایشگاهی' : tab === 'drops' ? 'ارزان‌شده' : 'پیشنهاد ویژه'}${sel ? ` — ${sel.label}${year ? ` ${faYear(year)}` : ''}` : ''} — ${fa(n)} آگهی`,
+    emptyTitle: caution ? 'آگهی مشکوکی نیست' : tab === 'dealer' ? 'آگهی نمایشگاهیِ ارزانی نیست' : tab === 'drops' ? 'این هفته کسی قیمتش را پایین نیاورده' : 'فعلاً پیشنهاد ویژه‌ای نیست',
+    emptyText: tab === 'drops' ? 'وقتی فروشنده‌ای قیمتش را پایین بیاورد، اینجا می‌آید.' : 'وقتی آگهی‌ای از هم‌مدل‌ها و هم‌سال‌هایش ارزان‌تر باشد، اینجا می‌آید.',
+    // the verdict of the price bar, so a lowered price can be judged from the list
+    rowNote: (p) => {
+      const v = p._deal && NojaDeals.priceVerdict(p.price, p._deal.expected);
+      return v ? h('div', { class: `zone-note z-${v.zone}` }, ZONE_TEXT[v.zone], p._deal.approx ? ' (تقریبی)' : '', ` · خوب تا ${formatPrice(v.good)}`) : null;
+    },
   });
   // Grouped: model, then newest model year, then the best deal first.
   B.sort = 'model-year';

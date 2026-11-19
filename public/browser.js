@@ -233,8 +233,9 @@ function delta(p) {
   // of the visible list mixes models and depends on this device's filters, so it is not shown.
   if (!p._deal || !p._deal.expected || !p.price) return null;
   const r = p.price / p._deal.expected;
-  if (r <= 0.95) return { cls: 'low', text: `${fa(Math.round((1 - r) * 100))}٪ زیر قیمت معمول` };
-  if (r >= 1.05) return { cls: 'high', text: `${fa(Math.round((r - 1) * 100))}٪ بالای قیمت معمول` };
+  const ap = p._deal.approx ? 'حدود ' : ''; // compared with nearby years / other trims
+  if (r <= 0.95) return { cls: 'low', text: `${ap}${fa(Math.round((1 - r) * 100))}٪ زیر قیمت معمول` };
+  if (r >= 1.05) return { cls: 'high', text: `${ap}${fa(Math.round((r - 1) * 100))}٪ بالای قیمت معمول` };
   return null;
 }
 
@@ -648,11 +649,28 @@ function priceBar(p) {
   const d = p._deal;
   const v = d && NojaDeals.priceVerdict(p.price, d.expected);
   const divar = (p.fields || {})['ارزیابی قیمت'];
-  if (!v) return divar ? h('div', { class: 'pbar-divar' }, 'ارزیابی دیوار: ', h('b', null, divar)) : null;
+  const divarLine = divar ? h('div', { class: 'pbar-divar' }, 'ارزیابی دیوار: ', h('b', null, divar)) : null;
+  // A down payment is not the price of the car: no bar.
+  if (p.price && NojaDeals.isInstallment(p)) {
+    return h('div', { class: 'pbar z-none' }, h('div', { class: 'pbar-h' }, h('b', null, 'ارزیابی قیمت'), h('span', { class: 'pbar-verdict warn' }, 'اقساطی')),
+      h('small', { class: 'pbar-note' }, 'قیمت این آگهی احتمالاً پیش‌پرداخت یا اقساطی است و با قیمت بازار قابل مقایسه نیست. قیمت نقدی را از فروشنده بپرسید.'), divarLine);
+  }
+  if (!v) {
+    return h('div', { class: 'pbar z-none' }, h('div', { class: 'pbar-h' }, h('b', null, 'ارزیابی قیمت'), h('span', { class: 'pbar-verdict' }, 'نامشخص')),
+      h('small', { class: 'pbar-note' }, 'از این مدل هنوز آگهی کافی نخوانده‌ام. با یک جستجوی این مدل در «جستجوی ماشین» قیمتش معلوم می‌شود.'), divarLine);
+  }
   // The bar runs from 20% under to 20% over the usual price.
   const lo = d.expected * 0.8;
   const hi = d.expected * 1.2;
   const at = (n) => `${Math.max(0, Math.min(100, ((n - lo) / (hi - lo)) * 100))}%`;
+  // The seller lowered the price: by how much, and how the old price would have been judged.
+  const ph = (p._ad && p._ad.priceHistory) || [];
+  const was = ph.length > 1 ? Math.max(...ph.slice(0, -1).map((x) => x.price || 0)) : 0;
+  const dropLine = was > p.price ? (() => {
+    const old = NojaDeals.priceVerdict(was, d.expected);
+    return h('div', { class: 'pbar-drop' }, icon('trend', 'sm'),
+      `قیمت را ${formatPrice(was - p.price)} کم کرد: از ${formatPrice(was)} (${ZONE_TEXT[old.zone]}) به ${formatPrice(p.price)} (${ZONE_TEXT[v.zone]})`);
+  })() : null;
   const amount = formatPrice(Math.abs(Math.round(v.diff / 1e6) * 1e6));
   const bubble = Math.abs(v.diff) < d.expected * 0.01 ? 'هم‌قیمت بازار'
     : v.diff < 0 ? `${amount} پایین‌تر از قیمت معمول` : `${amount} بالاتر از قیمت معمول`;
@@ -666,14 +684,16 @@ function priceBar(p) {
         h('span', { class: 'seg good', style: `inset-inline-start:${at(v.great)};width:calc(${at(v.good)} - ${at(v.great)})` }),
         h('span', { class: 'seg fair', style: `inset-inline-start:${at(v.good)};width:calc(${at(v.fair)} - ${at(v.good)})` }),
         h('span', { class: 'seg high', style: `inset-inline-start:${at(v.fair)};inset-inline-end:0` }),
+        was > p.price ? h('span', { class: 'pbar-was', title: `قیمت قبلی: ${formatPrice(was)}`, style: `inset-inline-start:${at(was)}` }) : null,
         h('span', { class: 'pbar-dot', style: `inset-inline-start:${at(p.price)}` }))),
+    dropLine,
     h('ul', { class: 'pbar-advice' },
       h('li', { class: 'great' }, h('i'), 'عالی: تا ', h('b', { class: 'num' }, formatPrice(v.great))),
       h('li', { class: 'good' }, h('i'), 'خوب: تا ', h('b', { class: 'num' }, formatPrice(v.good))),
       h('li', { class: 'fair' }, h('i'), 'منصفانه: تا ', h('b', { class: 'num' }, formatPrice(v.fair))),
       h('li', { class: 'high' }, h('i'), 'گران: بالای ', h('b', { class: 'num' }, formatPrice(v.fair)))),
-    h('small', { class: 'pbar-note' }, `از روی ${fa(d.peers)} آگهی هم‌مدل و هم‌سال، با کارکرد و ${d.body && d.body.level && d.body.level !== 'clean' ? `بدنهٔ «${d.body.label}»` : 'بدنهٔ'} همین ماشین${d.sure ? '' : ' — آگهی‌های مقایسه کم است، تقریبی ببینید'}.`),
-    divar ? h('div', { class: 'pbar-divar' }, 'ارزیابی دیوار: ', h('b', null, divar)) : null);
+    h('small', { class: 'pbar-note' }, `${d.approx ? 'تقریبی — ' : ''}از روی ${d.approx === 'few' ? 'فقط ' : ''}${fa(d.peers)} آگهی ${d.approx === 'years' ? 'همین مدل و تیپ از سال‌های نزدیک' : d.approx === 'trims' ? 'همین مدل با تیپ‌های دیگر' : 'هم‌مدل و هم‌سال'}، با کارکرد و ${d.body && d.body.level && d.body.level !== 'clean' ? `بدنهٔ «${d.body.label}»` : 'بدنهٔ'} همین ماشین${d.approx ? '' : d.sure ? '' : ' — آگهی‌های مقایسه کم است، تقریبی ببینید'}.`),
+    divarLine);
 }
 
 function dealBox(deal) {

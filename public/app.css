@@ -833,3 +833,12 @@ tr.sold { opacity: .55; }
 .pbar-divar { margin-top: 6px; font-size: 12.5px; color: var(--text-2); }
 @media (max-width: 420px) { .pbar-advice { grid-template-columns: 1fr; } }
 .pbar .pbar-verdict.warn { background: var(--bad-soft); color: var(--bad); }
+.pbar.z-none .pbar-verdict { background: var(--surface-2); color: var(--text-2); }
+.pbar.z-none .pbar-verdict.warn { background: var(--bad-soft); color: var(--bad); }
+.pbar.z-none .pbar-note { margin-top: 6px; }
+.pbar-was { position: absolute; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--surface); border: 2px dashed var(--text-2); }
+.pbar-drop { display: flex; align-items: center; gap: 6px; margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--good); }
+.zone-note { font-size: 12.5px; font-weight: 600; margin: 2px 0; }
+.zone-note.z-great, .zone-note.z-good { color: var(--good); }
+.zone-note.z-fair { color: var(--warn); }
+.zone-note.z-high { color: var(--bad); }

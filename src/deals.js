@@ -163,7 +163,10 @@
     const reasons = [];
     const warnings = [];
     let score = discount;
-    if (discount > 0.005) reasons.push(`${fa(Math.round(discount * 100))}٪ زیر قیمت معمول (${priceFa(Math.round(expected))}، از روی ${fa(g.n)} آگهی هم‌مدل و هم‌سال)`);
+    const basis = g.approx === 'years' ? `${fa(g.n)} آگهی همین مدل و تیپ از سال‌های نزدیک، تقریبی`
+      : g.approx === 'trims' ? `${fa(g.n)} آگهی همین مدل با تیپ‌های دیگر، تقریبی`
+        : g.approx === 'few' ? `فقط ${fa(g.n)} آگهی هم‌مدل و هم‌سال، تقریبی` : `${fa(g.n)} آگهی هم‌مدل و هم‌سال`;
+    if (discount > 0.005) reasons.push(`${fa(Math.round(discount * 100))}٪ زیر قیمت معمول (${priceFa(Math.round(expected))}، از روی ${basis})`);
     else if (discount < -0.005) warnings.push(`${fa(Math.round(-discount * 100))}٪ گران‌تر از هم‌مدل‌ها`);
     if (p.mileage != null && g.medKm && p.mileage < g.medKm * 0.8) reasons.push(`کارکرد کم (${fa(Math.round(p.mileage / 1000))} هزار، معمول ${fa(Math.round(g.medKm / 1000))} هزار)`);
 
@@ -198,12 +201,15 @@
     if (accident) warnings.unshift('تصادفی یا ضربهٔ شاسی');
     const cheap = score >= DEAL_MIN;
     const caution = (installment || tooCheap || accident) && discount > DEAL_MIN;
+    // An approximate comparison is good enough to judge a price (the bar), not to put an ad in
+    // the special-offer, dealer or caution lists.
     let level = null;
-    if (caution) level = 'caution';
+    if (g.approx) level = null;
+    else if (caution) level = 'caution';
     else if (cheap && dealer) level = 'dealer';
     else if (cheap) level = score >= HOT_MIN ? 'hot' : 'good';
     return {
-      model: g.key, peers: g.n, sure: g.sure, expected: Math.round(expected), discount, score,
+      model: g.key, peers: g.n, sure: g.sure && !g.approx, approx: g.approx || null, installment, expected: Math.round(expected), discount, score,
       level, deal: level === 'hot' || level === 'good', caution: level === 'caution', dealer,
       body: c, reasons, warnings,
     };
@@ -214,17 +220,57 @@
    * Returns Map token → { model, peers, expected, discount, score, level, deal, caution, dealer, body, reasons[], warnings[] }
    * for every ad that has enough comparable ads. level: hot | good | dealer | caution | null.
    */
+  const YEAR_STEP = 0.02; // one model year newer ≈ 2% dearer (Tehran asking prices, Nov 2026)
+
+  /**
+   * Too few ads of the same trim and year: compare with the same model and trim from nearby
+   * years (±2), then with other trims of the model (±1 year); prices moved to this ad's year.
+   * Marked `approx`.
+   */
+  const DEAL_PEERS = 5; // an exact comparison needs this many other ads of the same model, trim and year
+
+  /**
+   * The market one ad is judged against, most exact first:
+   *   ≥5 of the same trim and year → exact (the only kind that can make the lists)
+   *   ≥5 of the same trim, ±2 years · ≥5 of the model, ±1 year · then the same with ≥3 → approx
+   * Prices of other years are moved to this ad's year.
+   */
+  function marketFor(p, exactList, modelList) {
+    const y = P.shamsiYear(p.year);
+    const trim = P.normalizeText(P.modelOf(p).trim);
+    const others = (modelList || []).filter((q) => q.token !== p.token);
+    const moved = (qs) => qs.map((q) => {
+      const c = { ...q, price: q.price * (1 + YEAR_STEP) ** (y - P.shamsiYear(q.year)) };
+      if (bodyCache) bodyCache.set(c, condOf(q));
+      return c;
+    });
+    const exact = guideFor((exactList || []).filter((q) => q.token !== p.token));
+    if (exact.enough && exact.n >= DEAL_PEERS) return exact;
+    const years = guideFor(moved(others.filter((q) => P.normalizeText(P.modelOf(q).trim) === trim && Math.abs(P.shamsiYear(q.year) - y) <= 2)));
+    if (years.enough && years.n >= DEAL_PEERS) return { ...years, approx: 'years' };
+    const trims = guideFor(moved(others.filter((q) => Math.abs(P.shamsiYear(q.year) - y) <= 1)));
+    if (trims.enough && trims.n >= DEAL_PEERS) return { ...trims, approx: 'trims' };
+    if (exact.enough) return { ...exact, approx: 'few' };
+    if (years.enough) return { ...years, approx: 'years' };
+    if (trims.enough) return { ...trims, approx: 'trims' };
+    return null;
+  }
+
   function computeDeals(posts, { now = Date.now() } = {}) {
     const groups = marketGroups(posts, now);
+    const byModel = new Map();
+    for (const g of groups.values()) {
+      if (!byModel.has(g.modelKey)) byModel.set(g.modelKey, []);
+      byModel.get(g.modelKey).push(...g.list);
+    }
     const out = new Map();
     for (const p of posts) {
       if (!realPrice(p) || p.removed || !p.year) continue;
-      const g0 = groups.get(groupKey(p));
-      if (!g0) continue;
-      const others = g0.list.filter((q) => q.token !== p.token);
-      const g = guideFor(others);
-      if (!g.enough) continue;
-      out.set(p.token, judge(p, { ...g, key: g0.key }));
+      const key = groupKey(p);
+      const g0 = groups.get(key);
+      const g = marketFor(p, g0 && g0.list, byModel.get(P.modelOf(p).key));
+      if (!g) continue;
+      out.set(p.token, judge(p, { ...g, key }));
     }
     return out;
   }
@@ -309,7 +355,7 @@
     return { zone, great, good, fair, expected: round5m(expected), diff: price - expected };
   }
 
-  const api = { computeDeals, priceVerdict, ZONES, modelName, priceGuide, myCarPrice, budgetPicks, isHavaleh, BODY_FACTORS, DEAL_MIN, HOT_MIN, TOO_CHEAP, MARKET_DAYS };
+  const api = { computeDeals, priceVerdict, ZONES, isInstallment, modelName, priceGuide, myCarPrice, budgetPicks, isHavaleh, BODY_FACTORS, DEAL_MIN, HOT_MIN, TOO_CHEAP, MARKET_DAYS };
   root.NojaDeals = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

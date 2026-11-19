@@ -126,7 +126,7 @@ test('run summary highlights special offers', async () => {
   n.update({ channel: 'sms', sms: { apiKey: 'KEY', line: '30001234', mobile: '09121234567' } });
   const mk = (t, price) => ({ token: t, title: `پژو ۲۰۶ ${t}`, brand: 'پژو 206 تیپ ۲', year: 1397, mileage: 100000, price: price * 1e6,
     body: 'سالم', engine: 'سالم', seller: 'personal', url: `https://divar.ir/v/${t}`, fields: { a: 1 } });
-  for (const [t, pr] of [['a', 500], ['b', 505], ['c', 495], ['d', 510]]) store.rememberAd(mk(t, pr), 'k');
+  for (const [t, pr] of [['a', 500], ['b', 505], ['c', 495], ['d', 510], ['e', 500]]) store.rememberAd(mk(t, pr), 'k');
   const deal = { ...mk('z', 430), isNew: true };
   store.rememberAd(deal, 'k');
   const run = { id: 'r9', criteria: { query: 'پژو ۲۰۶' }, stats: { newAds: 1 }, posts: { z: deal } };

@@ -14,7 +14,7 @@ test('model names group the same trim', () => {
 
 test('finds the ad clearly under the usual price for the same model and year', () => {
   const posts = [
-    car('a', 500, 100000), car('b', 505, 95000), car('c', 495, 105000), car('d', 510, 90000),
+    car('a', 500, 100000), car('b', 505, 95000), car('c', 495, 105000), car('d', 510, 90000), car('e', 502, 100000), car('f', 498, 100000),
     car('deal', 430, 100000),
     car('other-year', 400, 100000, { year: 1394 }),
   ];
@@ -72,7 +72,7 @@ test('paint counts in the usual price, from the specs or the description', () =>
 });
 
 test('dealers and «حواله» are listed apart, never as special offers', () => {
-  const posts = [car('a', 500, 100000), car('b', 505, 100000), car('c', 495, 100000), car('d', 510, 100000),
+  const posts = [car('a', 500, 100000), car('b', 505, 100000), car('c', 495, 100000), car('d', 510, 100000), car('e', 500, 100000),
     car('dealer', 440, 100000, { seller: 'dealer' }),
     car('havaleh', 440, 100000, { title: 'حواله پژو ۲۰۶', description: 'تحویل نزدیک' })];
   const d = computeDeals(posts);
@@ -96,6 +96,19 @@ test('body condition words: negations and dealer boilerplate', () => {
   assert.equal(lv('حتی ترافیکی هم نداره'), 'clean');
   assert.equal(lv('', 'رنگ‌شدگی در ۲ ناحیه'), 'paint');
   assert.equal(lv('', 'تمام‌رنگ'), 'full');
+});
+
+test('too few of the same year: approximate from nearby years, never a special offer', () => {
+  const posts = [car('a', 500, 100000), car('b', 505, 100000), car('c', 495, 100000), car('d', 510, 100000), car('e', 500, 100000), car('f', 502, 100000),
+    car('older', 420, 100000, { year: 1396 })];
+  const d = computeDeals(posts);
+  const o = d.get('older');
+  assert.equal(o.approx, 'years');
+  assert.ok(Math.abs(o.expected - 501e6 / 1.02) < 6e6, 'moved one year back, about 2%');
+  assert.equal(o.deal, false);
+  assert.equal(o.sure, false);
+  assert.match(o.reasons[0], /تقریبی/);
+  assert.equal(d.get('a').approx, null, 'the same year is still compared exactly');
 });
 
 test('needs enough similar ads', () => {
