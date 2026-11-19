@@ -177,6 +177,122 @@
 
   function toFaDigits(n) { return String(n).replace(/\d/g, (d) => FA_DIGITS[d]); }
 
+  // ---------- body condition: paint, replaced parts, damage ----------
+  // Read from Divar's spec rows AND the title/description: sellers often pick «سالم» in the specs
+  // and then write «دو تیکه رنگ» in the text. The worst one counts, and a mismatch is flagged.
+  // Levels, from best to worst. `factor` is the usual price of such a car against a clean one,
+  // measured on Tehran asking prices (Nov 2026, same model/trim, year and km held equal):
+  // 1–2 pieces painted 6–13% under, several pieces / two-tone / accident about 19–21% under.
+  const BODY_LEVELS = {
+    clean: { rank: 0, label: 'بدنه سالم', factor: 1 },
+    minor: { rank: 1, label: 'خط و خش / صافکاری بی‌رنگ', factor: 0.98 },
+    paint: { rank: 2, label: 'رنگ‌شدگی ۱ تا ۲ قطعه', factor: 0.91 },
+    paintMany: { rank: 3, label: 'رنگ‌شدگی چند قطعه', factor: 0.82 },
+    replaced: { rank: 3, label: 'قطعهٔ تعویضی', factor: 0.94 },
+    twoTone: { rank: 4, label: 'دوررنگ', factor: 0.8 },
+    full: { rank: 5, label: 'تمام‌رنگ', factor: 0.76 },
+    accident: { rank: 6, label: 'تصادفی / ضربهٔ شاسی', factor: 0.8 },
+  };
+  const NUM_WORDS = { یک: 1, یه: 1, دو: 2, سه: 3, چهار: 4, پنج: 5, شش: 6, چند: 3, نیم: 1 };
+  const PART = '(?:گلگیر|گل گیر|درب|کاپوت|سقف|صندوق|درب صندوق|ستون|رکاب|درب موتور|درب عقب|درب جلو|پشت آمپر)(?:\\s*(?:ها|های))?(?:\\s*(?:جلو|عقب|راننده|شاگرد|چپ|راست|سمت راننده|سمت شاگرد))?';
+  // [regex, level]. Text is normalizeText()-ed (Latin digits, ZWNJ → space).
+  const BODY_TEXT_RULES = [
+    [/(?:شاسی|سینی|اتاق|اطاق)\s*(?:\S+\s*){0,2}?(?:ضربه|جوش|تعمیر|خورده|تعویض|رنگ)|(?:اتاق|اطاق)\s*(?:عوض|تعویض)|ضربه\s*(?:ی\s*)?(?:ترافیکی|شاسی)|ترافیکی|تصادفی|تصادف\s*(?:داشته|کرده|سنگین|جزئی|جزیی)|اوراقی/, 'accident'],
+    [/تمام\s*رنگ|فول\s*رنگ|کامل\s*رنگ/, 'full'],
+    [/دور\s*رنگ/, 'twoTone'],
+    [/(\d+|یک|یه|دو|سه|چهار|پنج|شش|چند|نیم)\s*(?:تا\s*)?(?:تیکه|تکه|لکه|قطعه|جا|ناحیه|درب|در|گلگیر)\s*(?:ی\s*)?(?:رنگ|تعویض)/, 'count'],
+    [new RegExp(`${PART}\\s*(?:\\S+\\s*){0,3}?(?:تعویض|تعویضی|عوض)`), 'replaced'],
+    [/تعویضی/, 'replaced'],
+    [new RegExp(`${PART}\\s*(?:\\S+\\s*)?(?:رنگ|لکه)`), 'paint'],
+    [/لکه\s*رنگ|رنگ\s*(?:داره|دارد|داری|شده|خورده|داشته)|صافکاری\s*(?:و\s*)?رنگ|بتونه/, 'paint'],
+    [/خط\s*و\s*خش|خط\s*خش|لیسه|صافکاری\s*(?:بی|بدون)\s*رنگ|صافکاری/, 'minor'],
+  ];
+  // «بدون رنگ و تعویضی»، «بی‌رنگ»، «رنگ نداره»، «تصادف نداشته» mean the opposite.
+  const BODY_NEG_BEFORE = /(?:بدون|بی|فاقد|عدم|نه|هیچ)\s*(?:\S+\s*){0,3}$/;
+  const BODY_NEG_AFTER = /^\s*(?:و\s*\S+\s*)?(?:هم\s*|اصلا\s*)?(?:ن(?:داره|دارد|داشته|یست|خورده|شده|دیده)|ندارد|کاملا\s*سالم|سالم)/;
+  // Words a dealership writes about its stock or terms, not about this car.
+  const BODY_NOISE = /رنگ\s*بندی|رنگبندی|تنوع\s*(?:در\s*)?(?:انتخاب\s*)?رنگ|رنگ\s*های\s*(?:متنوع|مختلف)|رنگ\s*دلخواه|(?:بدنه|بیمه\s*بدنه)\s*و\s*رنگ|کارشناسی\s*(?:فنی|بدنه|رنگ)|ضمانت|تخفیف|بیمه/;
+  // «برگه کارشناسی گذاشتم»: the inspection sheet is in the photos (the bot does not read photos).
+  const SHEET_RE = /(?:برگه|برگ|فرم|عکس|تصویر)\s*(?:ی\s*)?(?:ها\s*ی?\s*)?کارشناسی/;
+
+  function levelOfSpec(body, chassis) {
+    const b = normalizeText(body);
+    const c = normalizeText(chassis);
+    const out = [];
+    if (/ضربه|رنگ ?شده|تعمیر|جوش/.test(c)) out.push({ level: 'accident', text: chassis });
+    if (!b || /تعیین ?نشده/.test(b)) return out;
+    if (/^سالم/.test(b)) out.push({ level: 'clean', text: body });
+    else if (/تصادفی|اوراقی/.test(b)) out.push({ level: 'accident', text: body });
+    else if (/تمام ?رنگ/.test(b)) out.push({ level: 'full', text: body });
+    else if (/دور ?رنگ/.test(b)) out.push({ level: 'twoTone', text: body });
+    else if (/رنگ ?شدگی|رنگ شده/.test(b)) {
+      const n = Number((b.match(/(\d+)/) || [])[1]) || 1;
+      out.push({ level: n >= 3 ? 'paintMany' : 'paint', text: body, count: n });
+    } else if (/خط|خش|صافکاری|بی ?رنگ/.test(b)) out.push({ level: 'minor', text: body });
+    return out;
+  }
+
+  /** Paint / replacement / damage words in a text: [{ level, text, count }]. */
+  function bodyWordsIn(raw) {
+    const text = normalizeText(raw);
+    const found = [];
+    for (const [re0, kind] of BODY_TEXT_RULES) {
+      const re = new RegExp(re0.source, 'g');
+      let m;
+      while ((m = re.exec(text))) {
+        const at = m.index;
+        const end = at + m[0].length;
+        const before = text.slice(Math.max(0, at - 24), at);
+        const around = text.slice(Math.max(0, at - 20), end + 20);
+        if (BODY_NEG_BEFORE.test(before) || BODY_NEG_AFTER.test(text.slice(end, end + 16))) continue;
+        if (BODY_NOISE.test(around)) continue;
+        // «سینی پلمپ بدون رنگ»: the phrase itself says it is fine
+        if (/بدون|فاقد|پلمپ|پلمب|سالم|\sبی\s|بیرنگ/.test(` ${m[0]} `)) continue;
+        // «گلگیر عقب تمام رنگ» is one part painted, not the whole car
+        if (kind === 'full' && new RegExp(`${PART}\\s*(?:\\S+\\s*){0,2}$`).test(before)) {
+          if (!found.some((f) => at < f.end && end > f.at)) found.push({ level: 'paint', text: text.slice(at, end), at, end });
+          continue;
+        }
+        // a phrase already taken by a stronger rule («دو تیکه رنگ» is not also «رنگ داره»)
+        if (found.some((f) => at < f.end && end > f.at)) continue;
+        let level = kind;
+        let count;
+        if (kind === 'count') {
+          count = /^\d+$/.test(m[1]) ? Number(m[1]) : NUM_WORDS[m[1]] || 1;
+          level = /تعویض/.test(m[0]) ? 'replaced' : count >= 3 ? 'paintMany' : 'paint';
+        }
+        found.push({ level, text: text.slice(at, end), count, at, end });
+      }
+    }
+    return found.map(({ level, text: t, count }) => ({ level, text: t, count }));
+  }
+
+  /**
+   * Body condition of an ad from specs + title + description:
+   * { level, label, factor, rank, spec[], words[], conflict, sheet }.
+   * `conflict`: the specs say better than the text does.
+   */
+  function bodyCondition(post) {
+    const spec = levelOfSpec(post.body, post.chassis);
+    const words = bodyWordsIn(`${post.title || ''}\n${post.description || ''}`);
+    let worst = null;
+    for (const x of [...spec, ...words]) if (!worst || BODY_LEVELS[x.level].rank > BODY_LEVELS[worst.level].rank) worst = x;
+    const level = worst ? worst.level : null;
+    const specWorst = spec.reduce((r, x) => Math.max(r, BODY_LEVELS[x.level].rank), -1);
+    const textWorst = words.reduce((r, x) => Math.max(r, BODY_LEVELS[x.level].rank), -1);
+    const L = level ? BODY_LEVELS[level] : null;
+    return {
+      level,
+      label: L ? L.label : 'نامشخص',
+      factor: L ? L.factor : 1,
+      rank: L ? L.rank : -1,
+      spec: spec.map((x) => x.text),
+      words: words.map((x) => x.text),
+      conflict: specWorst >= 0 && textWorst > specWorst && textWorst >= BODY_LEVELS.paint.rank,
+      sheet: SHEET_RE.test(normalizeText(post.description)),
+    };
+  }
+
   // ---------- car model ----------
   // Makes that Divar writes before the model («پژو 206 تیپ ۲»); otherwise the first word is the model («شاهین G»).
   const MAKES = ['پژو', 'سایپا', 'ایران', 'ایران‌خودرو', 'رنو', 'کیا', 'هیوندای', 'تویوتا', 'نیسان', 'مزدا', 'میتسوبیشی', 'سوزوکی', 'هوندا',
@@ -485,6 +601,10 @@
     let reasons;
     if (strongDealer.length) {
       seller = 'dealer'; confidence = 'high'; reasons = unique(strongDealer);
+    } else if (/حواله/.test(normalizeText(`${post.title || ''} ${post.description || ''}`))) {
+      // Whoever sells a «حواله» (a car not yet delivered) is almost always a dealer or a middleman.
+      seller = 'dealer'; confidence = 'medium';
+      reasons = ['حواله می‌فروشد (ماشین هنوز تحویل نشده)؛ معمولاً نمایشگاه یا واسطه'];
     } else if (installment.length || installmentField) {
       seller = 'dealer'; confidence = 'medium';
       reasons = [];
@@ -696,6 +816,9 @@
     modelOf,
     valueTags,
     valueBoost,
+    bodyCondition,
+    bodyWordsIn,
+    BODY_LEVELS,
     shamsiYear,
     yearInRange,
     fakePrice,

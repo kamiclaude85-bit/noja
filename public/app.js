@@ -32,7 +32,8 @@ function updateShell() {
   const badge = (id, n, cls) => { for (const el of $$(`[data-badge="${id}"]`)) { el.textContent = n ? fa(n) : ''; el.className = `nav-badge${cls ? ` ${cls}` : ''}`; el.hidden = !n; } };
   badge('new', newCount);
   let dealCount = 0;
-  for (const [token, d] of App.deals) { const a = App.ads.get(token); if (d.deal && a && !a.removed && stageOf(a) === 'new') dealCount++; }
+  // Same rule as the «پیشنهاد ویژه» page (city and period of this device), new ones only.
+  for (const [token, d] of App.deals) { const a = App.ads.get(token); if (d.deal && a && !a.removed && stageOf(a) === 'new' && inCity(a) && inPeriod(a)) dealCount++; }
   badge('deals', dealCount, 'deal');
   badge('calls', due, 'red');
   const al = alerts();

@@ -18,8 +18,8 @@ function followUpSearches(store, run) {
   const posts = Object.values(store.db.ads)
     .filter((r) => r.post && (!periodMs || !r.post.publishedAt || Date.now() - r.post.publishedAt <= periodMs))
     .map((r) => ({ ...r.post, removed: r.removed }));
-  const guide = D.priceGuide(posts);
-  const { missing } = D.budgetPicks(posts, guide, { min: b.min, max: b.max, personalOnly: b.personalOnly });
+
+  const { missing } = D.budgetPicks(posts, null, { min: b.min, max: b.max, personalOnly: b.personalOnly });
   const out = [];
   for (const m of missing) {
     if (!m.year || !m.label || m.label === 'نامشخص') continue;

@@ -1,12 +1,17 @@
 /*
- * «پیشنهاد ویژه» — finds ads priced well below what the same car usually costs.
+ * Prices: «پیشنهاد ویژه», «قیمت‌یاب» and the best buys of «جستجوی ماشین» all use ONE rule,
+ * so a car shows the same percent everywhere and on every device:
  *
- * Each ad is compared with the other ads of the same model (brand/trim) and the
- * same model year. The usual price is their median, adjusted for mileage
- * (a regression on the group when it is big enough, otherwise ~1% per 10,000 km).
- * Problems lower the score (painted/accident body, engine, chassis, dealer).
- * Ads that look too cheap, or whose price is probably a down payment for
- * installments, are kept apart with a warning instead of being recommended.
+ *   1. The market of a model + trim + model year is the middle asking price of its ads from the
+ *      last MARKET_DAYS days (any city), each price turned into "as if the body were clean"
+ *      (a painted car's price is divided by its body factor). Installment / «حواله» prices
+ *      and accident cars are left out of the market.
+ *   2. The usual price of one ad = that market (without the ad itself), moved for its mileage,
+ *      times its own body factor (paint, replaced parts…, read from the specs AND the text).
+ *   3. Its percent = how far its price is under that usual price.
+ *
+ * Dealers and «حواله» are never a special offer (listed apart). Accident cars, prices that
+ * look too low and installment prices are «با احتیاط».
  *
  * Works in the browser (globalThis.NojaDeals) and in Node (module.exports).
  */
@@ -14,14 +19,30 @@
   'use strict';
 
   const P = root.NojaParser || (typeof require === 'function' ? require('./parser') : null);
-  const MIN_PEERS = 3; // other ads of the same model+year needed for a fair comparison
-  const DEAL_MIN = 0.05; // at least 5% under the usual price (after penalties)
+  const DAY = 864e5;
+  const MARKET_DAYS = 60; // the market is the asking prices of the last two months
+  const DEAL_MIN = 0.05; // at least 5% under the usual price (after extras / problems)
   const HOT_MIN = 0.12;
   const TOO_CHEAP = 0.3; // more than 30% under: suspicious
-  const INSTALLMENT_RE = /پیش\s?پرداخت|اقساط|قسطی|وام|لیزینگ|بیعانه|چک\s?(صیادی|ماهانه)/;
+  const GUIDE_MIN = 3; // fewer comparable ads: no numbers
+  const GUIDE_SURE = 5; // fewer: «کم‌اطمینان»
+  const INSTALLMENT_RE = /پیش\s?پرداخت|اقساط|قسطی|وام|لیزینگ|بیعانه|ضامن|شرایطی|چک\s?(صیادی|ماهانه)/;
+  const HAVALEH_RE = /حواله/;
 
   /** A price that can be compared: there is one, and it is not a made-up one («۱٬۰۰۰ تومان»). */
   const realPrice = (p) => !!p && p.price > 0 && !P.fakePrice(p.price);
+  const textOf = (p) => `${p.title || ''} ${p.description || ''} ${p.priceText || ''}`;
+  const isInstallment = (p) => INSTALLMENT_RE.test(textOf(p));
+  const isHavaleh = (p) => HAVALEH_RE.test(P.normalizeText(`${p.title || ''} ${p.description || ''}`));
+
+  // Body condition is read once per ad object.
+  const bodyCache = typeof WeakMap === 'function' ? new WeakMap() : null;
+  function condOf(p) {
+    if (!bodyCache) return P.bodyCondition(p);
+    let c = bodyCache.get(p);
+    if (!c) { c = P.bodyCondition(p); bodyCache.set(p, c); }
+    return c;
+  }
 
   function badness(text) {
     if (!text) return null;
@@ -34,6 +55,10 @@
   function modelName(p) {
     const raw = p.brand || String(p.title || '').replace(/[،,]?\s*مدل\s*[\d۰-۹]+.*$/, '');
     return P.normalizeText(raw).replace(/[«»"'()]/g, '').trim();
+  }
+  function groupKey(p) {
+    const m = P.modelOf(p);
+    return `${m.key}|${P.normalizeText(m.trim)}|${p.year}`;
   }
 
   function median(a) {
@@ -62,79 +87,6 @@
     return `${(n / 1e6).toLocaleString('fa-IR', { maximumFractionDigits: 0 })} میلیون`;
   }
 
-  /**
-   * posts: array of parsed posts (token, price, year, mileage, brand, title, body, engine, chassis, seller, description).
-   * Returns Map token → { model, peers, expected, discount, score, level, deal, caution, reasons[], warnings[] }.
-   */
-  function computeDeals(posts) {
-    const priced = posts.filter((p) => realPrice(p) && !p.removed);
-    const groups = new Map();
-    for (const p of priced) {
-      const key = `${modelName(p)}|${p.year || '?'}`;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(p);
-    }
-    const out = new Map();
-    for (const [key, list] of groups) {
-      if (key.endsWith('|?')) continue; // year unknown: no fair comparison
-      for (const p of list) {
-        const peers = list.filter((q) => q.token !== p.token);
-        if (peers.length < MIN_PEERS) continue;
-        const med = median(peers.map((q) => q.price));
-        const kms = peers.filter((q) => q.mileage != null);
-        const medKm = kms.length ? median(kms.map((q) => q.mileage)) : null;
-        let expected = med;
-        if (p.mileage != null && medKm != null) {
-          const b = slope(kms.map((q) => [q.mileage, q.price])) ?? -med * 1e-6; // ~1% per 10,000 km
-          expected = Math.min(med * 1.2, Math.max(med * 0.8, med + b * (p.mileage - medKm)));
-        }
-        const discount = (expected - p.price) / expected;
-        let score = discount;
-        const reasons = [];
-        const warnings = [];
-        if (discount > 0) reasons.push(`${fa(Math.round(discount * 100))}٪ ارزان‌تر از قیمت معمول (${priceFa(expected)}، از روی ${fa(peers.length)} آگهی مشابه)`);
-        if (p.mileage != null && medKm && p.mileage < medKm * 0.8) reasons.push(`کارکرد کمتر از معمول (${fa(p.mileage)} در برابر ${fa(Math.round(medKm))})`);
-        const body = badness(p.body); const engine = badness(p.engine); const chassis = badness(p.chassis);
-        if (body === 'bad') { score -= 0.06; warnings.push(`بدنه: ${p.body}`); } else if (body === 'good') reasons.push('بدنه سالم');
-        if (engine === 'bad') { score -= 0.1; warnings.push(`موتور: ${p.engine}`); }
-        if (chassis === 'bad') { score -= 0.12; warnings.push(`شاسی: ${p.chassis}`); }
-        if (p.seller === 'dealer') score -= 0.02; else reasons.push('فروشنده شخصی');
-        // Recent repairs and extras (لاستیک نو، تسمه تایم…) add a little; bad signs take away.
-        const tags = P.valueTags ? P.valueTags(p) : [];
-        score += P.valueBoost ? P.valueBoost(tags) : 0;
-        const goodTags = tags.filter((t) => !t.bad).map((t) => t.label);
-        if (goodTags.length) reasons.push(goodTags.join('، '));
-        for (const t of tags.filter((x) => x.bad)) warnings.push(t.label);
-        const installment = INSTALLMENT_RE.test(`${p.description || ''} ${p.priceText || ''}`);
-        const tooCheap = discount > TOO_CHEAP;
-        if (installment) warnings.unshift('قیمت احتمالاً پیش‌پرداخت یا اقساطی است');
-        if (tooCheap) warnings.unshift('خیلی ارزان‌تر از بقیه؛ ممکن است تصادفی، پیش‌پرداخت یا کلاهبرداری باشد');
-        const caution = (installment || tooCheap) && discount > DEAL_MIN;
-        const deal = !caution && score >= DEAL_MIN;
-        out.set(p.token, {
-          model: key, peers: peers.length, expected: Math.round(expected), discount, score,
-          level: deal ? (score >= HOT_MIN ? 'hot' : 'good') : caution ? 'caution' : null,
-          deal, caution, reasons, warnings,
-        });
-      }
-    }
-    return out;
-  }
-
-  // ---------------------------------------------------------------------------
-  // «قیمت‌یاب» — price guide for one model + trim + year, from the asking prices on Divar.
-  //   buyGood  : a quarter of the ads are cheaper (buying up to this is a good buy)
-  //   market   : the middle price (median)
-  //   sellList : what to write in your ad (a little above the middle, room to bargain)
-  //   sellFast : a little under the middle, to sell quickly
-  // Installment / «شرایطی» prices (down payments) and far-off prices are left out.
-  // ---------------------------------------------------------------------------
-  const GUIDE_MIN = 3; // fewer ads: no numbers
-  const GUIDE_SURE = 5; // fewer ads: «کم‌اطمینان»
-  const GUIDE_INSTALLMENT_RE = /پیش\s?پرداخت|اقساط|قسطی|وام|لیزینگ|بیعانه|ضامن|شرایطی|چک\s?(صیادی|ماهانه)/;
-  /** Body condition of «ماشین خودم» → price factor. */
-  const BODY_FACTORS = { clean: 1, scratches: 0.98, paint: 0.94, accident: 0.88 };
-
   function quantile(sorted, f) {
     const i = (sorted.length - 1) * f;
     const lo = Math.floor(i);
@@ -144,16 +96,26 @@
   /** Round to 5 million toman (prices are quoted that way). */
   const round5m = (n) => Math.round(n / 5e6) * 5e6;
 
+  /** Ads whose price can be part of a market: real cash price of a car you can see, recent enough. */
+  function marketable(p, now) {
+    return realPrice(p) && p.year && !isInstallment(p) && !isHavaleh(p) && condOf(p).level !== 'accident'
+      && (!p.publishedAt || now - p.publishedAt <= MARKET_DAYS * DAY);
+  }
+
+  /**
+   * Market of one group (already marketable ads). Prices are "as if clean" (price / body factor).
+   * Far-off prices are left out.
+   */
   function guideFor(list) {
-    const cash = list.filter((p) => !GUIDE_INSTALLMENT_RE.test(`${p.title || ''} ${p.description || ''} ${p.priceText || ''}`));
-    const med0 = median(cash.map((p) => p.price));
-    const used = med0 ? cash.filter((p) => p.price > med0 * 0.75 && p.price < med0 * 1.35) : [];
+    const clean = (p) => p.price / condOf(p).factor;
+    const med0 = median(list.map(clean));
+    const used = med0 ? list.filter((p) => clean(p) > med0 * 0.75 && clean(p) < med0 * 1.35) : [];
     if (used.length < GUIDE_MIN) return { n: used.length, enough: false };
-    const prices = used.map((p) => p.price).sort((a, b) => a - b);
+    const prices = used.map(clean).sort((a, b) => a - b);
     const market = quantile(prices, 0.5);
     const kms = used.filter((p) => p.mileage != null);
     const medKm = kms.length ? median(kms.map((p) => p.mileage)) : null;
-    const b = slope(kms.map((p) => [p.mileage, p.price])) ?? -market * 1e-6; // ~1% per 10,000 km
+    const b = slope(kms.map((p) => [p.mileage, clean(p)])) ?? -market * 1e-6; // ~1% per 10,000 km
     return {
       n: used.length,
       skipped: list.length - used.length,
@@ -161,6 +123,7 @@
       sure: used.length >= GUIDE_SURE,
       min: prices[0],
       max: prices[prices.length - 1],
+      marketRaw: market,
       buyGood: round5m(quantile(prices, 0.25)),
       market: round5m(market),
       sellList: round5m(Math.max(market * 1.02, quantile(prices, 0.6))),
@@ -168,24 +131,121 @@
       sellFast: round5m(Math.max(quantile(prices, 0.25), Math.min(market * 0.98, quantile(prices, 0.35)))),
       medKm,
       perKm: b,
+      painted: used.filter((p) => condOf(p).rank >= 2).length,
       tokens: used.map((p) => p.token),
     };
   }
+
+  function marketGroups(posts, now) {
+    const groups = new Map();
+    for (const p of posts) {
+      if (!marketable(p, now)) continue;
+      const m = P.modelOf(p);
+      const key = groupKey(p);
+      if (!groups.has(key)) groups.set(key, { key, modelKey: m.key, label: m.label, trim: m.trim, year: p.year, list: [] });
+      groups.get(key).list.push(p);
+    }
+    return groups;
+  }
+
+  /** The usual price of this ad: market (clean) → its mileage → its body. */
+  function usualPrice(p, g) {
+    let clean = g.marketRaw;
+    if (p.mileage != null && g.medKm != null) clean = Math.min(clean * 1.2, Math.max(clean * 0.8, clean + g.perKm * (p.mileage - g.medKm)));
+    return clean * condOf(p).factor;
+  }
+
+  /** Judge one ad against its market (built without the ad itself). */
+  function judge(p, g) {
+    const c = condOf(p);
+    const expected = usualPrice(p, g);
+    const discount = (expected - p.price) / expected;
+    const reasons = [];
+    const warnings = [];
+    let score = discount;
+    if (discount > 0.005) reasons.push(`${fa(Math.round(discount * 100))}٪ زیر قیمت معمول (${priceFa(Math.round(expected))}، از روی ${fa(g.n)} آگهی هم‌مدل و هم‌سال)`);
+    else if (discount < -0.005) warnings.push(`${fa(Math.round(-discount * 100))}٪ گران‌تر از هم‌مدل‌ها`);
+    if (p.mileage != null && g.medKm && p.mileage < g.medKm * 0.8) reasons.push(`کارکرد کم (${fa(Math.round(p.mileage / 1000))} هزار، معمول ${fa(Math.round(g.medKm / 1000))} هزار)`);
+
+    // Body: already in the usual price; say so, and flag a seller who says two things.
+    if (c.conflict) warnings.unshift(`در مشخصات «${c.spec[0]}» آمده، ولی در توضیحات نوشته: «${c.words.join('»، «')}»`);
+    if (c.level === 'clean') reasons.push('بدنه سالم');
+    else if (c.level) {
+      const off = Math.round((1 - c.factor) * 100);
+      warnings.push(`بدنه: ${c.label}${c.spec.length && !c.conflict ? ` («${c.spec[0]}»)` : ''} — قیمت معمولش ${fa(off)}٪ کمتر حساب شد`);
+    }
+    if (c.sheet) warnings.push('برگهٔ کارشناسی در عکس‌هاست — قبل از تماس ببینید');
+    if (badness(p.engine) === 'bad') { score -= 0.1; warnings.push(`موتور: ${p.engine}`); }
+
+    // Recent repairs and extras (لاستیک نو، تسمه تایم…) add a little; bad signs take away.
+    const tags = P.valueTags ? P.valueTags(p) : [];
+    score += P.valueBoost ? P.valueBoost(tags) : 0;
+    const good = tags.filter((t) => !t.bad).map((t) => t.label);
+    if (good.length) reasons.push(good.join('، '));
+    for (const t of tags.filter((x) => x.bad)) warnings.push(t.label);
+
+    const havaleh = isHavaleh(p);
+    const dealer = p.seller === 'dealer' || havaleh;
+    if (havaleh) warnings.push('حواله است، نه ماشین تحویلی؛ احتمالاً واسطه یا نمایشگاه');
+    else if (dealer) warnings.push('نمایشگاهی');
+    else reasons.push('فروشنده شخصی');
+
+    const installment = isInstallment(p);
+    const tooCheap = discount > TOO_CHEAP;
+    const accident = c.level === 'accident';
+    if (installment) warnings.unshift('قیمت احتمالاً پیش‌پرداخت یا اقساطی است');
+    if (tooCheap) warnings.unshift('خیلی ارزان‌تر از بقیه؛ ممکن است تصادفی، پیش‌پرداخت یا کلاهبرداری باشد');
+    if (accident) warnings.unshift('تصادفی یا ضربهٔ شاسی');
+    const cheap = score >= DEAL_MIN;
+    const caution = (installment || tooCheap || accident) && discount > DEAL_MIN;
+    let level = null;
+    if (caution) level = 'caution';
+    else if (cheap && dealer) level = 'dealer';
+    else if (cheap) level = score >= HOT_MIN ? 'hot' : 'good';
+    return {
+      model: g.key, peers: g.n, sure: g.sure, expected: Math.round(expected), discount, score,
+      level, deal: level === 'hot' || level === 'good', caution: level === 'caution', dealer,
+      body: c, reasons, warnings,
+    };
+  }
+
+  /**
+   * posts: parsed posts (token, price, year, mileage, brand, title, body, engine, chassis, seller, description).
+   * Returns Map token → { model, peers, expected, discount, score, level, deal, caution, dealer, body, reasons[], warnings[] }
+   * for every ad that has enough comparable ads. level: hot | good | dealer | caution | null.
+   */
+  function computeDeals(posts, { now = Date.now() } = {}) {
+    const groups = marketGroups(posts, now);
+    const out = new Map();
+    for (const p of posts) {
+      if (!realPrice(p) || p.removed || !p.year) continue;
+      const g0 = groups.get(groupKey(p));
+      if (!g0) continue;
+      const others = g0.list.filter((q) => q.token !== p.token);
+      const g = guideFor(others);
+      if (!g.enough) continue;
+      out.set(p.token, judge(p, { ...g, key: g0.key }));
+    }
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // «قیمت‌یاب» — price guide for one model + trim + year (for a clean body).
+  //   buyGood  : a quarter of the ads are cheaper (buying up to this is a good buy)
+  //   market   : the middle price (median)
+  //   sellList : what to write in your ad (a little above the middle, room to bargain)
+  //   sellFast : a little under the middle, to sell quickly
+  // ---------------------------------------------------------------------------
+  /** Body condition of «ماشین خودم» → price factor (same factors as the ads). */
+  const BODY_FACTORS = { clean: 1, scratches: P.BODY_LEVELS.minor.factor, paint: P.BODY_LEVELS.paint.factor, accident: P.BODY_LEVELS.accident.factor };
 
   /**
    * Price guide for every model + trim + year with enough ads.
    * posts: parsed posts (removed ones count too: they were on sale at that price).
    * Returns [{ key, modelKey, label, trim, year, ...guideFor }] sorted by model size, then year.
    */
-  function priceGuide(posts) {
-    const groups = new Map();
-    for (const p of posts) {
-      if (!realPrice(p) || !p.year) continue;
-      const m = P.modelOf(p);
-      const key = `${m.key}|${P.normalizeText(m.trim)}|${p.year}`;
-      if (!groups.has(key)) groups.set(key, { key, modelKey: m.key, label: m.label, trim: m.trim, year: p.year, list: [] });
-      groups.get(key).list.push(p);
-    }
+  function priceGuide(posts, { now = Date.now() } = {}) {
+    const groups = marketGroups(posts, now);
     const sizes = new Map();
     for (const g of groups.values()) sizes.set(g.modelKey, (sizes.get(g.modelKey) || 0) + g.list.length);
     return Array.from(groups.values())
@@ -205,54 +265,27 @@
   }
 
   // ---------------------------------------------------------------------------
-  // «خرید با بودجه» — the best buys in a price range. Each car is judged only against its own
-  // model, trim and year (the «قیمت‌یاب» market, adjusted for its mileage), then for condition,
-  // recent repairs / extras and seller type. Cars without enough comparables are listed apart,
-  // so the bot can gather their same-model ads.
+  // Best buys in a price range («جستجوی ماشین»): the same judgement as «پیشنهاد ویژه»
+  // (pass its Map, or it is worked out here), filtered to the range. Cars without enough
+  // comparables are listed apart, so the bot can gather their same-model ads.
   // ---------------------------------------------------------------------------
-  function budgetPicks(posts, guide, { min, max, personalOnly = false, kmMax = null } = {}) {
-    const byKey = new Map();
-    for (const g of guide || []) byKey.set(g.key, g);
+  function budgetPicks(posts, deals, { min, max, personalOnly = false, kmMax = null } = {}) {
+    const judged = deals instanceof Map ? deals : computeDeals(posts);
     const inRange = posts.filter((p) => realPrice(p) && !p.removed && p.price <= max && p.price >= (min || 0)
-      && (!personalOnly || p.seller !== 'dealer') && (kmMax == null || p.mileage == null || p.mileage <= kmMax));
+      && (!personalOnly || (p.seller !== 'dealer' && !isHavaleh(p))) && (kmMax == null || p.mileage == null || p.mileage <= kmMax));
     const picks = [];
     const missing = new Map();
     for (const p of inRange) {
-      const m = P.modelOf(p);
-      const key = `${m.key}|${P.normalizeText(m.trim)}|${p.year}`;
-      const g = byKey.get(key);
-      if (!p.year || !g || !g.enough) {
+      const d = judged.get(p.token);
+      if (!d) {
+        const m = P.modelOf(p);
         const mk = `${m.key}|${p.year || ''}`;
-        const x = missing.get(mk) || { modelKey: m.key, label: m.label, year: p.year || null, count: 0, comparables: g ? g.n : 0 };
+        const x = missing.get(mk) || { modelKey: m.key, label: m.label, year: p.year || null, count: 0 };
         x.count++;
         missing.set(mk, x);
         continue;
       }
-      // Market for this car: the guide's middle price, moved for its mileage.
-      let expected = g.market;
-      if (p.mileage != null && g.medKm != null) expected = Math.min(g.market * 1.2, Math.max(g.market * 0.8, g.market + g.perKm * (p.mileage - g.medKm)));
-      const discount = (expected - p.price) / expected;
-      const reasons = [];
-      const warnings = [];
-      let score = discount;
-      if (discount > 0.005) reasons.push(`${fa(Math.round(discount * 100))}٪ زیر قیمت ${fa(g.n)} آگهی هم‌مدل و هم‌سال (${priceFa(Math.round(expected))})`);
-      else if (discount < -0.005) warnings.push(`${fa(Math.round(-discount * 100))}٪ گران‌تر از هم‌مدل‌ها`);
-      if (p.mileage != null && g.medKm && p.mileage < g.medKm * 0.8) reasons.push(`کارکرد کم (${fa(Math.round(p.mileage / 1000))} هزار، معمول ${fa(Math.round(g.medKm / 1000))} هزار)`);
-      const body = badness(p.body); const engine = badness(p.engine); const chassis = badness(p.chassis);
-      if (body === 'bad') { score -= 0.06; warnings.push(`بدنه: ${p.body}`); } else if (body === 'good') reasons.push('بدنه سالم');
-      if (engine === 'bad') { score -= 0.1; warnings.push(`موتور: ${p.engine}`); }
-      if (chassis === 'bad') { score -= 0.12; warnings.push(`شاسی: ${p.chassis}`); }
-      const tags = P.valueTags ? P.valueTags(p) : [];
-      score += P.valueBoost ? P.valueBoost(tags) : 0;
-      const good = tags.filter((t) => !t.bad).map((t) => t.label);
-      if (good.length) reasons.push(good.join('، '));
-      for (const t of tags.filter((x) => x.bad)) warnings.push(t.label);
-      if (p.seller === 'dealer') { score -= 0.02; warnings.push('نمایشگاهی'); } else reasons.push('فروشنده شخصی');
-      const installment = INSTALLMENT_RE.test(`${p.title || ''} ${p.description || ''} ${p.priceText || ''}`);
-      const caution = installment || discount > TOO_CHEAP;
-      if (installment) warnings.unshift('قیمت احتمالاً پیش‌پرداخت یا اقساطی است');
-      else if (discount > TOO_CHEAP) warnings.unshift('خیلی ارزان‌تر از بقیه؛ با احتیاط');
-      picks.push({ token: p.token, post: p, guide: g, expected: Math.round(expected), discount, score, reasons, warnings, caution, sure: g.sure });
+      picks.push({ token: p.token, post: p, ...d });
     }
     picks.sort((a, b) => Number(a.caution) - Number(b.caution) || b.score - a.score);
     return {
@@ -262,7 +295,7 @@
     };
   }
 
-  const api = { computeDeals, modelName, priceGuide, myCarPrice, budgetPicks, BODY_FACTORS, DEAL_MIN, HOT_MIN, TOO_CHEAP };
+  const api = { computeDeals, modelName, priceGuide, myCarPrice, budgetPicks, isHavaleh, BODY_FACTORS, DEAL_MIN, HOT_MIN, TOO_CHEAP, MARKET_DAYS };
   root.NojaDeals = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

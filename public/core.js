@@ -95,6 +95,19 @@ function conditionClass(text) {
   return null;
 }
 
+/** Body condition from the specs AND the text (see parser.bodyCondition). */
+function bodyOf(p) { return (p._deal && p._deal.body) || P.bodyCondition(p); }
+/** «بدنه سالم» filter: clean in the specs and nothing worse written in the text. */
+function bodyClean(p) { return bodyOf(p).level === 'clean'; }
+/** Short body chip for cards: { cls, text, title }. */
+function bodyChip(p) {
+  const c = bodyOf(p);
+  if (!c.level) return p.body ? { cls: '', text: `بدنه: ${p.body}`, title: p.body } : null;
+  if (c.conflict) return { cls: 'bad', text: `بدنه: ${c.label} (در توضیحات)`, title: `مشخصات: ${c.spec[0]}\nتوضیحات: ${c.words.join('، ')}` };
+  const text = c.level === 'clean' ? `بدنه: ${p.body || c.label}` : `بدنه: ${c.label}`;
+  return { cls: c.rank <= 0 ? 'good' : c.rank >= 2 ? 'bad' : '', text, title: [...c.spec, ...c.words].join('، ') };
+}
+
 // ---------- city ----------
 const CITIES = [['tehran', 'تهران'], ['karaj', 'کرج'], ['mashhad', 'مشهد'], ['isfahan', 'اصفهان'], ['shiraz', 'شیراز'], ['tabriz', 'تبریز'],
   ['ahvaz', 'اهواز'], ['qom', 'قم'], ['rasht', 'رشت'], ['kermanshah', 'کرمانشاه'], ['urmia', 'ارومیه'], ['kerman', 'کرمان'], ['yazd', 'یزد'],
@@ -282,9 +295,10 @@ const App = {
   queue: [],
 };
 
-/** «قیمت‌یاب» numbers, from the ads of the chosen period only (prices change quickly). */
+/** «قیمت‌یاب» numbers: the same market the special offers use. */
 App.computeGuide = () => {
-  const ads = Array.from(App.ads.values()).filter((a) => a.post && inPeriod(a) && inCity(a));
+  // Same market for everyone: the last two months, every city (see src/deals.js), not this device's filters.
+  const ads = Array.from(App.ads.values()).filter((a) => a.post);
   App.guide = globalThis.NojaDeals.priceGuide(ads.map((a) => ({ ...a.post, removed: a.removed })));
 };
 
@@ -409,6 +423,9 @@ function enrich(post) {
 function dealBadge(deal, long) {
   if (!deal || !deal.level) return null;
   const pct = fa(Math.round(deal.discount * 100));
+  if (deal.level === 'dealer') {
+    return h('span', { class: 'deal-badge dealer', title: deal.warnings.join('\n') }, icon('store', 'sm'), long ? `${pct}٪ زیر قیمت معمول — نمایشگاهی` : 'ارزان — نمایشگاهی');
+  }
   if (deal.level === 'caution') {
     return h('span', { class: 'deal-badge caution', title: deal.warnings.join('\n') }, icon('alert', 'sm'), long ? `${pct}٪ ارزان‌تر — با احتیاط` : 'با احتیاط');
   }

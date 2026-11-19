@@ -21,7 +21,7 @@ test('finds the ad clearly under the usual price for the same model and year', (
   const d = computeDeals(posts);
   assert.equal(d.get('deal').deal, true);
   assert.equal(d.get('deal').level, 'hot');
-  assert.ok(d.get('deal').reasons[0].includes('ارزان‌تر از قیمت معمول'));
+  assert.ok(d.get('deal').reasons[0].includes('زیر قیمت معمول'));
   assert.equal(d.get('a').deal, false);
   assert.equal(d.has('other-year'), false, 'not compared with other years');
 });
@@ -47,6 +47,55 @@ test('problems and suspicious prices are not recommended', () => {
   assert.equal(d.get('scam').level, 'caution');
   assert.equal(d.get('loan').level, 'caution');
   assert.ok(d.get('loan').warnings[0].includes('پیش‌پرداخت'));
+});
+
+test('paint counts in the usual price, from the specs or the description', () => {
+  const clean = [car('a', 500, 100000), car('b', 505, 100000), car('c', 495, 100000), car('d', 510, 100000)];
+  const posts = [...clean,
+    // specs say clean, the text says two pieces painted: priced like a painted car
+    car('says-clean', 465, 100000, { description: 'ماشین تمیز، دو تیکه رنگ داره' }),
+    car('two-tone', 400, 100000, { body: 'دوررنگ' }),
+    car('no-paint', 470, 100000, { description: 'بدون رنگ و تعویضی، برگه کارشناسی گذاشتم' })];
+  const d = computeDeals(posts);
+  const sc = d.get('says-clean');
+  assert.equal(sc.body.level, 'paint');
+  assert.equal(sc.body.conflict, true);
+  assert.ok(sc.expected < 480e6, 'usual price of a painted car');
+  assert.equal(sc.deal, false, 'cheap only because of the paint');
+  assert.match(sc.warnings[0], /در توضیحات نوشته/);
+  assert.equal(d.get('two-tone').body.level, 'twoTone');
+  assert.ok(d.get('two-tone').discount < 0.15, 'judged against a two-tone price, not a clean one');
+  const np = d.get('no-paint');
+  assert.equal(np.body.level, 'clean');
+  assert.equal(np.deal, true);
+  assert.ok(np.warnings.some((w) => w.includes('برگهٔ کارشناسی')));
+});
+
+test('dealers and «حواله» are listed apart, never as special offers', () => {
+  const posts = [car('a', 500, 100000), car('b', 505, 100000), car('c', 495, 100000), car('d', 510, 100000),
+    car('dealer', 440, 100000, { seller: 'dealer' }),
+    car('havaleh', 440, 100000, { title: 'حواله پژو ۲۰۶', description: 'تحویل نزدیک' })];
+  const d = computeDeals(posts);
+  assert.equal(d.get('dealer').level, 'dealer');
+  assert.equal(d.get('dealer').deal, false);
+  assert.equal(d.get('havaleh').level, 'dealer');
+  assert.ok(d.get('havaleh').warnings.some((w) => w.includes('حواله')));
+  assert.ok(d.get('a').expected > 499e6, 'a «حواله» price is not part of the market');
+});
+
+test('body condition words: negations and dealer boilerplate', () => {
+  const P = require('../src/parser');
+  const lv = (description, body = 'سالم و بی‌خط و خش') => P.bodyCondition({ body, description }).level;
+  assert.equal(lv('بدون رنگ و تعویضی'), 'clean');
+  assert.equal(lv('رنگ نداره، شاسی ها پلمپ'), 'clean');
+  assert.equal(lv('تنوع رنگ و رنگ بندی کامل موجود'), 'clean');
+  assert.equal(lv('یه لکه رنگ داره'), 'paint');
+  assert.equal(lv('سه تیکه رنگ'), 'paintMany');
+  assert.equal(lv('کاپوت تعویض شده'), 'replaced');
+  assert.equal(lv('سینی جلو ضربه ترافیکی'), 'accident');
+  assert.equal(lv('حتی ترافیکی هم نداره'), 'clean');
+  assert.equal(lv('', 'رنگ‌شدگی در ۲ ناحیه'), 'paint');
+  assert.equal(lv('', 'تمام‌رنگ'), 'full');
 });
 
 test('needs enough similar ads', () => {

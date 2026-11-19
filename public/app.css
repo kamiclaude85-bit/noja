@@ -693,6 +693,7 @@ tr.sold { opacity: .55; }
 .deal-badge.hot { background: #fff1e6; color: #c2410c; }
 .deal-badge.good { background: #fff7e0; color: #a16207; }
 .deal-badge.caution { background: var(--bad-soft); color: var(--bad); }
+.deal-badge.dealer { background: var(--line-soft, #eef1f5); color: var(--muted, #5b6472); }
 .nav-badge.deal { background: #ea580c; color: #fff; }
 .deal-box { margin-top: 14px; border-radius: var(--r-md); padding: 12px 14px; background: #fff7ed; border: 1px solid #fed7aa; }
 .deal-box.caution { background: var(--bad-soft); border-color: color-mix(in srgb, var(--bad) 30%, transparent); }

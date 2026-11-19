@@ -298,9 +298,9 @@ function renderBudget(view, params) {
     .filter((p) => picked.length || !s.origin || !p.year || (s.origin === 'foreign' ? p.year > 1900 : p.year < 1700))
     .filter((p) => p.year == null || P.yearInRange(p.year, L.yMin, L.yMax))
     .filter((p) => !s.gearbox || !p.gearbox || (s.gearbox === 'automatic' ? /اتومات/.test(p.gearbox) : /دنده/.test(p.gearbox)))
-    .filter((p) => !s.bodyOk || conditionClass(p.body) === 'good')
+    .filter((p) => !s.bodyOk || bodyClean(p))
     .filter((p) => !s.chassisOk || !/ضرب|تصادف|تعویض/.test(p.chassis || ''));
-  const r = NojaDeals.budgetPicks(posts, App.guide, { min: L.min, max: L.max || Infinity, personalOnly: !!s.personal, kmMax: L.kmMax });
+  const r = NojaDeals.budgetPicks(posts, App.deals, { min: L.min, max: L.max || Infinity, personalOnly: !!s.personal, kmMax: L.kmMax });
   const good = r.picks.filter((x) => !x.caution);
   const bad = r.picks.filter((x) => x.caution);
   const byToken = new Map(r.picks.map((x) => [x.token, x]));

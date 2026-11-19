@@ -82,7 +82,7 @@ function passes(p, f, skip) {
   if (kMax != null && p.mileage != null && p.mileage > kMax) return false;
   if (skip !== 'gearbox' && f.gearbox.length && !f.gearbox.includes(p.gearbox)) return false;
   if (skip !== 'color' && f.color.length && !f.color.includes(p.color)) return false;
-  if (f.bodyOk && conditionClass(p.body) !== 'good') return false;
+  if (f.bodyOk && !bodyClean(p)) return false;
   if (f.engineOk && (!p.engine || conditionClass(p.engine) === 'bad')) return false;
   if (f.tracking && !App.meta.activeStages.includes(p._f.stage)) return false;
   if (f.onlyNew && !p.isNew && !p.priceChange) return false;
@@ -228,18 +228,13 @@ function sortList(list) {
   }
 }
 
-function delta(p, med) {
-  // Prefer the usual price of the same model+year (special-offer analysis) over the list median.
-  if (p._deal && p._deal.expected && p.price) {
-    const r = p.price / p._deal.expected;
-    if (r <= 0.95) return { cls: 'low', text: `${fa(Math.round((1 - r) * 100))}٪ زیر قیمت معمول` };
-    if (r >= 1.05) return { cls: 'high', text: `${fa(Math.round((r - 1) * 100))}٪ بالای قیمت معمول` };
-    return null;
-  }
-  if (!med || !p.price) return null;
-  const r = p.price / med;
-  if (r <= 0.92) return { cls: 'low', text: `${fa(Math.round((1 - r) * 100))}٪ زیر میانه` };
-  if (r >= 1.08) return { cls: 'high', text: `${fa(Math.round((r - 1) * 100))}٪ بالای میانه` };
+function delta(p) {
+  // Only the usual price of the same model + trim + year (mileage and body counted in). The median
+  // of the visible list mixes models and depends on this device's filters, so it is not shown.
+  if (!p._deal || !p._deal.expected || !p.price) return null;
+  const r = p.price / p._deal.expected;
+  if (r <= 0.95) return { cls: 'low', text: `${fa(Math.round((1 - r) * 100))}٪ زیر قیمت معمول` };
+  if (r >= 1.05) return { cls: 'high', text: `${fa(Math.round((r - 1) * 100))}٪ بالای قیمت معمول` };
   return null;
 }
 
@@ -367,6 +362,10 @@ function renderRow(p, d) {
     const c = conditionClass(value);
     return h('span', { class: `cond${c ? ` ${c}` : ''}`, title: `${label}: ${value}` }, c === 'bad' ? icon('alert') : c === 'good' ? icon('check') : null, `${label}: ${value}`);
   };
+  const bodyCond = (x) => {
+    const b = bodyChip(x);
+    return b ? h('span', { class: `cond${b.cls ? ` ${b.cls}` : ''}`, title: b.title }, b.cls === 'bad' ? icon('alert') : b.cls === 'good' ? icon('check') : null, b.text) : null;
+  };
   const follow = followLine(p);
   return h('article', { class: `row${f.sold ? ' sold' : ''}${f.callDue ? ' due' : ''}`, tabindex: '0', 'aria-label': p.title, 'data-token': p.token,
     onclick: () => openDrawer(p.token), onkeydown: (e) => { if (e.key === 'Enter') openDrawer(p.token); } },
@@ -383,7 +382,7 @@ function renderRow(p, d) {
         p.mileage != null || p.mileageText ? h('span', { class: 'num' }, icon('gauge'), p.mileage != null ? `${fa(p.mileage)} کیلومتر` : p.mileageText) : null,
         p.gearbox ? h('span', null, icon('gear'), p.gearbox) : null,
         p.color ? h('span', null, icon('palette'), p.color) : null),
-      h('div', { class: 'conds' }, follow.length ? follow : [cond('بدنه', p.body), cond('موتور', p.engine), conditionClass(p.chassis) === 'bad' ? cond('شاسی', p.chassis) : null, ...valueChips(p, 3)])),
+      h('div', { class: 'conds' }, follow.length ? follow : [bodyCond(p), cond('موتور', p.engine), conditionClass(p.chassis) === 'bad' ? cond('شاسی', p.chassis) : null, ...valueChips(p, 3)])),
     h('div', { class: 'row-side' },
       p.price ? h('div', { class: 'price num' }, formatPrice(p.price), ' ', h('small', null, 'تومان')) : h('div', { class: 'price none' }, p.priceText || 'بدون قیمت'),
       dealBadge(p._deal),
@@ -617,6 +616,14 @@ function valueBlock(p) {
 function guideLine(p) {
   const g = typeof guideOf === 'function' && p.price ? guideOf(p) : null;
   if (!g) return null;
+  // With a judgement for this ad, its percent is in the box below (mileage and body counted in);
+  // here only the market of a clean car.
+  if (p._deal) {
+    return h('div', { class: 'd-guide' },
+      h('span', null, 'قیمت بازار با بدنهٔ سالم ', h('b', { class: 'num' }, formatPrice(g.market))),
+      h('span', null, 'خرید خوب تا ', h('b', { class: 'num' }, formatPrice(g.buyGood))),
+      h('a', { href: `#/prices?model=${encodeURIComponent(g.modelKey)}` }, 'قیمت‌یاب'));
+  }
   const diff = (p.price - g.market) / g.market;
   const pct = fa(Math.abs(Math.round(diff * 100)));
   const where = Math.abs(diff) < 0.01 ? 'هم‌قیمت بازار' : diff < 0 ? `${pct}٪ زیر قیمت بازار` : `${pct}٪ بالای قیمت بازار`;
@@ -633,13 +640,13 @@ function guideLine(p) {
 
 function dealBox(deal) {
   if (!deal || (!deal.level && !deal.reasons.length)) return null;
-  const title = deal.level === 'caution' ? 'با احتیاط' : deal.deal ? 'چرا پیشنهاد ویژه است؟' : 'مقایسه با آگهی‌های مشابه';
+  const title = deal.level === 'caution' ? 'با احتیاط' : deal.level === 'dealer' ? 'ارزان، ولی نمایشگاهی' : deal.deal ? 'چرا پیشنهاد ویژه است؟' : 'مقایسه با آگهی‌های مشابه';
   return h('div', { class: `deal-box ${deal.level || 'plain'}` },
-    h('div', { class: 'deal-box-h' }, icon(deal.level === 'caution' ? 'alert' : 'flame', 'sm'), title),
+    h('div', { class: 'deal-box-h' }, icon(deal.level === 'caution' ? 'alert' : deal.level === 'dealer' ? 'store' : 'flame', 'sm'), title),
     h('ul', null,
       deal.reasons.map((r) => h('li', { class: 'ok' }, icon('check', 'sm'), r)),
       deal.warnings.map((w) => h('li', { class: 'warn' }, icon('alert', 'sm'), w))),
-    h('small', null, `قیمت معمول این مدل و سال با این کارکرد: ${formatPrice(deal.expected)} تومان`));
+    h('small', null, `قیمت معمول این مدل و سال با این کارکرد و این بدنه: ${formatPrice(deal.expected)} تومان`));
 }
 
 function timeline(c) {

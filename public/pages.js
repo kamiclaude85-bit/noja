@@ -952,23 +952,25 @@ function budgetCity() { return (CITIES.find(([, n]) => n === reviewCity()) || ['
 // renderBudget: see budget.js
 
 function renderDeals(view, params) {
-  const caution = params.get('view') === 'caution';
+  const tab = ['caution', 'dealer'].includes(params.get('view')) ? params.get('view') : '';
+  const caution = tab === 'caution';
   const searchKey = params.get('search') || '';
   const modelKey = params.get('model') || '';
   const year = Number(params.get('year')) || 0;
   const city = reviewCity();
   const period = reviewPeriod();
   const base = (a) => (!searchKey || a.searches.includes(searchKey)) && inCity(a, city) && inPeriod(a, period) && !a.removed && stageOf(a) !== 'rejected';
-  const isPick = (a, c) => { const d = App.deals.get(a.token); return !!d && (c ? d.level === 'caution' : d.deal); };
-  const picks = allAds().filter((a) => base(a) && isPick(a, caution));
+  const isPick = (a, t) => { const d = App.deals.get(a.token); return !!d && (t ? d.level === t : d.deal); };
+  const picks = allAds().filter((a) => base(a) && isPick(a, tab));
   const count = (c) => allAds().filter((a) => base(a) && isPick(a, c)).length;
   const nav = (patch) => {
-    const keep = { ...(searchKey ? { search: searchKey } : {}), ...(caution ? { view: 'caution' } : {}), ...(modelKey ? { model: modelKey } : {}), ...(year ? { year } : {}) };
+    const keep = { ...(searchKey ? { search: searchKey } : {}), ...(tab ? { view: tab } : {}), ...(modelKey ? { model: modelKey } : {}), ...(year ? { year } : {}) };
     location.hash = `#/deals?${new URLSearchParams(Object.entries({ ...keep, ...patch }).filter(([, v]) => v))}`;
   };
   const tabs = h('div', { class: 'stage-tabs', role: 'tablist' },
-    h('button', { role: 'tab', type: 'button', 'aria-selected': String(!caution), onclick: () => nav({ view: '' }) }, icon('flame', 'sm'), 'پیشنهاد ویژه', h('small', { class: 'num' }, fa(count(false)))),
-    h('button', { role: 'tab', type: 'button', 'aria-selected': String(caution), onclick: () => nav({ view: 'caution' }) }, icon('alert', 'sm'), 'خیلی ارزان — با احتیاط', h('small', { class: 'num' }, fa(count(true)))));
+    h('button', { role: 'tab', type: 'button', 'aria-selected': String(!tab), onclick: () => nav({ view: '' }) }, icon('flame', 'sm'), 'پیشنهاد ویژه', h('small', { class: 'num' }, fa(count('')))),
+    h('button', { role: 'tab', type: 'button', 'aria-selected': String(tab === 'dealer'), onclick: () => nav({ view: 'dealer' }) }, icon('store', 'sm'), 'نمایشگاهی', h('small', { class: 'num' }, fa(count('dealer')))),
+    h('button', { role: 'tab', type: 'button', 'aria-selected': String(caution), onclick: () => nav({ view: 'caution' }) }, icon('alert', 'sm'), 'با احتیاط', h('small', { class: 'num' }, fa(count('caution')))));
   const searchSel = App.searches.length > 1 ? h('select', { class: 'search-sel', 'aria-label': 'جستجو', onchange: (e) => nav({ search: e.target.value }) },
     h('option', { value: '' }, 'همهٔ جستجوها'), App.searches.map((s) => h('option', { value: s.key, selected: s.key === searchKey }, describeCriteria(s.criteria)))) : null;
 
@@ -997,20 +999,22 @@ function renderDeals(view, params) {
   const box = h('div');
   view.replaceChildren(h('div', { class: 'page wide' },
     pageHead('پیشنهاد ویژه', caution
-      ? 'این آگهی‌ها خیلی ارزان‌تر از بقیه‌اند یا قیمتشان احتمالاً پیش‌پرداخت/اقساطی است. قبل از هر کاری با دقت بررسی کنید.'
-      : 'هر آگهی فقط با آگهی‌های همان مدل و همان سال مقایسه شده (با در نظر گرفتن کارکرد، سلامت بدنه و موتور، و امکانات).',
+      ? 'خیلی ارزان‌تر از بقیه، تصادفی، یا قیمتی که احتمالاً پیش‌پرداخت/اقساطی است. قبل از هر کاری با دقت بررسی کنید.'
+      : tab === 'dealer'
+        ? 'ارزان‌تر از هم‌مدل‌ها، ولی فروشنده نمایشگاه، واسطه یا فروشندهٔ حواله است.'
+        : 'فقط فروشندهٔ شخصی. هر آگهی با آگهی‌های همان مدل، تیپ و سال مقایسه شده؛ کارکرد و رنگ و تعویضی (از مشخصات و توضیحات) در قیمت معمولش حساب شده.',
     [citySelect(() => render()), periodSelect(() => render()), searchSel]),
     tabs, modelChips, yearChips, marketLine, box));
   mountBrowser({
     root: box,
     key: `deals.${searchKey || 'all'}`,
     criteria: {},
-    getPosts: () => allAds().filter((a) => base(a) && isPick(a, caution))
+    getPosts: () => allAds().filter((a) => base(a) && isPick(a, tab))
       .filter((a) => !modelKey || P.modelOf(a.post).key === modelKey)
       .filter((a) => !year || a.post.year === year)
       .map((a, i) => ({ ...a.post, isNew: false, priceChange: null, order: i })),
-    title: (n) => `${caution ? 'با احتیاط' : 'پیشنهاد ویژه'}${sel ? ` — ${sel.label}${year ? ` ${faYear(year)}` : ''}` : ''} — ${fa(n)} آگهی`,
-    emptyTitle: caution ? 'آگهی مشکوکی نیست' : 'فعلاً پیشنهاد ویژه‌ای نیست',
+    title: (n) => `${caution ? 'با احتیاط' : tab === 'dealer' ? 'نمایشگاهی' : 'پیشنهاد ویژه'}${sel ? ` — ${sel.label}${year ? ` ${faYear(year)}` : ''}` : ''} — ${fa(n)} آگهی`,
+    emptyTitle: caution ? 'آگهی مشکوکی نیست' : tab === 'dealer' ? 'آگهی نمایشگاهیِ ارزانی نیست' : 'فعلاً پیشنهاد ویژه‌ای نیست',
     emptyText: 'وقتی آگهی‌ای از هم‌مدل‌ها و هم‌سال‌هایش ارزان‌تر باشد، اینجا می‌آید.',
   });
   // Grouped: model, then newest model year, then the best deal first.
