@@ -887,3 +887,18 @@ tr.sold { opacity: .55; }
 .g-trims i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .g-trims b { color: var(--text); }
 .pc-tip.below { transform: translate(-50%, 14px); }
+.card.km-box { margin-top: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.km-field { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; }
+.km-field > span { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.km-field input { width: 140px; }
+.km-field small { color: var(--text-3); }
+.km-box .quick { margin: 0; }
+.km-help { margin: 0; font-size: 12.5px; }
+.seg-toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 99px; padding: 2px; background: var(--surface-2); }
+.seg-toggle button { border: 0; background: transparent; padding: 4px 12px; border-radius: 99px; font: inherit; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+.seg-toggle button[aria-pressed="true"] { background: var(--surface); color: var(--text); font-weight: 700; box-shadow: var(--shadow-sm); }
+.pc-sub { display: block; margin-top: 4px; }
+.card.pchart .quick { margin: 8px 0 0; }
+.pc-mark { stroke: var(--warn); stroke-width: 2; stroke-dasharray: 3 3; }
+.pc-mark-dot { fill: var(--surface); stroke: var(--warn); stroke-width: 3; }
+.pc-legend i.ln.mark { background: repeating-linear-gradient(90deg, var(--warn) 0 3px, transparent 3px 6px); }

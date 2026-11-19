@@ -346,7 +346,7 @@ function renderPrices(view, params) {
   trimList.sort((a, b) => b.n - a.n);
   const askedTrim = params.get('trim') || '';
   const trimKey = trimList.some((t) => t.key === askedTrim) ? askedTrim : '';
-  const goTrim = (t) => { location.hash = `#/prices?${new URLSearchParams({ model: modelKey, ...(t ? { trim: t } : {}) })}`; };
+  const goTrim = (t) => setParam({ trim: t, cy: '' }); // keeps the mileage and the chart view
   const trimBtn = (t) => h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(t.key === trimKey), onclick: () => goTrim(t.key) }, t.label, h('small', null, fa(t.n)));
   const trimChips = trimList.length > 1 ? h('div', { class: 'quick trims' },
     h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(!trimKey), onclick: () => goTrim('') }, 'همهٔ تیپ‌ها', h('small', null, fa(trimList.reduce((s, t) => s + t.n, 0)))),
@@ -358,35 +358,59 @@ function renderPrices(view, params) {
   const label = (mine[0] || {}).label || modelKey;
   const trimName = trimKey ? trimList.find((t) => t.key === trimKey).label : trimList.length > 1 ? 'همهٔ تیپ‌ها' : (trimList[0] || {}).label;
 
-  // ---- chart: every asking price by model year, the middle price per trim ----
-  const chart = priceChart(modelKey, trimKey, trimList);
+  // ---- mileage of the car wanted: every number below is for it ----
+  const kmVal = P.parseNumber(params.get('km'));
+  const by = params.get('by') === 'km' ? 'km' : 'year';
+  const setParam = (patch) => {
+    const q = new URLSearchParams({ model: modelKey, ...(trimKey ? { trim: trimKey } : {}), ...(kmVal != null ? { km: kmVal } : {}), ...(by === 'km' ? { by } : {}), ...(params.get('cy') ? { cy: params.get('cy') } : {}), ...patch });
+    for (const [k, v] of Array.from(q.entries())) if (v === '' || v == null) q.delete(k);
+    location.hash = `#/prices?${q}`;
+  };
+  const kmIn = h('input', { inputmode: 'numeric', placeholder: 'مثلاً ۶۰٬۰۰۰', value: kmVal != null ? fa(kmVal) : '', 'aria-label': 'کارکرد ماشین' });
+  const applyKm = () => { const n = P.parseNumber(kmIn.value); setParam({ km: n != null ? String(n < 1000 && n > 0 ? n * 1000 : n) : '' }); };
+  kmIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); applyKm(); } });
+  kmIn.addEventListener('change', applyKm);
+  const kmBox = h('section', { class: 'card km-box' },
+    h('label', { class: 'km-field' }, h('span', null, icon('gauge', 'sm'), 'کارکرد ماشینی که می‌خواهید'), kmIn, h('small', null, 'کیلومتر')),
+    h('div', { class: 'quick' },
+      [[0, 'صفر'], [20000, '۲۰ هزار'], [50000, '۵۰ هزار'], [100000, '۱۰۰ هزار'], [150000, '۱۵۰ هزار']].map(([n, t]) =>
+        h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(kmVal === n), onclick: () => setParam({ km: String(n) }) }, t)),
+      kmVal != null ? h('button', { class: 'chip-btn more', type: 'button', onclick: () => setParam({ km: '' }) }, 'همهٔ کارکردها') : null),
+    h('p', { class: 'muted km-help' }, kmVal != null
+      ? `قیمت‌های زیر برای ماشینی با ${fa(Math.round(kmVal / 1000))} هزار کیلومتر حساب شده‌اند (کارکرد بیشتر، قیمت کمتر).`
+      : 'کارکرد را بنویسید تا قیمت هر سال برای همان کارکرد حساب شود؛ خالی باشد، قیمت با کارکرد معمول هر سال است.'));
+  const forKm = (g) => (kmVal != null && g.enough && g.medKm != null ? NojaDeals.myCarPrice(g, { mileage: kmVal, body: 'clean' }) : g);
+
+  // ---- chart: every asking price by model year (or by mileage for one year) ----
+  const chart = priceChart(modelKey, trimKey, trimList, { by, cy: Number(params.get('cy')) || 0, km: kmVal, guide: shown, setParam });
 
   // ---- one card per year ----
   const perTrim = (year) => trimKey || trimList.length < 2 ? [] : mine.filter((g) => g.year === year && g.enough).sort((a, b) => b.n - a.n);
-  const cards = shown.slice().sort((a, b) => b.year - a.year).map((g) => {
+  const cards = shown.slice().sort((a, b) => b.year - a.year).map((g0) => {
+    const g = { ...g0, ...forKm(g0) };
     const adsHref = `#/ads?${new URLSearchParams({ stage: 'active', model: g.modelKey, ...(trimKey ? { trim: trimKey } : {}) })}`;
-    const trims = perTrim(g.year);
+    const trims = perTrim(g.year).map((t) => ({ ...t, ...forKm(t) }));
     return h('section', { class: `card guide${g.enough ? '' : ' thin'}` },
       h('div', { class: 'guide-h' },
         h('b', { class: 'num' }, faYear(g.year)),
         h('small', null, `${fa(g.enough ? g.n : g.total)} آگهی`),
         g.enough && !g.sure ? h('span', { class: 'chip-status' }, 'کم‌اطمینان') : null),
       g.enough ? [
-        h('div', { class: 'g-market' }, h('span', null, 'قیمت بازار'), h('b', null, price(g.market))),
+        h('div', { class: 'g-market' }, h('span', null, kmVal != null && g0.medKm != null ? `قیمت بازار با ${fa(Math.round(kmVal / 1000))} هزار کیلومتر` : 'قیمت بازار'), h('b', null, price(g.market))),
         h('div', { class: 'g-split' },
           h('div', { class: 'g-cell buy' }, h('span', null, 'خرید خوب تا'), h('b', null, price(g.buyGood))),
           h('div', { class: 'g-cell sell' }, h('span', null, 'فروش: در آگهی بنویسید'), h('b', null, price(g.sellList)))),
         h('div', { class: 'g-row' }, h('span', null, 'اگر عجله دارید، کمتر نفروشید از'), h('b', null, price(g.sellFast))),
         trims.length > 1 ? h('div', { class: 'g-trims' }, trims.map((t) => h('span', null, h('i', { style: `background:${trimColor(trimList, P.normalizeText(t.trim))}` }), h('bdi', null, t.trim || 'بدون تیپ'), ' ', h('b', { class: 'num' }, formatPrice(t.market))))) : null,
         h('div', { class: 'g-foot' },
-          g.medKm != null ? h('span', null, `کارکرد معمول ${fa(Math.round(g.medKm / 1000))} هزار`) : h('span'),
+          g.medKm != null ? h('span', null, g.medKm < 1000 ? 'بیشترشان صفر کیلومتر' : `کارکرد معمول ${fa(Math.round(g.medKm / 1000))} هزار`) : h('span'),
           h('a', { href: adsHref }, 'دیدن آگهی‌ها', icon('left', 'sm'))),
       ] : h('p', { class: 'muted' }, 'آگهی کافی نیست (دست‌کم ۳ آگهی نقدی لازم است).'));
   });
 
   view.replaceChildren(h('div', { class: 'page' }, head, picker,
     h('div', { class: 'price-title' }, h('h2', null, h('bdi', null, label), trimName ? h('small', null, ' · ', h('bdi', null, trimName)) : null)),
-    trimChips, chart, h('div', { class: 'guide-grid' }, cards), myCard));
+    trimChips, kmBox, chart, h('div', { class: 'guide-grid' }, cards), myCard));
   if (sure.length) { fillTrims(); calc(); }
 }
 
@@ -402,7 +426,7 @@ function trimColor(trimList, key) {
  * year; a line joins the middle price of each year, one line per trim (or just the chosen trim,
  * with its «خرید خوب» line dashed). Hover a dot for the ad; tap it to open the ad.
  */
-function priceChart(modelKey, trimKey, trimList) {
+function priceChart(modelKey, trimKey, trimList, opts = {}) {
   const now = Date.now();
   const every = [];
   for (const a of App.ads.values()) {
@@ -418,6 +442,7 @@ function priceChart(modelKey, trimKey, trimList) {
   for (const [k, v] of mid) mid.set(k, P.median(v));
   const pts = every.filter((x) => x.price <= mid.get(x.year) * 1.6 && x.price >= mid.get(x.year) * 0.6 && (!trimKey || x.trim === trimKey));
   if (pts.length < 3) return null;
+  if (opts.by === 'km') return priceKmChart(pts, trimKey, trimList, opts);
   const years = Array.from(new Set(pts.map((x) => x.year))).sort((a, b) => a - b);
   // Far-off prices would squash the rest: the scale covers the middle 96%.
   const sorted = pts.map((x) => x.price).sort((a, b) => a - b);
@@ -490,8 +515,102 @@ function priceChart(modelKey, trimKey, trimList) {
     : h('div', { class: 'pc-legend' }, series.map((se) => h('span', null, h('i', { class: 'dot', style: `background:${trimColor(trimList, se.key)}` }), h('bdi', null, (trimList.find((t) => t.key === se.key) || {}).label))),
       trimList.length > TRIM_SLOTS ? h('span', null, h('i', { class: 'dot', style: 'background:var(--series-other)' }), 'سایر تیپ‌ها') : null);
   return h('section', { class: 'card pchart' },
-    h('div', { class: 'card-h' }, h('h2', null, icon('trend', 'sm'), 'قیمت آگهی‌ها بر اساس سال'), h('small', { class: 'muted' }, `${fa(pts.length)} آگهی · قیمت به میلیارد تومان · روی هر نقطه بروید یا بزنید`)),
+    h('div', { class: 'card-h' }, h('h2', null, icon('trend', 'sm'), 'قیمت آگهی‌ها'), chartModeToggle(opts)),
+    h('small', { class: 'muted pc-sub' }, `${fa(pts.length)} آگهی · قیمت به میلیارد تومان · روی هر نقطه بروید یا بزنید`),
     legend, wrap);
+}
+
+/** «بر اساس سال | بر اساس کارکرد» switch of the price chart. */
+function chartModeToggle(opts) {
+  if (!opts.setParam) return null;
+  const btn = (v, t) => h('button', { type: 'button', 'aria-pressed': String((opts.by || 'year') === v), onclick: () => opts.setParam({ by: v === 'km' ? 'km' : '' }) }, t);
+  return h('div', { class: 'seg-toggle', role: 'group', 'aria-label': 'نمودار بر اساس' }, btn('year', 'بر اساس سال'), btn('km', 'بر اساس کارکرد'));
+}
+
+/**
+ * Price by mileage for one model year: a dot per ad, the market line of that year (its middle
+ * price moved by the mileage slope) and its «خرید خوب» line; the chosen mileage is marked.
+ */
+function priceKmChart(all, trimKey, trimList, opts) {
+  const counts = new Map();
+  for (const x of all) if (x.km != null) counts.set(x.year, (counts.get(x.year) || 0) + 1);
+  const years = Array.from(counts.entries()).filter(([, n]) => n >= 3).map(([y]) => y).sort((a, b) => b - a);
+  const head = (body) => h('section', { class: 'card pchart' },
+    h('div', { class: 'card-h' }, h('h2', null, icon('gauge', 'sm'), 'قیمت آگهی‌ها'), chartModeToggle(opts)), ...body);
+  if (!years.length) return head([h('p', { class: 'muted' }, 'برای مقایسه با کارکرد، از هیچ سالی هنوز ۳ آگهی با کارکرد معلوم نیست.')]);
+  const year = years.includes(opts.cy) ? opts.cy : years.slice().sort((a, b) => counts.get(b) - counts.get(a))[0];
+  const yearChips = h('div', { class: 'quick' }, years.map((y) => h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(y === year), onclick: () => opts.setParam({ cy: String(y) }) }, toFaYearShort(y), h('small', null, fa(counts.get(y))))));
+  const pts = all.filter((x) => x.year === year && x.km != null);
+  const g = (opts.guide || []).find((x) => x.enough && P.shamsiYear(x.year) === year) || null;
+  let kmHi = Math.max(...pts.map((x) => x.km), opts.km || 0);
+  kmHi = niceStep(kmHi / 4) * 4 || 10000;
+  const prices = pts.map((x) => x.price);
+  let lo = Math.min(...prices);
+  let hi = Math.max(...prices);
+  const pad = (hi - lo) * 0.15 || hi * 0.1;
+  lo = Math.max(0, lo - pad);
+  hi += pad;
+  const W = 640;
+  const H = 280;
+  const M = { l: 56, r: 16, t: 14, b: 30 };
+  const xv = (k) => M.l + (Math.min(kmHi, Math.max(0, k)) / kmHi) * (W - M.l - M.r);
+  const yv = (v) => M.t + (1 - (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo)) * (H - M.t - M.b);
+  const NS = 'http://www.w3.org/2000/svg';
+  const s = (tag, attrs, ...kids) => { const el = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs || {})) if (v != null) el.setAttribute(k, v); for (const c of kids) if (c != null) el.append(c); return el; };
+  const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, class: 'pchart-svg', role: 'img', 'aria-label': `نمودار قیمت آگهی‌های ${toFaYearShort(year)} بر اساس کارکرد` });
+  const step = niceStep((hi - lo) / 4);
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+    svg.append(s('line', { x1: M.l, x2: W - M.r, y1: yv(v), y2: yv(v), class: 'pc-grid' }));
+    svg.append(s('text', { x: M.l - 8, y: yv(v) + 5, class: 'pc-axis', 'text-anchor': 'end' }, priceShort(v)));
+  }
+  const kStep = niceStep(kmHi / 4);
+  for (let k = 0; k <= kmHi; k += kStep) svg.append(s('text', { x: xv(k), y: H - 8, class: 'pc-axis', 'text-anchor': 'middle' }, fa(Math.round(k / 1000))));
+  // the market of that year at each mileage (clamped like the cards), and its good-buy line
+  const at = (k) => (g && g.medKm != null ? Math.min(g.market * 1.2, Math.max(g.market * 0.8, g.market + g.perKm * (k - g.medKm))) : null);
+  if (g && g.medKm != null) {
+    const line = [0, kmHi / 4, kmHi / 2, (kmHi * 3) / 4, kmHi].map((k) => [k, at(k)]);
+    svg.append(s('polyline', { points: line.map(([k, v]) => `${xv(k)},${yv(v)}`).join(' '), class: 'pc-line', style: 'stroke:var(--series-1)' }));
+    svg.append(s('polyline', { points: line.map(([k, v]) => `${xv(k)},${yv(v * NojaDeals.ZONES.good)}`).join(' '), class: 'pc-line good' }));
+  }
+  if (opts.km != null) {
+    svg.append(s('line', { x1: xv(opts.km), x2: xv(opts.km), y1: M.t, y2: H - M.b, class: 'pc-mark' }));
+    if (at(opts.km)) svg.append(s('circle', { cx: xv(opts.km), cy: yv(at(opts.km)), r: 6, class: 'pc-mark-dot' }));
+  }
+  const tip = h('div', { class: 'pc-tip', hidden: true });
+  const wrap = h('div', { class: 'pchart-wrap' });
+  for (const x of pts) {
+    const cx = xv(x.km);
+    const dot = s('circle', { cx, cy: yv(x.price), r: 4.5, class: 'pc-dot', style: `fill:${trimKey ? 'var(--series-1)' : trimColor(trimList, x.trim)}`, tabindex: '0' });
+    const show = () => {
+      tip.replaceChildren(h('b', null, x.title), h('span', { class: 'num' }, `${formatPrice(x.price)} تومان`), h('span', null, `${fa(x.km)} کیلومتر · ${x.trimLabel}`));
+      tip.hidden = false;
+      tip.classList.toggle('below', yv(x.price) < 110);
+      const r = wrap.getBoundingClientRect();
+      const k = r.width / W;
+      tip.style.left = `${Math.min(r.width - 10, Math.max(10, cx * k))}px`;
+      tip.style.top = `${yv(x.price) * k}px`;
+    };
+    dot.addEventListener('mouseenter', show);
+    dot.addEventListener('focus', show);
+    dot.addEventListener('mouseleave', () => { tip.hidden = true; });
+    dot.addEventListener('blur', () => { tip.hidden = true; });
+    dot.addEventListener('click', () => window.open(`https://divar.ir/v/${encodeURIComponent(x.token)}`, '_blank', 'noopener'));
+    svg.append(dot);
+  }
+  wrap.append(svg, tip);
+  const perK = g && g.medKm != null ? Math.round((-g.perKm * 10000) / 1e6) : null;
+  return head([
+    h('small', { class: 'muted pc-sub' }, `مدل ${toFaYearShort(year)} · ${fa(pts.length)} آگهی · قیمت به میلیارد تومان، کارکرد به هزار کیلومتر`),
+    yearChips,
+    h('div', { class: 'pc-legend' },
+      h('span', null, h('i', { class: 'dot', style: 'background:var(--series-1)' }), 'قیمت هر آگهی'),
+      g && g.medKm != null ? h('span', null, h('i', { class: 'ln', style: 'background:var(--series-1)' }), 'قیمت بازار با هر کارکرد') : null,
+      g && g.medKm != null ? h('span', null, h('i', { class: 'ln dash' }), 'خرید خوب تا') : null,
+      opts.km != null ? h('span', null, h('i', { class: 'ln mark' }), `کارکرد شما: ${fa(Math.round(opts.km / 1000))} هزار`) : null),
+    wrap,
+    perK ? h('p', { class: 'muted pc-sub' }, `در این سال، هر ۱۰ هزار کیلومتر کارکرد بیشتر حدود ${fa(perK)} میلیون تومان از قیمت کم می‌کند.`) : null,
+    !trimKey && trimList.length > 1 ? h('p', { class: 'muted pc-sub' }, 'رنگ هر نقطه تیپ آن است؛ تیپ‌ها قیمت‌های متفاوتی دارند. برای مقایسهٔ دقیق‌تر با کارکرد، بالای صفحه یک تیپ را انتخاب کنید.') : null,
+  ]);
 }
 
 function niceStep(raw) {
