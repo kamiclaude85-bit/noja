@@ -85,7 +85,8 @@ function safeDivarUrl(u) {
   } catch (_) { return null; }
 }
 function safeImg(u) {
-  try { return new URL(u).protocol === 'https:' ? u : null; } catch (_) { return null; }
+  // Divar's 200×200 thumbnails look blurry when enlarged: always the full-size photo.
+  try { return new URL(u).protocol === 'https:' ? P.fullImage(u) : null; } catch (_) { return null; }
 }
 
 function conditionClass(text) {

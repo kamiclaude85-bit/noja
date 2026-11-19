@@ -371,6 +371,14 @@
   const PERSONAL_VALUE_RE = /^(personal|individual|private|person|شخصی)$/i;
   const IMAGE_RE = /^https?:\/\/[^\s"']*divarcdn[^\s"']*\.(jpe?g|webp|png)(\?[^\s"']*)?$/i;
 
+  /**
+   * Divar's page gives the first photos in full size and the rest as 200×200 thumbnails
+   * (…/webp_thumbnail/…). The same path with «post» is the full photo.
+   */
+  function fullImage(u) {
+    return typeof u === 'string' ? u.replace(/(divarcdn\.com\/static\/(?:photo\/)?(?:neda\/)?)(webp_)?thumbnail\//, '$1$2post/') : u;
+  }
+
   function asText(v) {
     if (typeof v === 'string') return v.trim();
     if (typeof v === 'number' && Number.isFinite(v)) return String(v);
@@ -448,7 +456,7 @@
       title,
       subtitle,
       description,
-      images: images.slice(0, 12),
+      images: images.map(fullImage).slice(0, 12),
       fields: {},
       price: null,
       priceText: '',
@@ -817,6 +825,7 @@
     valueTags,
     valueBoost,
     bodyCondition,
+    fullImage,
     bodyWordsIn,
     BODY_LEVELS,
     shamsiYear,

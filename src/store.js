@@ -50,9 +50,11 @@ class Store {
   reclassifyAll() {
     for (const [token, rec] of Object.entries(this.db.ads || {})) {
       if (!rec || !rec.post) continue;
-      const sig = () => `${rec.post.seller}|${rec.post.sellerConfidence}|${(rec.post.sellerReasons || []).join()}|${rec.post.publishedAt || ''}`;
+      const sig = () => `${rec.post.seller}|${rec.post.sellerConfidence}|${(rec.post.sellerReasons || []).join()}|${rec.post.publishedAt || ''}|${(rec.post.images || []).join()}`;
       const before = sig();
       P.reclassifySaved(rec.post);
+      // Photos saved as 200×200 thumbnails: the full-size ones.
+      if (Array.isArray(rec.post.images)) rec.post.images = rec.post.images.map(P.fullImage);
       // Ads saved before the publish date was read: estimate it from «X ساعت پیش» at read time.
       P.estimatePublished(rec.post, rec.lastReadAt || rec.firstSeenAt);
       if (before !== sig()) this.changes.ads.add(token);
