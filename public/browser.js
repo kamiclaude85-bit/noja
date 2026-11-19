@@ -617,14 +617,9 @@ function valueBlock(p) {
 function guideLine(p) {
   const g = typeof guideOf === 'function' && p.price ? guideOf(p) : null;
   if (!g) return null;
-  // With a judgement for this ad, its percent is in the box below (mileage and body counted in);
-  // here only the market of a clean car.
-  if (p._deal) {
-    return h('div', { class: 'd-guide' },
-      h('span', null, 'قیمت بازار با بدنهٔ سالم ', h('b', { class: 'num' }, formatPrice(g.market))),
-      h('span', null, 'خرید خوب تا ', h('b', { class: 'num' }, formatPrice(g.buyGood))),
-      h('a', { href: `#/prices?model=${encodeURIComponent(g.modelKey)}` }, 'قیمت‌یاب'));
-  }
+  // With a price bar, all the numbers for this ad are there (one set, its mileage and body
+  // counted in). A second «market / good buy» line here only contradicted it.
+  if (p._deal) return h('div', { class: 'd-guide' }, h('a', { href: `#/prices?model=${encodeURIComponent(g.modelKey)}` }, 'قیمت همهٔ سال‌ها و تیپ‌های این مدل در قیمت‌یاب'));
   const diff = (p.price - g.market) / g.market;
   const pct = fa(Math.abs(Math.round(diff * 100)));
   const where = Math.abs(diff) < 0.01 ? 'هم‌قیمت بازار' : diff < 0 ? `${pct}٪ زیر قیمت بازار` : `${pct}٪ بالای قیمت بازار`;
@@ -675,7 +670,7 @@ function priceBar(p) {
   const bubble = Math.abs(v.diff) < d.expected * 0.01 ? 'هم‌قیمت بازار'
     : v.diff < 0 ? `${amount} پایین‌تر از قیمت معمول` : `${amount} بالاتر از قیمت معمول`;
   return h('div', { class: `pbar z-${v.zone}` },
-    h('div', { class: 'pbar-h' }, h('b', null, 'ارزیابی قیمت'), h('span', { class: `pbar-verdict${d.caution ? ' warn' : ''}` }, ZONE_TEXT[v.zone], d.caution ? ' — با احتیاط' : '')),
+    h('div', { class: 'pbar-h' }, h('b', null, 'ارزیابی قیمت'), h('span', { class: `pbar-verdict${d.caution ? ' warn' : ''}` }, ZONE_TEXT[v.zone], d.caution ? ' — با احتیاط' : d.approx || (d.range && d.range[1] > d.range[0] * 1.2) ? ' (تقریبی)' : '')),
     h('div', { class: 'pbar-track-wrap' },
       // shifted by its own width in the same proportion, so it stays inside the box at the ends
       h('div', { class: 'pbar-bubble', style: `inset-inline-start:${at(p.price)};transform:translateX(-${at(p.price)})` }, bubble),
@@ -692,7 +687,11 @@ function priceBar(p) {
       h('li', { class: 'good' }, h('i'), 'خوب: تا ', h('b', { class: 'num' }, formatPrice(v.good))),
       h('li', { class: 'fair' }, h('i'), 'منصفانه: تا ', h('b', { class: 'num' }, formatPrice(v.fair))),
       h('li', { class: 'high' }, h('i'), 'گران: بالای ', h('b', { class: 'num' }, formatPrice(v.fair)))),
-    h('small', { class: 'pbar-note' }, `${d.approx ? 'تقریبی — ' : ''}از روی ${d.approx === 'few' ? 'فقط ' : ''}${fa(d.peers)} آگهی ${d.approx === 'years' ? 'همین مدل و تیپ از سال‌های نزدیک' : d.approx === 'trims' ? 'همین مدل با تیپ‌های دیگر' : 'هم‌مدل و هم‌سال'}، با کارکرد و ${d.body && d.body.level && d.body.level !== 'clean' ? `بدنهٔ «${d.body.label}»` : 'بدنهٔ'} همین ماشین${d.approx ? '' : d.sure ? '' : ' — آگهی‌های مقایسه کم است، تقریبی ببینید'}.`),
+    h('small', { class: 'pbar-note' }, `${d.approx ? 'تقریبی — ' : ''}از روی ${d.approx === 'few' ? 'فقط ' : ''}${fa(d.peers)} آگهی ${d.approx === 'years' ? 'همین مدل و تیپ از سال‌های نزدیک' : d.approx === 'trims' ? 'همین مدل با تیپ‌های دیگر' : 'هم‌مدل و هم‌سال'} (بدون خودِ این آگهی)، با کارکرد و ${d.body && d.body.level && d.body.level !== 'clean' ? `بدنهٔ «${d.body.label}»` : 'بدنهٔ'} همین ماشین.`),
+    // what it was compared with, so a verdict can be checked by eye
+    d.range ? h('small', { class: 'pbar-note' }, `قیمت آن آگهی‌ها از ${formatPrice(d.range[0])} تا ${formatPrice(d.range[1])}`,
+      d.medKm != null && p.mileage != null ? `؛ کارکرد معمولشان ${fa(Math.round(d.medKm / 1000))} هزار، این ماشین ${fa(Math.round(p.mileage / 1000))} هزار` : '',
+      d.range[1] > d.range[0] * 1.2 ? ' — قیمت‌ها خیلی پراکنده‌اند، با احتیاط قضاوت کنید.' : '.') : null,
     divarLine);
 }
 

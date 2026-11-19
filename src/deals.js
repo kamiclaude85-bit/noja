@@ -124,11 +124,12 @@
       min: prices[0],
       max: prices[prices.length - 1],
       marketRaw: market,
-      buyGood: round5m(quantile(prices, 0.25)),
+      // «خرید خوب» is the same line as on the price bar (3% under the usual price), everywhere.
+      buyGood: round5m(market * ZONES.good),
       market: round5m(market),
       sellList: round5m(Math.max(market * 1.02, quantile(prices, 0.6))),
       // never below «خرید خوب»: selling fast should still beat a good buy
-      sellFast: round5m(Math.max(quantile(prices, 0.25), Math.min(market * 0.98, quantile(prices, 0.35)))),
+      sellFast: round5m(Math.max(market * ZONES.good, Math.min(market * 0.98, quantile(prices, 0.35)))),
       medKm,
       perKm: b,
       painted: used.filter((p) => condOf(p).rank >= 2).length,
@@ -210,6 +211,8 @@
     else if (cheap) level = score >= HOT_MIN ? 'hot' : 'good';
     return {
       model: g.key, peers: g.n, sure: g.sure && !g.approx, approx: g.approx || null, installment, expected: Math.round(expected), discount, score,
+      // what it was compared with: the asking prices (as if clean) and the usual mileage
+      range: [Math.round(g.min), Math.round(g.max)], medKm: g.medKm,
       level, deal: level === 'hot' || level === 'good', caution: level === 'caution', dealer,
       body: c, reasons, warnings,
     };
