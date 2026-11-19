@@ -192,7 +192,7 @@ function refreshAdsPage(params) {
 
 function userIsTyping() {
   const el = document.activeElement;
-  return el && /INPUT|TEXTAREA/.test(el.tagName) && el.type !== 'checkbox' && el.type !== 'button';
+  return el && /INPUT|TEXTAREA|SELECT/.test(el.tagName) && el.type !== 'checkbox' && el.type !== 'button';
 }
 
 App.onChange((what) => {
@@ -200,6 +200,8 @@ App.onChange((what) => {
   if (!PAGE.update) return;
   if (what === 'ads' && (PAGE.name === 'ads' || PAGE.name === 'deals')) { PAGE.update(); return; }
   if (overlay || userIsTyping()) return; // do not yank the page while the user works
+  // The search form does not change with the bot's state; redrawing it only gets in the way.
+  if (what === 'state' && PAGE.name === 'search' && parseRoute().params.get('go') !== '1') return;
   if (what === 'ads' || (what === 'state' && PAGE.name !== 'ads')) PAGE.update();
 });
 window.addEventListener('hashchange', render);

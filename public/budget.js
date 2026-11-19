@@ -53,6 +53,8 @@ const POPULAR = ['peugeot/206', 'pride', 'runna', 'dena', 'samand', 'tiba', 'sai
   'renault/megan', 'nissan/maxima-im', 'hyundai/elantra', 'kia/cerato', 'toyota/corolla'];
 
 const BUDGET_PREF = 'radyab.budget2';
+// Folded sections the user opened or closed stay that way when the page redraws.
+const BUDGET_OPEN = {};
 let BUDGET_TYPED = ''; // words in the model box, kept while the page redraws itself
 function budgetPrefs() {
   return { from: '', to: '', picks: [], origin: '', yearMin: '', yearMax: '', gearbox: '', personal: false, bodyOk: false, chassisOk: false, kmMax: '',
@@ -164,7 +166,7 @@ function renderBudget(view, params) {
   const bodyOk = h('input', { type: 'checkbox', checked: !!s.bodyOk });
   const chassisOk = h('input', { type: 'checkbox', checked: !!s.chassisOk });
   const nMore = [s.gearbox, s.personal, s.bodyOk, s.chassisOk].filter(Boolean).length;
-  const more = h('details', { class: 'adv', open: nMore > 0 },
+  const more = h('details', { class: 'adv', open: BUDGET_OPEN.more ?? nMore > 0, ontoggle: (e) => { BUDGET_OPEN.more = e.target.open; } },
     h('summary', null, icon('sliders', 'sm'), nMore ? `فیلترهای بیشتر (${fa(nMore)})` : 'فیلترهای بیشتر', icon('down', 'sm')),
     h('div', { class: 'adv-grid' },
       h('label', { class: 'field' }, h('span', null, 'گیربکس'), gear),
@@ -177,7 +179,7 @@ function renderBudget(view, params) {
   const maxAds = h('input', { inputmode: 'numeric', value: s.maxAds });
   const link = h('input', { dir: 'ltr', placeholder: 'https://divar.ir/s/tehran/car/…', value: s.link });
   const recheck = h('input', { type: 'checkbox' });
-  const bot = h('details', { class: 'adv', open: !!s.link },
+  const bot = h('details', { class: 'adv', open: BUDGET_OPEN.bot ?? !!s.link, ontoggle: (e) => { BUDGET_OPEN.bot = e.target.open; } },
     h('summary', null, icon('gear', 'sm'), 'تنظیمات ربات', icon('down', 'sm')),
     h('div', { class: 'adv-grid' },
       h('label', { class: 'field' }, h('span', null, 'سرعت ربات'), speed),
@@ -283,7 +285,12 @@ function renderBudget(view, params) {
 
   const head = pageHead('جستجوی ماشین', 'ماشین و محدوده‌ات را بگو؛ ربات از دیوار جمع می‌کند و بهترین‌ها را با هم‌مدل و هم‌سال خودشان می‌سنجد.',
     [citySelect(() => { App.computeGuide(); render(); }), periodSelect(() => { App.computeGuide(); render(); })]);
-  if (!shown) { view.replaceChildren(h('div', { class: 'page narrow' }, head, form, ...searchNotices())); return; }
+  if (!shown) {
+    const y = window.scrollY; // a redraw keeps the place on the page
+    view.replaceChildren(h('div', { class: 'page narrow' }, head, form, ...searchNotices()));
+    window.scrollTo(0, y);
+    return;
+  }
 
   // ---- the best buys among the ads already read ----
   const L = limits();
