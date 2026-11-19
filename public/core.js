@@ -300,7 +300,9 @@ const App = {
 App.computeGuide = () => {
   // Same market for everyone: the last two months, every city (see src/deals.js), not this device's filters.
   const ads = Array.from(App.ads.values()).filter((a) => a.post);
-  App.guide = globalThis.NojaDeals.priceGuide(ads.map((a) => ({ ...a.post, removed: a.removed })));
+  const posts = ads.map((a) => ({ ...a.post, removed: a.removed }));
+  App.guide = globalThis.NojaDeals.priceGuide(posts);
+  App.guideAll = globalThis.NojaDeals.priceGuide(posts, { allTrims: true }); // «همهٔ تیپ‌ها»
 };
 
 App.onChange = (fn) => { App.listeners.add(fn); return () => App.listeners.delete(fn); };

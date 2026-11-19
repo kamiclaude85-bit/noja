@@ -137,13 +137,14 @@
     };
   }
 
-  function marketGroups(posts, now) {
+  function marketGroups(posts, now, allTrims = false) {
     const groups = new Map();
     for (const p of posts) {
       if (!marketable(p, now)) continue;
       const m = P.modelOf(p);
-      const key = groupKey(p);
-      if (!groups.has(key)) groups.set(key, { key, modelKey: m.key, label: m.label, trim: m.trim, year: p.year, list: [] });
+      // allTrims: one market per model and year, every trim together («همهٔ تیپ‌ها»)
+      const key = allTrims ? `${m.key}||${p.year}` : groupKey(p);
+      if (!groups.has(key)) groups.set(key, { key, modelKey: m.key, label: m.label, trim: allTrims ? '' : m.trim, year: p.year, list: [] });
       groups.get(key).list.push(p);
     }
     return groups;
@@ -293,8 +294,8 @@
    * posts: parsed posts (removed ones count too: they were on sale at that price).
    * Returns [{ key, modelKey, label, trim, year, ...guideFor }] sorted by model size, then year.
    */
-  function priceGuide(posts, { now = Date.now() } = {}) {
-    const groups = marketGroups(posts, now);
+  function priceGuide(posts, { now = Date.now(), allTrims = false } = {}) {
+    const groups = marketGroups(posts, now, allTrims);
     const sizes = new Map();
     for (const g of groups.values()) sizes.set(g.modelKey, (sizes.get(g.modelKey) || 0) + g.list.length);
     return Array.from(groups.values())
@@ -358,7 +359,7 @@
     return { zone, great, good, fair, expected: round5m(expected), diff: price - expected };
   }
 
-  const api = { computeDeals, priceVerdict, ZONES, isInstallment, modelName, priceGuide, myCarPrice, budgetPicks, isHavaleh, BODY_FACTORS, DEAL_MIN, HOT_MIN, TOO_CHEAP, MARKET_DAYS };
+  const api = { computeDeals, priceVerdict, ZONES, isInstallment, marketable: (p, now = Date.now()) => marketable(p, now), modelName, priceGuide, myCarPrice, budgetPicks, isHavaleh, BODY_FACTORS, DEAL_MIN, HOT_MIN, TOO_CHEAP, MARKET_DAYS };
   root.NojaDeals = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

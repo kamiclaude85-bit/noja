@@ -842,3 +842,48 @@ tr.sold { opacity: .55; }
 .zone-note.z-great, .zone-note.z-good { color: var(--good); }
 .zone-note.z-fair { color: var(--warn); }
 .zone-note.z-high { color: var(--bad); }
+
+/* ---- قیمت‌یاب: chart + cards ---- */
+:root { --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100; --series-5: #e87ba4; --series-other: #98a2b3; }
+@media (prefers-color-scheme: dark) { :root { --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500; --series-5: #d55181; --series-other: #667085; } }
+.card.price-pick { padding: 12px 14px; }
+.card.price-pick .pick-search { margin: 0; }
+.price-title { margin: 18px 2px 6px; }
+.price-title h2 { margin: 0; font-size: 20px; }
+.price-title h2 small { font-size: 15px; font-weight: 500; color: var(--text-2); }
+.card.pchart { margin-top: 12px; padding: 14px 16px 10px; }
+.card.pchart .card-h { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+.card.pchart .card-h h2 { margin: 0; font-size: 16px; display: flex; align-items: center; gap: 6px; }
+.pc-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 8px 0 2px; font-size: 12.5px; color: var(--text-2); }
+.pc-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.pc-legend i.dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.pc-legend i.ln { width: 16px; height: 2px; display: inline-block; border-radius: 2px; }
+.pc-legend i.ln.dash { background: repeating-linear-gradient(90deg, var(--good) 0 4px, transparent 4px 7px); }
+.pchart-wrap { position: relative; direction: ltr; }
+.pchart-svg { width: 100%; height: auto; display: block; overflow: visible; }
+.pc-grid { stroke: var(--line); stroke-width: 1; }
+.pc-axis { fill: var(--text-3); font-size: 14px; font-family: inherit; }
+.pc-line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.pc-line.good { stroke: var(--good); stroke-dasharray: 5 4; }
+.pc-dot { stroke: var(--surface); stroke-width: 2; cursor: pointer; opacity: .9; }
+.pc-dot:hover, .pc-dot:focus { opacity: 1; stroke: var(--text); outline: none; }
+.pc-tip { direction: rtl; position: absolute; transform: translate(-50%, calc(-100% - 12px)); pointer-events: none; z-index: 3; min-width: 150px; max-width: 240px;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: 10px; box-shadow: var(--shadow-lg, 0 8px 24px rgba(0,0,0,.12)); padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 2px; font-size: 12.5px; color: var(--text-2); }
+.pc-tip b { color: var(--text); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pc-tip .num { color: var(--text); font-weight: 700; }
+.g-market { display: flex; justify-content: space-between; align-items: baseline; padding: 4px 0 2px; }
+.g-market span { color: var(--text-2); font-size: 13.5px; }
+.g-market b { font-size: 20px; }
+.g-split { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.g-cell { border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }
+.g-cell span { font-size: 12px; color: var(--text-2); }
+.g-cell b { font-size: 15px; }
+.g-cell.buy { background: var(--good-soft); }
+.g-cell.buy b { color: var(--good); }
+.g-cell.sell { background: var(--primary-soft); }
+.g-trims { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12.5px; color: var(--text-2); border-top: 1px solid var(--line); padding-top: 6px; }
+.g-trims span { display: inline-flex; align-items: center; gap: 5px; }
+.g-trims i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.g-trims b { color: var(--text); }
+.pc-tip.below { transform: translate(-50%, 14px); }

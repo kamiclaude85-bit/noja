@@ -288,9 +288,8 @@ function renderPrices(view, params) {
   search.addEventListener('input', () => { PRICE_TYPED = search.value; drawChips(); });
   search.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const l = found(); if (search.value.trim() && l.length) go(l[0].key); } });
   drawChips();
-  const head = pageHead('قیمت‌یاب', 'قیمت‌ها از آگهی‌های دیوار است؛ آگهی‌های اقساطی حساب نمی‌شوند. پای معامله معمولاً چند درصد پایین‌تر بسته می‌شود.',
-    [citySelect(() => { App.computeGuide(); render(); }), periodSelect(() => { App.computeGuide(); render(); })]);
-  const picker = [h('label', { class: 'pick-search' }, icon('search'), search), chips];
+  const head = pageHead('قیمت‌یاب', 'قیمت آگهی‌های دو ماه اخیر دیوار، هر شهر. آگهی‌های اقساطی و تصادفی حساب نمی‌شوند؛ ماشین رنگ‌دار با قیمتِ «اگر سالم بود» آمده. پای معامله معمولاً چند درصد پایین‌تر بسته می‌شود.');
+  const picker = h('section', { class: 'card price-pick' }, h('label', { class: 'pick-search' }, icon('search'), search), chips);
 
   if (want || !entries.length) {
     const collect = () => startScan({ query: want.label, city: budgetCity(), maxAgeDays: reviewPeriod(), maxAds: 40, speed: 'slow' }).catch((e) => toast(e.message, 'err'));
@@ -298,8 +297,8 @@ function renderPrices(view, params) {
       ? h('div', { class: 'empty big' }, icon('trend', 'xl'), h('b', null, 'از ', h('bdi', null, want.label), ' هنوز آگهی‌ای نخوانده‌ام'),
         h('p', null, 'ربات آگهی‌های این مدل را آرام از دیوار می‌خواند؛ بعد قیمت خرید و فروشش همین‌جا می‌آید.'),
         h('button', { class: 'btn primary lg', type: 'button', onclick: collect }, icon('search'), 'جمع‌آوری آگهی‌های این مدل'))
-      : h('div', { class: 'empty big' }, icon('trend', 'xl'), h('b', null, App.ads.size ? 'در این بازهٔ زمانی آگهی کافی نیست' : 'هنوز آگهی کافی نیست'),
-        h('p', null, App.ads.size ? 'بازهٔ زمانی بالای صفحه را بیشتر کنید، یا مدل ماشین را بالا بنویسید.' : 'مدل ماشین را بالا بنویسید تا ربات آگهی‌هایش را بخواند.'))));
+      : h('div', { class: 'empty big' }, icon('trend', 'xl'), h('b', null, 'هنوز آگهی کافی نیست'),
+        h('p', null, 'مدل ماشین را بالا بنویسید تا ربات آگهی‌هایش را بخواند.'))));
     return;
   }
 
@@ -336,28 +335,175 @@ function renderPrices(view, params) {
       h('label', { class: 'field' }, h('span', null, 'بدنه'), body)),
     myBox) : null;
 
-  // ---- one card per year + trim ----
-  const cards = mine.map((g) => {
-    const adsHref = `#/ads?${new URLSearchParams({ stage: 'active', model: g.modelKey, ...(g.trim ? { trim: P.normalizeText(g.trim) } : {}) })}`;
+  // ---- which trim: «همهٔ تیپ‌ها» or one ----
+  const trimList = [];
+  for (const g of mine) {
+    const t = P.normalizeText(g.trim);
+    let x = trimList.find((y) => y.key === t);
+    if (!x) trimList.push((x = { key: t, label: g.trim || 'بدون تیپ', n: 0 }));
+    x.n += g.total;
+  }
+  trimList.sort((a, b) => b.n - a.n);
+  const askedTrim = params.get('trim') || '';
+  const trimKey = trimList.some((t) => t.key === askedTrim) ? askedTrim : '';
+  const goTrim = (t) => { location.hash = `#/prices?${new URLSearchParams({ model: modelKey, ...(t ? { trim: t } : {}) })}`; };
+  const trimBtn = (t) => h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(t.key === trimKey), onclick: () => goTrim(t.key) }, t.label, h('small', null, fa(t.n)));
+  const trimChips = trimList.length > 1 ? h('div', { class: 'quick trims' },
+    h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(!trimKey), onclick: () => goTrim('') }, 'همهٔ تیپ‌ها', h('small', null, fa(trimList.reduce((s, t) => s + t.n, 0)))),
+    // the 5 with most ads (and the chosen one); the rest behind a button
+    trimList.filter((t, i) => i < 5 || t.key === trimKey).map(trimBtn),
+    trimList.length > 5 ? h('button', { class: 'chip-btn more', type: 'button', onclick: (e) => { e.currentTarget.replaceWith(...trimList.filter((t, i) => i >= 5 && t.key !== trimKey).map(trimBtn)); } }, `${fa(trimList.length - 5 - (trimList.findIndex((t) => t.key === trimKey) >= 5 ? 1 : 0))} تیپ دیگر`) : null) : null;
+  const shown = trimKey ? mine.filter((g) => P.normalizeText(g.trim) === trimKey)
+    : trimList.length > 1 ? (App.guideAll || []).filter((g) => g.modelKey === modelKey) : mine;
+  const label = (mine[0] || {}).label || modelKey;
+  const trimName = trimKey ? trimList.find((t) => t.key === trimKey).label : trimList.length > 1 ? 'همهٔ تیپ‌ها' : (trimList[0] || {}).label;
+
+  // ---- chart: every asking price by model year, the middle price per trim ----
+  const chart = priceChart(modelKey, trimKey, trimList);
+
+  // ---- one card per year ----
+  const perTrim = (year) => trimKey || trimList.length < 2 ? [] : mine.filter((g) => g.year === year && g.enough).sort((a, b) => b.n - a.n);
+  const cards = shown.slice().sort((a, b) => b.year - a.year).map((g) => {
+    const adsHref = `#/ads?${new URLSearchParams({ stage: 'active', model: g.modelKey, ...(trimKey ? { trim: trimKey } : {}) })}`;
+    const trims = perTrim(g.year);
     return h('section', { class: `card guide${g.enough ? '' : ' thin'}` },
       h('div', { class: 'guide-h' },
-        h('b', null, faYear(g.year), ' · ', h('bdi', null, g.trim || g.label)),
+        h('b', { class: 'num' }, faYear(g.year)),
         h('small', null, `${fa(g.enough ? g.n : g.total)} آگهی`),
         g.enough && !g.sure ? h('span', { class: 'chip-status' }, 'کم‌اطمینان') : null),
       g.enough ? [
-        h('div', { class: 'g-row buy' }, h('span', null, 'خرید خوب'), h('b', null, 'تا ', price(g.buyGood))),
-        h('div', { class: 'g-row' }, h('span', null, 'قیمت بازار'), h('b', null, price(g.market))),
-        h('div', { class: 'g-row sell' }, h('span', null, 'برای فروش، در آگهی بنویسید'), h('b', null, price(g.sellList))),
+        h('div', { class: 'g-market' }, h('span', null, 'قیمت بازار'), h('b', null, price(g.market))),
+        h('div', { class: 'g-split' },
+          h('div', { class: 'g-cell buy' }, h('span', null, 'خرید خوب تا'), h('b', null, price(g.buyGood))),
+          h('div', { class: 'g-cell sell' }, h('span', null, 'فروش: در آگهی بنویسید'), h('b', null, price(g.sellList)))),
         h('div', { class: 'g-row' }, h('span', null, 'اگر عجله دارید، کمتر نفروشید از'), h('b', null, price(g.sellFast))),
+        trims.length > 1 ? h('div', { class: 'g-trims' }, trims.map((t) => h('span', null, h('i', { style: `background:${trimColor(trimList, P.normalizeText(t.trim))}` }), h('bdi', null, t.trim || 'بدون تیپ'), ' ', h('b', { class: 'num' }, formatPrice(t.market))))) : null,
         h('div', { class: 'g-foot' },
           g.medKm != null ? h('span', null, `کارکرد معمول ${fa(Math.round(g.medKm / 1000))} هزار`) : h('span'),
           h('a', { href: adsHref }, 'دیدن آگهی‌ها', icon('left', 'sm'))),
       ] : h('p', { class: 'muted' }, 'آگهی کافی نیست (دست‌کم ۳ آگهی نقدی لازم است).'));
   });
 
-  view.replaceChildren(h('div', { class: 'page' }, head, picker, myCard, h('div', { class: 'guide-grid' }, cards)));
+  view.replaceChildren(h('div', { class: 'page' }, head, picker,
+    h('div', { class: 'price-title' }, h('h2', null, h('bdi', null, label), trimName ? h('small', null, ' · ', h('bdi', null, trimName)) : null)),
+    trimChips, chart, h('div', { class: 'guide-grid' }, cards), myCard));
   if (sure.length) { fillTrims(); calc(); }
 }
+
+// Colors of the trims on the chart: fixed order (most ads first), validated palette; the rest is «سایر».
+const TRIM_SLOTS = 5;
+function trimColor(trimList, key) {
+  const i = trimList.findIndex((t) => t.key === key);
+  return i >= 0 && i < TRIM_SLOTS ? `var(--series-${i + 1})` : 'var(--series-other)';
+}
+
+/**
+ * Price chart of one model: each dot is an ad's asking price (cash, last two months) by model
+ * year; a line joins the middle price of each year, one line per trim (or just the chosen trim,
+ * with its «خرید خوب» line dashed). Hover a dot for the ad; tap it to open the ad.
+ */
+function priceChart(modelKey, trimKey, trimList) {
+  const now = Date.now();
+  const every = [];
+  for (const a of App.ads.values()) {
+    const p = a.post;
+    if (!p || a.removed || !NojaDeals.marketable(p, now)) continue;
+    const m = P.modelOf(p);
+    if (m.key !== modelKey) continue;
+    every.push({ token: p.token, year: P.shamsiYear(p.year), price: p.price, km: p.mileage, trim: P.normalizeText(m.trim), trimLabel: m.trim || 'بدون تیپ', title: p.title });
+  }
+  // A price far from the others of its model year, any trim («۳۰ میلیارد» typed for «۳ میلیارد»), is left out.
+  const mid = new Map();
+  for (const x of every) { if (!mid.has(x.year)) mid.set(x.year, []); mid.get(x.year).push(x.price); }
+  for (const [k, v] of mid) mid.set(k, P.median(v));
+  const pts = every.filter((x) => x.price <= mid.get(x.year) * 1.6 && x.price >= mid.get(x.year) * 0.6 && (!trimKey || x.trim === trimKey));
+  if (pts.length < 3) return null;
+  const years = Array.from(new Set(pts.map((x) => x.year))).sort((a, b) => a - b);
+  // Far-off prices would squash the rest: the scale covers the middle 96%.
+  const sorted = pts.map((x) => x.price).sort((a, b) => a - b);
+  const q = (f) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.round((sorted.length - 1) * f)))];
+  let lo = q(0.02);
+  let hi = q(0.98);
+  const pad = (hi - lo) * 0.12 || hi * 0.1;
+  lo = Math.max(0, lo - pad);
+  hi += pad;
+  const W = 640;
+  const H = 280;
+  const M = { l: 56, r: 16, t: 14, b: 30 };
+  const x0 = (y) => M.l + (years.length === 1 ? (W - M.l - M.r) / 2 : ((years.indexOf(y)) / (years.length - 1)) * (W - M.l - M.r));
+  const yv = (v) => M.t + (1 - (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo)) * (H - M.t - M.b);
+  const NS = 'http://www.w3.org/2000/svg';
+  const s = (tag, attrs, ...kids) => { const el = document.createElementNS(NS, tag); for (const [k, v] of Object.entries(attrs || {})) if (v != null) el.setAttribute(k, v); for (const c of kids) if (c != null) el.append(c); return el; };
+  const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, class: 'pchart-svg', role: 'img', 'aria-label': 'نمودار قیمت آگهی‌ها بر اساس سال' });
+  // grid + price axis (4 steps, rounded to a nice number)
+  const step = niceStep((hi - lo) / 4);
+  for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
+    svg.append(s('line', { x1: M.l, x2: W - M.r, y1: yv(v), y2: yv(v), class: 'pc-grid' }));
+    svg.append(s('text', { x: M.l - 8, y: yv(v) + 5, class: 'pc-axis', 'text-anchor': 'end' }, priceShort(v)));
+  }
+  for (const y of years) svg.append(s('text', { x: x0(y), y: H - 8, class: 'pc-axis', 'text-anchor': 'middle' }, toFaYearShort(y)));
+  // lines: the middle price per year, per trim (top 5 trims) or of the chosen trim
+  const lineFor = (list) => years.map((y) => { const v = list.filter((x) => x.year === y).map((x) => x.price).sort((a, b) => a - b); return v.length ? [y, v[Math.floor((v.length - 1) / 2)]] : null; }).filter(Boolean);
+  const series = trimKey ? [{ key: trimKey, list: pts }] : trimList.slice(0, TRIM_SLOTS).map((t) => ({ key: t.key, list: pts.filter((x) => x.trim === t.key) })).filter((x) => x.list.length >= 2);
+  for (const se of series) {
+    const line = lineFor(se.list);
+    if (line.length < 2) continue;
+    svg.append(s('polyline', { points: line.map(([y, v]) => `${x0(y)},${yv(v)}`).join(' '), class: 'pc-line', style: `stroke:${trimKey ? 'var(--series-1)' : trimColor(trimList, se.key)}` }));
+  }
+  if (trimKey) {
+    const good = lineFor(pts).map(([y, v]) => [y, v * NojaDeals.ZONES.good]);
+    if (good.length >= 2) svg.append(s('polyline', { points: good.map(([y, v]) => `${x0(y)},${yv(v)}`).join(' '), class: 'pc-line good' }));
+  }
+  // dots, spread a little inside their year so they do not hide each other
+  const tip = h('div', { class: 'pc-tip', hidden: true });
+  const wrap = h('div', { class: 'pchart-wrap' });
+  const byYear = new Map();
+  for (const x of pts) { if (!byYear.has(x.year)) byYear.set(x.year, []); byYear.get(x.year).push(x); }
+  const span = years.length > 1 ? Math.min(28, (W - M.l - M.r) / (years.length - 1) / 3) : 40;
+  for (const [y, list] of byYear) {
+    list.sort((a, b) => a.price - b.price);
+    list.forEach((x, i) => {
+      const cx = x0(y) + (list.length > 1 ? (i / (list.length - 1) - 0.5) * span : 0);
+      const dot = s('circle', { cx, cy: yv(x.price), r: 4.5, class: 'pc-dot', style: `fill:${trimKey ? 'var(--series-1)' : trimColor(trimList, x.trim)}`, tabindex: '0' });
+      const show = () => {
+        tip.replaceChildren(h('b', null, x.title), h('span', { class: 'num' }, `${formatPrice(x.price)} تومان`), h('span', null, `${toFaYearShort(x.year)}${x.km != null ? ` · ${fa(x.km)} کیلومتر` : ''} · ${x.trimLabel}`));
+        tip.hidden = false;
+        tip.classList.toggle('below', yv(x.price) < 110); // near the top: show it under the dot
+        const r = wrap.getBoundingClientRect();
+        const k = r.width / W;
+        tip.style.left = `${Math.min(r.width - 10, Math.max(10, cx * k))}px`;
+        tip.style.top = `${yv(x.price) * k}px`;
+      };
+      dot.addEventListener('mouseenter', show);
+      dot.addEventListener('focus', show);
+      dot.addEventListener('mouseleave', () => { tip.hidden = true; });
+      dot.addEventListener('blur', () => { tip.hidden = true; });
+      dot.addEventListener('click', () => window.open(`https://divar.ir/v/${encodeURIComponent(x.token)}`, '_blank', 'noopener'));
+      svg.append(dot);
+    });
+  }
+  wrap.append(svg, tip);
+  const legend = trimKey ? h('div', { class: 'pc-legend' },
+    h('span', null, h('i', { class: 'dot', style: 'background:var(--series-1)' }), 'قیمت هر آگهی'),
+    h('span', null, h('i', { class: 'ln', style: 'background:var(--series-1)' }), 'قیمت وسط هر سال'),
+    h('span', null, h('i', { class: 'ln dash' }), 'خرید خوب تا'))
+    : h('div', { class: 'pc-legend' }, series.map((se) => h('span', null, h('i', { class: 'dot', style: `background:${trimColor(trimList, se.key)}` }), h('bdi', null, (trimList.find((t) => t.key === se.key) || {}).label))),
+      trimList.length > TRIM_SLOTS ? h('span', null, h('i', { class: 'dot', style: 'background:var(--series-other)' }), 'سایر تیپ‌ها') : null);
+  return h('section', { class: 'card pchart' },
+    h('div', { class: 'card-h' }, h('h2', null, icon('trend', 'sm'), 'قیمت آگهی‌ها بر اساس سال'), h('small', { class: 'muted' }, `${fa(pts.length)} آگهی · قیمت به میلیارد تومان · روی هر نقطه بروید یا بزنید`)),
+    legend, wrap);
+}
+
+function niceStep(raw) {
+  const p = 10 ** Math.floor(Math.log10(raw || 1));
+  const n = raw / p;
+  return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p;
+}
+/** Axis label in billions: 3_450_000_000 → «۳٫۴۵» (the unit is in the chart's title). */
+function priceShort(v) {
+  return (v / 1e9).toLocaleString('fa-IR', { maximumFractionDigits: 2 });
+}
+function toFaYearShort(y) { return fa(y).replace(/٬/g, ''); }
 
 function renderAds(view, params) {
   const viewName = AD_VIEWS[params.get('view')] ? params.get('view') : null;
