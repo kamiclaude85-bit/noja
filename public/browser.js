@@ -638,6 +638,44 @@ function guideLine(p) {
     h('a', { href: `#/prices?model=${encodeURIComponent(g.modelKey)}` }, 'قیمت‌یاب'));
 }
 
+const ZONE_TEXT = { great: 'قیمت عالی', good: 'قیمت خوب', fair: 'قیمت منصفانه', high: 'گران' };
+
+/**
+ * Drawer: where the price sits on a bar of the usual price for this car (model, trim, year,
+ * mileage and body), with what to pay: great / good / fair / too much. Divar's own word, if any.
+ */
+function priceBar(p) {
+  const d = p._deal;
+  const v = d && NojaDeals.priceVerdict(p.price, d.expected);
+  const divar = (p.fields || {})['ارزیابی قیمت'];
+  if (!v) return divar ? h('div', { class: 'pbar-divar' }, 'ارزیابی دیوار: ', h('b', null, divar)) : null;
+  // The bar runs from 20% under to 20% over the usual price.
+  const lo = d.expected * 0.8;
+  const hi = d.expected * 1.2;
+  const at = (n) => `${Math.max(0, Math.min(100, ((n - lo) / (hi - lo)) * 100))}%`;
+  const amount = formatPrice(Math.abs(Math.round(v.diff / 1e6) * 1e6));
+  const bubble = Math.abs(v.diff) < d.expected * 0.01 ? 'هم‌قیمت بازار'
+    : v.diff < 0 ? `${amount} پایین‌تر از قیمت معمول` : `${amount} بالاتر از قیمت معمول`;
+  return h('div', { class: `pbar z-${v.zone}` },
+    h('div', { class: 'pbar-h' }, h('b', null, 'ارزیابی قیمت'), h('span', { class: `pbar-verdict${d.caution ? ' warn' : ''}` }, ZONE_TEXT[v.zone], d.caution ? ' — با احتیاط' : '')),
+    h('div', { class: 'pbar-track-wrap' },
+      // shifted by its own width in the same proportion, so it stays inside the box at the ends
+      h('div', { class: 'pbar-bubble', style: `inset-inline-start:${at(p.price)};transform:translateX(-${at(p.price)})` }, bubble),
+      h('div', { class: 'pbar-track' },
+        h('span', { class: 'seg great', style: `inset-inline-start:0;width:${at(v.great)}` }),
+        h('span', { class: 'seg good', style: `inset-inline-start:${at(v.great)};width:calc(${at(v.good)} - ${at(v.great)})` }),
+        h('span', { class: 'seg fair', style: `inset-inline-start:${at(v.good)};width:calc(${at(v.fair)} - ${at(v.good)})` }),
+        h('span', { class: 'seg high', style: `inset-inline-start:${at(v.fair)};inset-inline-end:0` }),
+        h('span', { class: 'pbar-dot', style: `inset-inline-start:${at(p.price)}` }))),
+    h('ul', { class: 'pbar-advice' },
+      h('li', { class: 'great' }, h('i'), 'عالی: تا ', h('b', { class: 'num' }, formatPrice(v.great))),
+      h('li', { class: 'good' }, h('i'), 'خوب: تا ', h('b', { class: 'num' }, formatPrice(v.good))),
+      h('li', { class: 'fair' }, h('i'), 'منصفانه: تا ', h('b', { class: 'num' }, formatPrice(v.fair))),
+      h('li', { class: 'high' }, h('i'), 'گران: بالای ', h('b', { class: 'num' }, formatPrice(v.fair)))),
+    h('small', { class: 'pbar-note' }, `از روی ${fa(d.peers)} آگهی هم‌مدل و هم‌سال، با کارکرد و ${d.body && d.body.level && d.body.level !== 'clean' ? `بدنهٔ «${d.body.label}»` : 'بدنهٔ'} همین ماشین${d.sure ? '' : ' — آگهی‌های مقایسه کم است، تقریبی ببینید'}.`),
+    divar ? h('div', { class: 'pbar-divar' }, 'ارزیابی دیوار: ', h('b', null, divar)) : null);
+}
+
 function dealBox(deal) {
   if (!deal || (!deal.level && !deal.reasons.length)) return null;
   const title = deal.level === 'caution' ? 'با احتیاط' : deal.level === 'dealer' ? 'ارزان، ولی نمایشگاهی' : deal.deal ? 'چرا پیشنهاد ویژه است؟' : 'مقایسه با آگهی‌های مشابه';
@@ -713,6 +751,7 @@ function openDrawer(token, keepScroll) {
           d ? h('span', { class: `delta ${d.cls}` }, d.text) : null,
           priceChangeBadge(p),
           sellerBadge(p)),
+        priceBar(p),
         guideLine(p),
         valueBlock(p),
         ph.length > 1 ? h('div', { class: 'where', style: 'margin-top:6px' }, icon('trend', 'sm'),

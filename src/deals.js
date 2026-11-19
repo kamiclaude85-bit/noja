@@ -295,7 +295,21 @@
     };
   }
 
-  const api = { computeDeals, modelName, priceGuide, myCarPrice, budgetPicks, isHavaleh, BODY_FACTORS, DEAL_MIN, HOT_MIN, TOO_CHEAP, MARKET_DAYS };
+  // ---------------------------------------------------------------------------
+  // Buy advice for one ad, from its usual price (same model/trim/year, its km and body):
+  //   great ≤ 8% under · good ≤ 3% under · fair up to 4% over · above that: expensive.
+  // ---------------------------------------------------------------------------
+  const ZONES = { great: 0.92, good: 0.97, fair: 1.04 };
+  function priceVerdict(price, expected) {
+    if (!(price > 0) || !(expected > 0)) return null;
+    const great = round5m(expected * ZONES.great);
+    const good = round5m(expected * ZONES.good);
+    const fair = round5m(expected * ZONES.fair);
+    const zone = price <= great ? 'great' : price <= good ? 'good' : price <= fair ? 'fair' : 'high';
+    return { zone, great, good, fair, expected: round5m(expected), diff: price - expected };
+  }
+
+  const api = { computeDeals, priceVerdict, ZONES, modelName, priceGuide, myCarPrice, budgetPicks, isHavaleh, BODY_FACTORS, DEAL_MIN, HOT_MIN, TOO_CHEAP, MARKET_DAYS };
   root.NojaDeals = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);
