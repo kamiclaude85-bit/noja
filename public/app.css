@@ -909,3 +909,9 @@ tr.sold { opacity: .55; }
 .use-tag.u-high { background: var(--warn-soft); color: var(--warn); }
 .use-tag.u-veryHigh { background: var(--bad-soft); color: var(--bad); }
 .d-price .use-tag { margin-inline-start: 0; font-size: 12.5px; padding: 3px 10px; }
+/* where the ad comes from */
+.src-tag { display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 99px; margin-inline-start: 6px; white-space: nowrap; background: var(--surface-2); color: var(--text-2); }
+.src-tag.bama { background: #fff4e5; color: #b54708; }
+@media (prefers-color-scheme: dark) { .src-tag.bama { background: #2e2210; color: #fdb022; } }
+.d-price .src-tag { margin-inline-start: 0; font-size: 12.5px; padding: 3px 10px; }
+.seg.sites { margin-bottom: 4px; }

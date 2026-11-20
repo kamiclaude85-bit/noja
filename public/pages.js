@@ -434,7 +434,7 @@ function priceChart(modelKey, trimKey, trimList, opts = {}) {
     if (!p || a.removed || !NojaDeals.marketable(p, now)) continue;
     const m = P.modelOf(p);
     if (m.key !== modelKey) continue;
-    every.push({ token: p.token, year: P.shamsiYear(p.year), price: p.price, km: p.mileage, trim: P.normalizeText(m.trim), trimLabel: m.trim || 'بدون تیپ', title: p.title });
+    every.push({ token: p.token, url: safeDivarUrl(p.url), year: P.shamsiYear(p.year), price: p.price, km: p.mileage, trim: P.normalizeText(m.trim), trimLabel: m.trim || 'بدون تیپ', title: p.title });
   }
   // A price far from the others of its model year, any trim («۳۰ میلیارد» typed for «۳ میلیارد»), is left out.
   const mid = new Map();
@@ -503,7 +503,7 @@ function priceChart(modelKey, trimKey, trimList, opts = {}) {
       dot.addEventListener('focus', show);
       dot.addEventListener('mouseleave', () => { tip.hidden = true; });
       dot.addEventListener('blur', () => { tip.hidden = true; });
-      dot.addEventListener('click', () => window.open(`https://divar.ir/v/${encodeURIComponent(x.token)}`, '_blank', 'noopener'));
+      dot.addEventListener('click', () => window.open(x.url || `https://divar.ir/v/${encodeURIComponent(x.token)}`, '_blank', 'noopener'));
       svg.append(dot);
     });
   }
@@ -594,7 +594,7 @@ function priceKmChart(all, trimKey, trimList, opts) {
     dot.addEventListener('focus', show);
     dot.addEventListener('mouseleave', () => { tip.hidden = true; });
     dot.addEventListener('blur', () => { tip.hidden = true; });
-    dot.addEventListener('click', () => window.open(`https://divar.ir/v/${encodeURIComponent(x.token)}`, '_blank', 'noopener'));
+    dot.addEventListener('click', () => window.open(x.url || `https://divar.ir/v/${encodeURIComponent(x.token)}`, '_blank', 'noopener'));
     svg.append(dot);
   }
   wrap.append(svg, tip);

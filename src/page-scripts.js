@@ -245,4 +245,88 @@ function extractAdPage() {
   return result;
 }
 
-module.exports = { collectListItems, clickLoadMore, nextPageLink, detectBlock, extractAdPage };
+// ---------------------------------------------------------------------------
+// باما (bama.ir). Runs inside its pages; the sellers' phone numbers are never read.
+// ---------------------------------------------------------------------------
+
+/** Ad cards on a Bama list page: [{ token, href, title, lines, image }]. */
+function collectBamaList() {
+  const out = [];
+  const seen = new Set();
+  for (const a of document.querySelectorAll('a[href*="/car/detail-"]')) {
+    const href = new URL(a.getAttribute('href'), location.origin).href;
+    const m = href.match(/\/car\/detail-([a-z0-9]{5,20})-/i);
+    if (!m || seen.has(m[1])) continue;
+    seen.add(m[1]);
+    const lines = (a.innerText || '').split('\n').map((s) => s.trim()).filter(Boolean);
+    const img = a.querySelector('img');
+    out.push({
+      token: `bm-${m[1]}`,
+      href,
+      title: lines.filter((l) => !/^\d+$/.test(l)).slice(0, 3).join(' '),
+      lines: lines.slice(0, 14),
+      image: (img && (img.currentSrc || img.src)) || '',
+    });
+  }
+  return out;
+}
+
+/** Links to a make or model page: [{ href, text }] («خرید و فروش پژو 207»). */
+function collectBamaLinks() {
+  const out = [];
+  for (const a of document.querySelectorAll('a[href^="/car/"]')) {
+    const href = a.getAttribute('href');
+    const text = (a.textContent || '').replace(/\s+/g, ' ').trim();
+    if (/^\/car\/[a-z0-9-]+$/.test(href) && /خرید\s*و\s*فروش/.test(text)) out.push({ href: new URL(href, location.origin).href, text });
+  }
+  return out;
+}
+
+/** What one Bama ad page says (see bama.toPost). Never the phone number. */
+function extractBamaAd() {
+  let ld = null;
+  for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
+    try {
+      const j = JSON.parse(s.textContent);
+      if ([].concat(j['@type'] || []).includes('Car')) { ld = j; break; }
+    } catch (_) { /* skip */ }
+  }
+  const lines = (document.body.innerText || '').split('\n').map((s) => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const back = lines.indexOf('بازگشت');
+  const end = lines.indexOf('توضیحات') > 0 ? lines.indexOf('توضیحات') : lines.length;
+  const head = back >= 0 ? lines.slice(back + 1, end) : [];
+  const rows = {};
+  for (const label of ['وضعیت بدنه', 'رنگ بدنه', 'رنگ داخل', 'گیربکس', 'نوع سوخت', 'وضعیت موتور', 'وضعیت شاسی']) {
+    const i = head.indexOf(label);
+    if (i >= 0 && head[i + 1]) rows[label] = head[i + 1];
+  }
+  // the line under «make، model» is the trim, unless it is the year
+  const nameAt = head.findIndex((l) => /،/.test(l));
+  const trim = nameAt >= 0 && head[nameAt + 1] && !/^\d{4}$/.test(head[nameAt + 1]) ? head[nameAt + 1] : '';
+  const agoAt = head.findIndex((l) => /پیش$|دیروز|لحظاتی|^امروز/.test(l));
+  // a dealership shows its name and «… فعالیت مداوم در باما» under the phone row
+  const phoneAt = head.indexOf('شماره تماس');
+  let dealer = '';
+  if (phoneAt >= 0) {
+    const after = head.slice(phoneAt + 2);
+    if (after.some((l) => /فعالیت مداوم در باما|نمایشگاه|نمایندگی|اتوگالری/.test(l))) dealer = after[0] || 'نمایشگاه';
+  }
+  const imgs = [...document.querySelectorAll('img')].map((i) => i.getAttribute('src') || '').filter((s) => /VehicleCarImages\//.test(s));
+  const folder = imgs.length ? imgs[0].split('/VehicleCarImages/')[1].split('/')[0] : '';
+  const images = Array.from(new Set(imgs.filter((s) => folder && s.includes(`/VehicleCarImages/${folder}/`))
+    .map((s) => s.replace(/\?x-img=.*$/, '?x-img=v1%2Fformat,type_webp%2Fresize,w_1200'))));
+  const text = lines.slice(0, 40).join(' ');
+  return {
+    ld,
+    rows,
+    trim,
+    ago: agoAt >= 0 ? head[agoAt] : '',
+    place: agoAt >= 0 ? head[agoAt + 1] || '' : '',
+    dealer,
+    images,
+    title: document.title,
+    removed: !ld && /حذف شده|منقضی|یافت نشد|وجود ندارد|404/.test(text),
+  };
+}
+
+module.exports = { collectListItems, clickLoadMore, nextPageLink, detectBlock, extractAdPage, collectBamaList, collectBamaLinks, extractBamaAd };

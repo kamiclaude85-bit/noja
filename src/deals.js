@@ -137,10 +137,44 @@
     };
   }
 
+  /**
+   * The same car in Divar and Bama (or posted twice): same model, model year, mileage within
+   * 2,000 km and price within 3%. Returns Map token → the other ad's token (other site only).
+   */
+  const sameCarKey = (p) => `${P.modelOf(p).key}|${P.shamsiYear(p.year)}`;
+  /** Two ads of the same model and year (see sameCarKey) from different sites, same car? */
+  const sameCar = (a, b) => (a.source === 'bama') !== (b.source === 'bama')
+    && Math.abs((a.mileage || 0) - (b.mileage || 0)) <= 2000
+    && Math.abs(a.price - b.price) / Math.max(a.price, b.price) <= 0.03;
+  function crossDuplicates(posts) {
+    const out = new Map();
+    const buckets = new Map();
+    for (const p of posts) {
+      if (!realPrice(p) || !p.year || p.mileage == null) continue;
+      const k = sameCarKey(p);
+      if (!buckets.has(k)) buckets.set(k, []);
+      buckets.get(k).push(p);
+    }
+    for (const list of buckets.values()) {
+      for (const a of list) for (const b of list) if (a !== b && sameCar(a, b)) out.set(a.token, b.token);
+    }
+    return out;
+  }
+
   function marketGroups(posts, now, allTrims = false) {
     const groups = new Map();
+    // A car advertised on both Divar and Bama counts once in a market. (Two ads on the same site
+    // with the same mileage and price are usually two cars, e.g. a dealer's stock.)
+    const counted = new Map();
     for (const p of posts) {
       if (!marketable(p, now)) continue;
+      const dk = p.mileage != null ? sameCarKey(p) : null;
+      if (dk) {
+        const seen = counted.get(dk) || [];
+        if (seen.some((x) => sameCar(x, p))) continue;
+        seen.push(p);
+        counted.set(dk, seen);
+      }
       const m = P.modelOf(p);
       // allTrims: one market per model and year, every trim together («همهٔ تیپ‌ها»)
       const key = allTrims ? `${m.key}||${p.year}` : groupKey(p);
@@ -359,7 +393,7 @@
     return { zone, great, good, fair, expected: round5m(expected), diff: price - expected };
   }
 
-  const api = { computeDeals, priceVerdict, ZONES, isInstallment, marketable: (p, now = Date.now()) => marketable(p, now), modelName, priceGuide, myCarPrice, budgetPicks, isHavaleh, BODY_FACTORS, DEAL_MIN, HOT_MIN, TOO_CHEAP, MARKET_DAYS };
+  const api = { computeDeals, crossDuplicates, priceVerdict, ZONES, isInstallment, marketable: (p, now = Date.now()) => marketable(p, now), modelName, priceGuide, myCarPrice, budgetPicks, isHavaleh, BODY_FACTORS, DEAL_MIN, HOT_MIN, TOO_CHEAP, MARKET_DAYS };
   root.NojaDeals = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

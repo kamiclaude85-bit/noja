@@ -81,7 +81,7 @@ function agoFa(t) {
 function safeDivarUrl(u) {
   try {
     const url = new URL(u);
-    return url.protocol === 'https:' && /(^|\.)divar\.ir$/.test(url.hostname) ? url.href : null;
+    return url.protocol === 'https:' && /(^|\.)(divar|bama)\.ir$/.test(url.hostname) ? url.href : null;
   } catch (_) { return null; }
 }
 function safeImg(u) {
@@ -212,7 +212,9 @@ function describeCriteria(c) {
   if (!c) return 'جستجو';
   const parts = [];
   const lim = P.limitsOf(c);
+  if (c.source === 'bama') parts.push('باما:');
   if (c.query) parts.push(c.query);
+  else if (c.searchUrl && c.source === 'bama') parts.push('جستجوی باما');
   else if (c.searchUrl) {
     // A search made from Divar's own pages: name the car from the address («…/car/pride/132» → «پراید 132»).
     let path = '';
@@ -362,6 +364,7 @@ App.refreshAds = async (force) => {
     App.searches = r.searches.sort((a, b) => (b.lastRunAt || 0) - (a.lastRunAt || 0));
     App.meta = { stages: r.stages, activeStages: r.activeStages, rejectReasons: r.rejectReasons, callResults: r.callResults };
     App.deals = globalThis.NojaDeals.computeDeals(ads.map((a) => ({ ...a.post, removed: a.removed })));
+    App.dups = globalThis.NojaDeals.crossDuplicates(ads.map((a) => a.post).filter(Boolean));
     App.computeGuide();
     App.emit('ads');
     return true;
@@ -423,6 +426,15 @@ function enrich(post) {
 }
 
 /** «پیشنهاد ویژه» / «با احتیاط» badge for an ad, or null. */
+/** «باما» for ads read from Bama, and «در دیوار هم هست» when the same car is in both. */
+function sourceChip(p) {
+  const other = App.dups && App.dups.get(p.token);
+  const bama = p.source === 'bama';
+  if (!bama && !other) return null;
+  const text = other ? (bama ? 'باما · در دیوار هم هست' : 'در باما هم هست') : 'باما';
+  return h('span', { class: `src-tag${bama ? ' bama' : ''}`, title: other ? 'همین ماشین (همان مدل، سال، کارکرد و قیمت) در هر دو سایت آگهی شده؛ در قیمت‌ها یک بار حساب می‌شود.' : 'این آگهی از باما خوانده شده' }, text);
+}
+
 /**
  * «کم‌کار / پرکار» chip from the yearly mileage. On cards only the unusual ones (long = false);
  * on the ad page every one, with the number.

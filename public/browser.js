@@ -374,7 +374,7 @@ function renderRow(p, d) {
       img ? h('img', { src: img, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer' }) : icon('image', 'lg'),
       p.images && p.images.length > 1 ? h('span', { class: 'count' }, icon('image', 'sm'), fa(p.images.length)) : null),
     h('div', { class: 'row-main' },
-      h('div', { class: 'row-top' }, f.stage !== 'new' ? stageChip(f.stage) : null, p.isNew ? h('span', { class: 'new-pill' }, 'جدید') : null),
+      h('div', { class: 'row-top' }, f.stage !== 'new' ? stageChip(f.stage) : null, p.isNew ? h('span', { class: 'new-pill' }, 'جدید') : null, sourceChip(p)),
       h('h3', null, p.title || 'بدون عنوان'),
       B.opts.rowNote ? B.opts.rowNote(p) : null,
       publishedLine(p),
@@ -770,6 +770,7 @@ function openDrawer(token, keepScroll) {
           d ? h('span', { class: `delta ${d.cls}` }, d.text) : null,
           priceChangeBadge(p),
           sellerBadge(p),
+          sourceChip(p),
           usageChip(p, true)),
         priceBar(p),
         guideLine(p),
@@ -788,7 +789,7 @@ function openDrawer(token, keepScroll) {
         }), extra.map(([k, v]) => h('div', { class: 'spec' }, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v)))),
         p.description ? [h('h3', { class: 'd-h' }, 'توضیحات فروشنده'), h('p', { class: 'desc' }, p.description)] : null)),
     h('div', { class: 'drawer-foot' },
-      url ? h('a', { class: 'btn primary', href: url, target: '_blank', rel: 'noopener' }, icon('external'), 'دیدن آگهی در دیوار') : null,
+      url ? h('a', { class: 'btn primary', href: url, target: '_blank', rel: 'noopener' }, icon('external'), p.source === 'bama' ? 'دیدن آگهی در باما' : 'دیدن آگهی در دیوار') : null,
       h('button', { class: 'btn cmp-toggle', type: 'button', 'aria-pressed': String(cmp), onclick: () => toggleCompare(p.token) }, icon('compare'), cmp ? 'در مقایسه' : 'مقایسه')));
 
   openOverlay([scrim, panel], (e) => {

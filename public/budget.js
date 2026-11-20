@@ -58,7 +58,7 @@ const BUDGET_OPEN = {};
 let BUDGET_TYPED = ''; // words in the model box, kept while the page redraws itself
 function budgetPrefs() {
   return { from: '', to: '', picks: [], origin: '', yearMin: '', yearMax: '', gearbox: '', personal: false, bodyOk: false, chassisOk: false, kmMax: '',
-    speed: 'slow', maxAds: '100', link: '', ...prefs.get(BUDGET_PREF, {}) };
+    speed: 'slow', maxAds: '100', link: '', sites: 'both', ...prefs.get(BUDGET_PREF, {}) };
 }
 
 /** Divar search address for one pick (or for all cars) with the limits and filters. */
@@ -185,12 +185,19 @@ function renderBudget(view, params) {
       h('label', { class: 'field' }, h('span', null, 'سرعت ربات'), speed),
       h('label', { class: 'field' }, h('span', null, 'حداکثر آگهی جدید در هر جستجو'), maxAds,
         h('span', { class: 'help' }, `امروز ${fa(App.state.today || 0)} آگهی باز شده`)),
-      h('label', { class: 'field wide' }, h('span', null, 'یا لینک یک جستجوی آماده در دیوار'), link,
-        h('span', { class: 'help' }, 'اگر خودتان در دیوار فیلتر کرده‌اید، لینک صفحه را اینجا بگذارید؛ به‌جای انتخاب‌های بالا همین جستجو می‌شود.')),
+      h('label', { class: 'field wide' }, h('span', null, 'یا لینک یک جستجوی آماده در دیوار یا باما'), link,
+        h('span', { class: 'help' }, 'اگر خودتان در دیوار یا باما فیلتر کرده‌اید، لینک صفحه را اینجا بگذارید؛ به‌جای انتخاب‌های بالا همین جستجو می‌شود.')),
       h('label', { class: 'check wide' }, recheck, 'این بار همهٔ آگهی‌ها دوباره باز شوند (کندتر؛ معمولاً لازم نیست)')));
 
   const err = h('p', { class: 'form-error', role: 'alert' });
-  const goBtn = h('button', { class: 'btn primary lg', type: 'submit' }, icon('search'), 'جستجو در دیوار');
+  // where the bot looks: Divar, Bama or both
+  const SITES = [['both', 'دیوار و باما'], ['divar', 'فقط دیوار'], ['bama', 'فقط باما']];
+  const siteName = () => ({ both: 'دیوار و باما', divar: 'دیوار', bama: 'باما' }[s.sites || 'both']);
+  const goBtn = h('button', { class: 'btn primary lg', type: 'submit' }, icon('search'), `جستجو در ${siteName()}`);
+  const sitesSeg = h('div', { class: 'seg sites' }, SITES.map(([v, t]) => h('button', {
+    type: 'button', 'aria-pressed': String((s.sites || 'both') === v),
+    onclick: (e) => { save({ sites: v }); $('button', sitesSeg).forEach((b) => b.setAttribute('aria-pressed', String(b === e.currentTarget))); goBtn.lastChild.textContent = `جستجو در ${siteName()}`; },
+  }, t)));
   const showBtn = h('button', { class: 'btn lg', type: 'button' }, icon('flame'), 'بهترین‌های خوانده‌شده');
   const form = h('form', { class: 'search-card budget-form', autocomplete: 'off', novalidate: true },
     h('div', { class: 'field-label' }, 'چه ماشینی؟', h('small', null, ' (خالی بگذارید یعنی همه)')),
@@ -204,6 +211,7 @@ function renderBudget(view, params) {
       h('label', { class: 'field' }, h('span', null, 'تا سال'), yMaxIn),
       h('label', { class: 'field' }, h('span', null, 'حداکثر کارکرد (کیلومتر)'), km)),
     more, bot,
+    h('div', { class: 'field-label' }, 'کجا بگردد؟'), sitesSeg,
     h('div', { class: 'form-actions' }, goBtn, showBtn),
     err);
   // What is typed stays, even if the page redraws itself before a button is pressed.
@@ -248,7 +256,7 @@ function renderBudget(view, params) {
       priceMin: L.min || null, priceMax: L.max || null, yearMin: L.yMin, yearMax: L.yMax, mileageMax: L.kmMax };
     let list;
     if (s.link) {
-      if (!/^https:\/\/([a-z0-9-]+\.)?divar\.ir\/s\//.test(s.link)) { err.textContent = 'لینک باید نشانی یک صفحهٔ جستجوی دیوار باشد (divar.ir/s/…).'; return; }
+      if (!/^https:\/\/([a-z0-9-]+\.)?(divar\.ir\/s\/|bama\.ir\/car)/.test(s.link)) { err.textContent = 'لینک باید نشانی یک صفحهٔ جستجوی دیوار (divar.ir/s/…) یا باما (bama.ir/car/…) باشد.'; return; }
       // A ready-made Divar search: its own filters are the limits.
       list = [{ city: base.city, maxAgeDays: base.maxAgeDays, maxAds: base.maxAds, speed: base.speed, recheckAll: base.recheckAll, searchUrl: s.link }];
     } else {
@@ -256,7 +264,12 @@ function renderBudget(view, params) {
       const picked = pickItems();
       if (!picked.length && !L.min && !L.max) { err.textContent = 'ماشین یا بودجه را مشخص کنید.'; search.focus(); return; }
       const targets = (picked.length ? picked.flatMap(divarTargets) : [{ path: '', name: '' }]).filter((t) => !seen.has(t.path + (t.q || '')) && seen.add(t.path + (t.q || ''))).slice(0, 12);
-      list = targets.map((t) => ({ ...base, query: t.name, searchUrl: divarBudgetUrl(t.path, { ...o, q: t.q }) }));
+      const sites = s.sites || 'both';
+      list = [];
+      if (sites !== 'bama') list.push(...targets.map((t) => ({ ...base, query: t.name, searchUrl: divarBudgetUrl(t.path, { ...o, q: t.q }) })));
+      // Bama: the same cars, found by name (make → model) on its pages
+      if (sites !== 'divar') list.push(...targets.map((t) => ({ ...base, source: 'bama', query: t.name || '', personalOnly: !!s.personal })));
+      list = list.slice(0, 20);
     }
     const label = btn.textContent;
     btn.disabled = true;

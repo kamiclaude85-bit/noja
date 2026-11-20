@@ -16,6 +16,7 @@
 const P = require('./parser');
 const S = require('./page-scripts');
 const H = require('./human');
+const B = require('./bama');
 
 /** Timing profiles (milliseconds). */
 const SPEEDS = {
@@ -35,6 +36,7 @@ const MAX_LIST_PAGES = 15;
 /** Identifies a saved search, so its ads can be remembered across runs. */
 function searchKey(c) {
   if (c.searchUrl) return `url:${c.searchUrl}`;
+  if (c.source === 'bama') return ['bama', P.normalizeText(c.query || ''), c.yearMin || '', c.yearMax || '', c.priceMin || '', c.priceMax || ''].join('|');
   const key = ['q', c.city || 'tehran', P.normalizeText(c.query || ''), c.yearMin || '', c.yearMax || ''];
   if (c.priceMin || c.priceMax) key.push(`p${c.priceMin || ''}-${c.priceMax || ''}`);
   return key.join('|');
@@ -42,6 +44,7 @@ function searchKey(c) {
 
 /** Price shown on the search-list card (e.g. «۴۸۵٬۰۰۰٬۰۰۰ تومان»), or null. */
 function cardPrice(item) {
+  if (item.price != null) return item.price; // Bama cards
   const line = (item.lines || []).find((l) => /تومان/.test(l));
   return line ? P.parseNumber(line) : null;
 }
@@ -194,7 +197,8 @@ class Scanner {
     this.page = page;
     try {
       // ---- 1. Login ----
-      if (c.requireLogin !== false && !(await isLoggedIn(this.context))) {
+      // Bama needs no account.
+      if (c.source !== 'bama' && c.requireLogin !== false && !(await isLoggedIn(this.context))) {
         await page.goto('https://divar.ir/', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
         await page.bringToFront().catch(() => {});
         await this.waitForUser(run, 'waiting-login',
@@ -204,14 +208,15 @@ class Scanner {
       }
 
       // ---- 2. Search ----
-      this.setStatus(run, 'collecting', 'در حال رفتن به دیوار و جستجو…', '');
-      const listUrl = await this.openSearch(run, page);
+      const bama = c.source === 'bama';
+      this.setStatus(run, 'collecting', bama ? 'در حال رفتن به باما و پیدا کردن مدل…' : 'در حال رفتن به دیوار و جستجو…', '');
+      const listUrl = bama ? await this.openBamaSearch(run, page) : await this.openSearch(run, page);
       run.sourceUrl = listUrl;
 
       // ---- 3. Collect the list (stops early at ads already seen) ----
       const key = searchKey(c);
       this.store.touchSearch(key, c);
-      await this.collect(run, page);
+      if (bama) await this.collectBama(run, page); else await this.collect(run, page);
       if (this.control.cancel) return this.finish(run, 'stopped', `متوقف شد. ${fa(run.items.length)} آگهی در فهرست پیدا شد و باز نشد.`);
 
       // ---- 4. Decide what to open: only new ads, and old ads whose price changed ----
@@ -226,7 +231,7 @@ class Scanner {
         // ignore the filters), or the other door count in its title. Not opened (one visit less), not kept.
         const cardDoors = doors ? P.doorsOf(item.title || '') : null;
         const card = cardPrice(item);
-        if (!(rec && rec.post) && (P.fakePrice(card) || P.outOfLimits({ price: card }, lim) || (cardDoors && cardDoors !== doors))) {
+        if (!(rec && rec.post) && (P.fakePrice(card) || P.outOfLimits({ price: card, year: item.year || null }, lim) || (cardDoors && cardDoors !== doors))) {
           run.stats.skipped = (run.stats.skipped || 0) + 1;
           continue;
         }
@@ -291,7 +296,7 @@ class Scanner {
         this.setStatus(run, 'reading', `در حال خواندن آگهی ${fa(n)} از ${fa(queue.length)}`, item.title || '');
         const t0 = Date.now();
         try {
-          const post = await this.readAd(run, page, item, pace, listUrl);
+          const post = bama ? await this.readBamaAd(run, page, item, pace, listUrl) : await this.readAd(run, page, item, pace, listUrl);
           if (post) {
             const rec = this.store.rememberAd(post, key);
             post.firstSeenAt = rec.firstSeenAt;
@@ -617,6 +622,148 @@ class Scanner {
         return post;
       } catch (err) {
         if (viaNewTab) await adPage.close().catch(() => {});
+        lastErr = err;
+        if (/حذف شده/.test(err.message)) throw err;
+        await H.sleep(1500 * attempt);
+      }
+    }
+    throw lastErr;
+  }
+
+  // ----- باما -----
+
+  /** Open a page, waiting for you at a block («من ربات نیستم»). */
+  async gotoChecked(run, page, url) {
+    let r = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => null);
+    while (await this.handleBlock(run, page, r)) {
+      if (this.control.stop) return null;
+      r = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => null);
+    }
+    return r;
+  }
+
+  /** Click a link on the page like a person; open its address when it is not there. */
+  async clickTo(run, page, href) {
+    const path = new URL(href).pathname;
+    const link = await page.$('a[href="' + path + '"]').catch(() => null);
+    if (link && (await link.isVisible().catch(() => false))) {
+      await H.clickElement(page, link).catch(() => {});
+      await page.waitForURL((u) => u.pathname === path, { timeout: 20000 }).catch(() => {});
+    }
+    if (new URL(page.url()).pathname !== path) await this.gotoChecked(run, page, href);
+    await H.sleep(H.natural(900, 2000));
+  }
+
+  /**
+   * Bama: all cars → the make → the model (as a person picks them), then the list address with
+   * the year in it. A pasted Bama link is used as it is.
+   */
+  async openBamaSearch(run, page) {
+    const c = run.criteria;
+    if (c.searchUrl && B.isBamaUrl(c.searchUrl)) {
+      await this.gotoChecked(run, page, B.listUrl(c.searchUrl, c));
+      return page.url();
+    }
+    await this.gotoChecked(run, page, B.HOST + '/car');
+    await this.idle(H.natural(1200, 2600));
+    let target = B.HOST + '/car';
+    if (c.query) {
+      const make = B.pickLink(await page.evaluate(S.collectBamaLinks).catch(() => []), c.query);
+      if (!make) throw new Error('«' + c.query + '» در فهرست برندهای باما پیدا نشد.');
+      await this.clickTo(run, page, make.href);
+      target = make.href;
+      const models = (await page.evaluate(S.collectBamaLinks).catch(() => [])).filter((l) => l.href.startsWith(make.href + '-'));
+      const model = B.pickLink(models, c.query);
+      if (model) { await this.clickTo(run, page, model.href); target = model.href; }
+    }
+    const want = B.listUrl(target, c, { sort: c.bamaSort });
+    if (page.url() !== want) { await H.sleep(H.natural(800, 1800)); await this.gotoChecked(run, page, want); }
+    return page.url();
+  }
+
+  /** Bama's list: the cards on the page, scrolling a little for more (as a visitor would). */
+  async collectBama(run, page) {
+    const c = run.criteria;
+    const maxNew = Math.max(1, Number(c.maxAds) || 60);
+    const useMemory = !c.recheckAll;
+    const isKnown = (t) => useMemory && !!this.store.knownAd(t);
+    await page.waitForSelector('a[href*="/car/detail-"]', { timeout: 20000 }).catch(() => {});
+    await H.sleep(H.natural(900, 1800));
+    const found = new Map();
+    const listUrl = page.url();
+    const add = async () => {
+      for (const it of await page.evaluate(S.collectBamaList).catch(() => [])) {
+        if (found.has(it.token)) continue;
+        found.set(it.token, { ...it, listUrl, seenAt: Date.now(), price: B.priceOf(it.lines), year: B.yearOfHref(it.href) });
+      }
+      run.items = Array.from(found.values());
+    };
+    await add();
+    let idle = 0;
+    while (!this.control.stop && idle < 3 && found.size < 90) {
+      const fresh = run.items.filter((it) => !isKnown(it.token)).length;
+      if (fresh >= maxNew) break;
+      await this.pauseGate(run);
+      this.setStatus(run, 'collecting', 'در حال مرور فهرست باما: ' + fa(fresh) + ' آگهی جدید');
+      const before = found.size;
+      await H.scrollBy(page, H.rand(600, 1300));
+      await H.sleep(H.natural(900, 2200));
+      if (H.chance(0.15)) { await H.scrollBy(page, -H.rand(150, 400)); await H.sleep(H.rand(400, 1000)); }
+      await add();
+      idle = found.size === before ? idle + 1 : 0;
+    }
+    let fresh = 0;
+    const items = [];
+    for (const it of found.values()) {
+      if (!isKnown(it.token)) { if (fresh >= maxNew) continue; fresh++; }
+      items.push(it);
+    }
+    run.items = items.map((it, i) => ({ ...it, order: i }));
+    run.collectStop = this.control.stop ? 'user' : 'end';
+    if (!this.control.cancel) this.control.stop = false;
+    this.store.saveRun(run, true);
+    await H.scrollBy(page, -H.rand(3000, 6000)).catch(() => {});
+  }
+
+  /** Open one Bama ad (click its card, or its address), read it for a while, go back. */
+  async readBamaAd(run, page, item, pace, listUrl) {
+    let lastErr = null;
+    const list = item.listUrl || listUrl;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      if (this.control.stop) return null;
+      try {
+        let response = null;
+        const id = item.token.slice(B.TOKEN_PREFIX.length);
+        if (!item.direct && page.url() !== list) {
+          if (/\/car\/detail-/.test(page.url())) await page.goBack({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => null);
+          if (page.url() !== list) await this.gotoChecked(run, page, list);
+          await H.sleep(H.natural(600, 1400));
+        }
+        let card = null;
+        if (attempt === 1 && !item.direct) {
+          for (let i = 0; i < 8 && !card; i++) {
+            card = await page.$('a[href*="/car/detail-' + id + '-"]').catch(() => null);
+            if (!card) { await H.scrollBy(page, H.rand(700, 1200)); await H.sleep(H.natural(400, 900)); }
+          }
+        }
+        if (card) {
+          await H.clickElement(page, card);
+          await page.waitForURL((u) => u.pathname.includes('detail-' + id + '-'), { timeout: 30000 });
+          await page.waitForLoadState('domcontentloaded', { timeout: 45000 });
+        } else {
+          response = await page.goto(item.href, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        }
+        if (response && [404, 410].includes(response.status())) throw new Error('این آگهی حذف شده است');
+        if (await this.handleBlock(run, page, response)) { attempt--; continue; }
+        const [rMin, rMax] = pace.read;
+        await H.readPage(page, H.natural(rMin, rMax), () => this.control.stop);
+        const raw = await page.evaluate(S.extractBamaAd);
+        if (raw.removed) throw new Error('این آگهی حذف شده است');
+        if (!raw.ld) throw new Error('مشخصات آگهی در صفحه پیدا نشد');
+        const post = B.toPost(raw, item);
+        post.order = item.order;
+        return post;
+      } catch (err) {
         lastErr = err;
         if (/حذف شده/.test(err.message)) throw err;
         await H.sleep(1500 * attempt);

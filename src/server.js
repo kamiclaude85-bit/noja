@@ -38,14 +38,21 @@ function cleanCriteria(b) {
   const num = (v) => { const n = P.parseNumber(v); return n == null ? null : n; };
   const year = (v) => { const n = num(v); return n == null ? null : P.normalizeYear(n); };
   let searchUrl = String(b.searchUrl || '').trim();
+  let source = b.source === 'bama' ? 'bama' : 'divar';
   if (searchUrl) {
     try {
       const u = new URL(searchUrl);
-      if (u.protocol !== 'https:' || !/(^|\.)divar\.ir$/.test(u.hostname) || !u.pathname.startsWith('/s/')) searchUrl = '';
-      else searchUrl = u.href;
+      const divar = /(^|\.)divar\.ir$/.test(u.hostname) && u.pathname.startsWith('/s/');
+      const bama = /(^|\.)bama\.ir$/.test(u.hostname) && u.pathname.startsWith('/car');
+      if (u.protocol !== 'https:' || !(divar || bama)) searchUrl = '';
+      else { searchUrl = u.href; source = bama ? 'bama' : 'divar'; }
     } catch (_) { searchUrl = ''; }
   }
   return {
+    // where to read: «divar» or «bama» (a link decides it by itself)
+    source,
+    personalOnly: !!b.personalOnly,
+    bamaSort: b.bamaSort === 'cheapest' ? 'cheapest' : '',
     query: String(b.query || '').trim().slice(0, 100),
     city: /^[a-z-]{2,30}$/.test(b.city || '') ? b.city : 'tehran',
     keyword: String(b.keyword || '').trim().slice(0, 50),
