@@ -680,7 +680,9 @@ class Scanner {
       const model = B.pickLink(models, c.query);
       if (model) { await this.clickTo(run, page, model.href); target = model.href; }
     }
-    const want = B.listUrl(target, c, { sort: c.bamaSort });
+    // Bama has no price filter in its address: with a budget ceiling, cheapest first, so the ads
+    // it shows are mostly in the budget (newest first, most were above it).
+    const want = B.listUrl(target, c, { sort: c.bamaSort || (P.limitsOf(c).priceMax ? 'cheapest' : '') });
     if (page.url() !== want) { await H.sleep(H.natural(800, 1800)); await this.gotoChecked(run, page, want); }
     return page.url();
   }

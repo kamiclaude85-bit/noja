@@ -45,6 +45,32 @@ class Store {
 
     this.backupDir = path.join(dataDir, 'backups');
     fs.mkdirSync(this.backupDir, { recursive: true });
+    this.closeStaleRuns();
+  }
+
+  /**
+   * At start: a run still marked as running was cut off (the bot or its Chrome was closed).
+   * Mark it stopped, and send the latest runs to the online panel again, so it does not show
+   * an old «در حال جمع کردن» forever.
+   */
+  closeStaleRuns() {
+    const ACTIVE = ['starting', 'waiting-login', 'collecting', 'reading', 'resting', 'blocked', 'paused'];
+    let files = [];
+    try { files = fs.readdirSync(this.runsDir).filter((f) => f.endsWith('.json')); } catch (_) { return; }
+    const recent = files.map((f) => [f, fs.statSync(path.join(this.runsDir, f)).mtimeMs]).sort((a, b) => b[1] - a[1]).slice(0, 8);
+    for (const [f] of recent) {
+      const run = this.loadRun(f.replace(/\.json$/, ''));
+      if (!run) continue;
+      if (ACTIVE.includes(run.status)) {
+        run.status = 'stopped';
+        run.message = 'ربات بسته شد و این جستجو نیمه‌کاره ماند. آگهی‌هایی که خوانده بود، مانده‌اند.';
+        run.finishedAt = run.finishedAt || Date.now();
+        run.activity = '';
+        run.waitUntil = null;
+        writeJson(this.runFile(run.id), run);
+      }
+      this.changes.runs.add(run.id);
+    }
   }
 
   /** Apply the current personal/dealer rule to every saved ad (rules improve over time). */
