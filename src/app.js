@@ -9,7 +9,8 @@ const { createServer, cleanCriteria } = require('./server');
 const { followUpSearches } = require('./budget');
 const { Notifier } = require('./notify');
 const { Cloud } = require('./cloud');
-const { dueSearches, localDay } = require('./daily');
+const { dueSearches, localDay, planPriceCheck, dailyCheckDue } = require('./daily');
+const CRM = require('./crm');
 const { searchKey } = require('./scanner');
 
 const ROOT = path.join(__dirname, '..');
@@ -122,11 +123,27 @@ async function startApp(opts = {}) {
   const queueTimer = setInterval(() => { try { cloud.startPending(); } catch (_) { /* next time */ } }, 30 * 60 * 1000);
   queueTimer.unref();
 
+  const busyKeys = () => {
+    const busy = new Set(cloud.pending.map((c) => searchKey(c)));
+    for (const r of scanner.runs) busy.add(searchKey(r.criteria));
+    return busy;
+  };
+  // Daily price check of all saved searches (daily.js): by its hour, or now from the panel.
+  const dailyNow = (by = 'auto') => {
+    const now = Date.now();
+    const plan = planPriceCheck(store.db.searches, store.db.ads, CRM.ACTIVE_STAGES, now, busyKeys());
+    store.markDailyCheck({ day: localDay(now), at: now, keys: plan.items.map((x) => x.key), idle: plan.idle, merged: plan.merged, by });
+    if (plan.items.length) cloud.enqueue(plan.items.map((x) => cleanCriteria(x.criteria)));
+    cloud.syncSoon();
+    return { queued: plan.items.length, idle: plan.idle, merged: plan.merged };
+  };
+  cloud.dailyNow = dailyNow;
+
   // Daily automatic check of saved searches: every 10 minutes, line up the ones whose time has come.
   const autoCheck = () => {
     try {
-      const busy = new Set(cloud.pending.map((c) => searchKey(c)));
-      for (const r of scanner.runs) busy.add(searchKey(r.criteria));
+      if (dailyCheckDue(store.dailyCheck(), Date.now())) dailyNow('auto');
+      const busy = busyKeys();
       const due = dueSearches(store.db.searches, Date.now(), busy);
       if (!due.length) return;
       const today = localDay(Date.now());

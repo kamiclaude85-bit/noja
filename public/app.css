@@ -539,6 +539,11 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; backgrou
 .kpi.green .kpi-v { color: var(--good); }
 .kpi.red::before { background: var(--bad); }
 .kpi.red .kpi-s { color: var(--bad); font-weight: 500; }
+.daily-card .muted a { color: var(--good); font-weight: 600; }
+.daily-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 8px; font-size: 13px; }
+.daily-opts select { font: inherit; padding: 3px 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+.daily-opts select:disabled { opacity: .5; }
+.daily-card.done .state-icon { background: var(--good-soft); color: var(--good); }
 .dash-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .dash-grid .card + .card { margin-top: 0; }
 

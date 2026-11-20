@@ -71,6 +71,9 @@ function cleanCriteria(b) {
     recheckAll: !!b.recheckAll,
     // Started by the daily automatic check (not by hand).
     auto: !!b.auto,
+    // Part of the daily price check; trackKeys: searches whose followed-up ads this run re-checks too.
+    daily: !!b.daily,
+    trackKeys: Array.isArray(b.trackKeys) ? b.trackKeys.filter((k) => typeof k === 'string' && k.length < 300).slice(0, 40) : [],
     trackRecheckHours: b.trackRecheckHours != null && Number(b.trackRecheckHours) >= 0 ? Number(b.trackRecheckHours) : 20,
     searchUrl,
     // Searches started together («خرید با بودجه»): one id, so «پایان» can stop all of them.
@@ -149,6 +152,10 @@ function createServer({ scanner, store, context, notifier, cloud }) {
           const s = store.setAuto(String(b.key || ''), cleanAuto(b));
           return send(res, 200, { ok: true, auto: s.auto });
         } catch (e) { return send(res, 404, { error: e.message }); }
+      }
+      // Daily price check of all saved searches, now: { queued, keys }.
+      if (p === '/api/daily-check' && req.method === 'POST' && cloud && cloud.dailyNow) {
+        return send(res, 200, cloud.dailyNow('hand'));
       }
       // Delete a saved search for good (its run history and the ads only it had found): { key }.
       if (p === '/api/search-delete' && req.method === 'POST') {

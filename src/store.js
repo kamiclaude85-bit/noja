@@ -46,6 +46,7 @@ class Store {
     this.backupDir = path.join(dataDir, 'backups');
     fs.mkdirSync(this.backupDir, { recursive: true });
     this.closeStaleRuns();
+    this.ensureDailyCheck();
   }
 
   /**
@@ -338,6 +339,31 @@ class Store {
     return s;
   }
 
+  /**
+   * The daily price check's switch and last check: a hidden saved search (see daily.js), made
+   * once, switched off.
+   */
+  ensureDailyCheck() {
+    const { DAILY_KEY } = require('./daily');
+    if (this.db.searches[DAILY_KEY]) return;
+    this.db.searches[DAILY_KEY] = { tokens: [], createdAt: Date.now(), auto: { on: false, hour: 9, full: false }, criteria: { hidden: true, dailyCheck: {} } };
+    this.changes.searches = true;
+    this.scheduleFlush();
+  }
+
+  dailyCheck() { return this.db.searches[require('./daily').DAILY_KEY] || null; }
+
+  /** Today's price check was lined up: { day, at, keys, idle, merged, by }. */
+  markDailyCheck(info) {
+    this.ensureDailyCheck();
+    const s = this.dailyCheck();
+    s.criteria = { hidden: true, dailyCheck: info };
+    s.lastRunAt = info.at;
+    this.changes.searches = true;
+    this.bump();
+    this.scheduleFlush();
+  }
+
   /** Remember that today's automatic check of this search was lined up. */
   markAutoRan(key, day) {
     const s = this.db.searches[key];
@@ -426,8 +452,12 @@ class Store {
 
   touchSearch(key, criteria) {
     const s = this.db.searches[key] || (this.db.searches[key] = { tokens: [], createdAt: Date.now() });
-    s.criteria = { ...criteria, recheckAll: false };
+    // what only one run needs (the daily check's extras) is not kept with the search
+    const { daily, trackKeys, ...rest } = criteria;
+    s.criteria = { ...rest, recheckAll: false, auto: false };
     s.lastRunAt = Date.now();
+    // started by hand (not by a daily check): the search is in use
+    if (!criteria.auto) s.lastHandAt = s.lastRunAt;
     this.changes.searches = true;
     this.bump();
     this.scheduleFlush();

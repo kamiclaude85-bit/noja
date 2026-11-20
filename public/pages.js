@@ -26,8 +26,71 @@ async function rerunSearch(criteria) {
 // =========================================================
 // Dashboard
 // =========================================================
-function renderDashboard(view) {
-  const ads = allAds().map((a) => ({ a, f: adFlags(a) }));
+// ---------- daily price check (all saved searches, once a day) ----------
+/**
+ * Dashboard card: when the prices were last checked, what came of it, the daily switch, and
+ * «بررسی همین حالا». The bot picks the searches itself (one per group of ads, see daily.js).
+ */
+function dailyCheckCard(ads) {
+  const dc = App.dailyCheck;
+  if (!dc) return null;
+  const a = { on: false, hour: 9, ...(dc.auto || {}) };
+  const last = (dc.criteria && dc.criteria.dailyCheck) || {};
+  const today = last.day === new Date().toLocaleDateString('en-CA');
+  // searches of the check still waiting or running
+  const left = (App.state.queue || []).filter((q) => q.criteria && q.criteria.daily).length
+    + (App.state.busyAll || []).filter((id) => { const r = liveRun(id); return r && r.criteria && r.criteria.daily; }).length;
+  const drops = last.at ? ads.filter((x) => x.f.priceDrop && x.f.priceDrop.t >= last.at && !x.f.sold).length : 0;
+  const timeFa = (t) => new Date(t).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' });
+  const dropText = drops ? h('a', { href: '#/ads?view=drops' }, `${fa(drops)} آگهی ارزان‌تر شد`) : 'قیمتی کم نشد';
+
+  let title; let sub;
+  if (today && left) {
+    title = 'در حال بررسی قیمت‌ها';
+    sub = [`${fa(left)} جستجو مانده · تا حالا `, drops ? dropText : 'قیمتی کم نشده'];
+  } else if (today) {
+    title = `قیمت‌ها امروز ${timeFa(last.at)} بررسی شد`;
+    sub = [`${fa((last.keys || []).length)} جستجو`, last.merged ? ` (${fa(last.merged)} جستجوی تکراری کنار گذاشته شد)` : '', ' · ', dropText];
+  } else if (a.on) {
+    title = 'قیمت‌ها امروز هنوز بررسی نشده';
+    sub = `از ${hourFa(a.hour)} خودش بررسی می‌کند (اگر ربات روشن باشد).`;
+  } else {
+    title = 'قیمت‌ها امروز هنوز بررسی نشده';
+    sub = 'ربات جستجوهای ذخیره‌شده را دوباره مرور می‌کند و فقط آگهی‌های تازه و آگهی‌هایی که قیمتشان عوض شده را باز می‌کند.';
+  }
+
+  const save = async (body) => {
+    try {
+      const r = await api('/api/search-auto', { method: 'POST', body: { key: dc.key, full: false, ...body } });
+      dc.auto = r.auto;
+      toast(r.auto.on ? `از این به بعد هر روز از ${hourFa(r.auto.hour)} قیمت‌ها بررسی می‌شود.` : 'بررسی قیمت روزانه خاموش شد.');
+      box.replaceWith(dailyCheckCard(ads));
+    } catch (e) { toast(e.message, 'err'); }
+  };
+  const on = h('input', { type: 'checkbox', checked: a.on, onchange: () => save({ on: on.checked, hour: Number(hour.value) }) });
+  const hour = h('select', { 'aria-label': 'ساعت بررسی روزانه', disabled: !a.on, onchange: () => save({ on: true, hour: Number(hour.value) }) },
+    Array.from({ length: 18 }, (_, i) => i + 6).map((hr) => h('option', { value: hr, selected: hr === a.hour }, hourFa(hr))));
+  const now = h('button', { class: `btn${today ? '' : ' primary'}`, type: 'button', disabled: !!left, onclick: async () => {
+    now.disabled = true;
+    try {
+      const r = await api('/api/daily-check', { method: 'POST', body: {} });
+      toast(r.later ? 'ربات در اولین فرصت بررسی را شروع می‌کند.' : r.queued ? `${fa(r.queued)} جستجو در نوبت بررسی قرار گرفت.` : 'جستجویی برای بررسی نبود.');
+    } catch (e) { toast(e.message, 'err'); now.disabled = false; }
+  } }, icon('refresh', 'sm'), 'بررسی همین حالا');
+
+  const box = h('div', { class: `card bot-card daily-card${today && !left ? ' done' : ''}` },
+    h('span', { class: `state-icon${left ? ' pulse' : ''}` }, icon('trend')),
+    h('div', { class: 'grow' },
+      h('b', null, title),
+      h('div', { class: 'muted' }, sub),
+      h('div', { class: 'daily-opts' },
+        h('label', { class: 'check' }, on, 'هر روز خودکار'),
+        h('label', { class: 'field-inline' }, 'از', hour))),
+    now);
+  return box;
+}
+
+function renderDashboard(view) {  const ads = allAds().map((a) => ({ a, f: adFlags(a) }));
   const live = ads.filter((x) => !x.f.sold);
   const newToday = ads.filter((x) => x.f.isNewToday).length;
   const unreviewed = live.filter((x) => x.f.stage === 'new').length;
@@ -131,6 +194,7 @@ function renderDashboard(view) {
   view.replaceChildren(h('div', { class: 'page' },
     pageHead('پیشخوان', new Date().toLocaleDateString('fa-IR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })),
     botCard,
+    dailyCheckCard(ads),
     h('div', { class: 'kpis' },
       kpi('آگهی جدید امروز', newToday, `${fa(unreviewed)} آگهی هنوز بررسی نشده`, '#/ads?stage=new', newToday ? 'blue' : '', 'plus'),
       kpi('تماس‌های امروز', calls.length, due ? `${fa(due)} مورد وقتش رسیده` : 'همه سر وقت', '#/ads?view=calls', due ? 'red' : '', 'phone'),

@@ -33,7 +33,7 @@ test('deleting a saved search removes its own ads and runs, and keeps the rest',
   const out = store.deleteSearch(keyA, searchKey);
   assert.deepStrictEqual(out, { removedAds: 3, keptAds: 1, removedRuns: 2 });
   assert.deepStrictEqual(Object.keys(store.db.ads).sort(), ['followed', 'other', 'shared']);
-  assert.deepStrictEqual(Object.keys(store.db.searches), [keyB]);
+  assert.deepStrictEqual(Object.keys(store.db.searches).filter((k) => !k.startsWith('__')), [keyB]);
   assert.deepStrictEqual(store.listRuns().map((r) => r.id), ['run_b']);
   assert.deepStrictEqual(store.gone().ads.sort(), ['plain1', 'plain2', 'rejected']);
   assert.deepStrictEqual(store.gone().runs.sort(), ['run_a1', 'run_a2']);

@@ -84,6 +84,11 @@ try {
         foreach ($items as $c) if (is_array($c)) queue_add('scan', $c);
         json_out(200, ['queued' => true, 'count' => count($items)]);
     }
+    // Daily price check of all saved searches, now: the bot lines them up at its next check-in.
+    if ($path === '/daily-check' && $method === 'POST') {
+        queue_add('daily', []);
+        json_out(200, ['queued' => true, 'later' => true]);
+    }
     // Daily automatic check of a saved search: shown here at once, applied by the bot at its next check-in.
     if ($path === '/search-auto' && $method === 'POST') {
         $b = body_json(10000);

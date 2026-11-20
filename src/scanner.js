@@ -263,7 +263,9 @@ class Scanner {
       // Ads you are following up: re-check once a day (still on Divar? price changed?).
       const recheckMs = (c.trackRecheckHours != null ? Number(c.trackRecheckHours) : 20) * 60 * 60 * 1000;
       const queued = new Set(toVisit.map((it) => it.token));
-      for (const token of this.store.trackedTokens(key)) {
+      // (the daily price check also re-checks those of searches it left out: c.trackKeys)
+      const trackedAll = [...new Set([key, ...(c.trackKeys || [])].flatMap((k) => this.store.trackedTokens(k)))];
+      for (const token of trackedAll) {
         const rec = this.store.knownAd(token);
         if (queued.has(token) || Date.now() - (rec.lastReadAt || 0) < recheckMs) continue;
         const it = run.items.find((x) => x.token === token) || { token, href: rec.post.url, title: rec.post.title, order: run.items.length };

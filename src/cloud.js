@@ -327,6 +327,9 @@ class Cloud {
       const { cleanAuto } = require('./daily');
       try { this.store.setAuto(String((q.body || {}).key || ''), cleanAuto(q.body)); } catch (_) { /* search gone */ }
       this.syncSoon();
+    } else if (q.kind === 'daily') {
+      // «بررسی قیمت همین حالا» in the online panel
+      if (this.dailyNow) this.dailyNow('hand');
     } else if (q.kind === 'del') {
       // «حذف جستجو» in the online panel.
       this.deleteSearch(String((q.body || {}).key || ''));

@@ -363,6 +363,8 @@ App.refreshAds = async (force) => {
     // Bama's new-car prices travel as a hidden entry of the searches list.
     const hidden = r.searches.find((s) => s.criteria && s.criteria.hidden && s.criteria.bamaPrices);
     App.bamaPrices = hidden ? hidden.criteria.bamaPrices : null;
+    // The daily price check's switch and last check: also a hidden entry (see daily.js).
+    App.dailyCheck = r.searches.find((s) => s.criteria && s.criteria.hidden && s.criteria.dailyCheck) || null;
     App.searches = r.searches.filter((s) => !(s.criteria && s.criteria.hidden)).sort((a, b) => (b.lastRunAt || 0) - (a.lastRunAt || 0));
     App.meta = { stages: r.stages, activeStages: r.activeStages, rejectReasons: r.rejectReasons, callResults: r.callResults };
     App.deals = globalThis.NojaDeals.computeDeals(ads.map((a) => ({ ...a.post, removed: a.removed })));
