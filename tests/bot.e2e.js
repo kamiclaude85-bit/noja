@@ -160,7 +160,8 @@ const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350)
   assert.equal(blocks[0].where, 'ad');
   assert.equal(blocks[0].resolved, 'user');
   assert.equal(blocks[0].runId, runId);
-  assert.ok(blocks[0].views1h >= 1 && blocks[0].today >= 1, 'how busy the bot was is recorded');
+  // (0 when the captcha came on the very first ad: the ads are opened in a loose order)
+  assert.ok(Number.isInteger(blocks[0].views1h) && Number.isInteger(blocks[0].today), 'how busy the bot was is recorded');
   assert.deepEqual(Object.keys(run.errors), [goneToken], 'only the deleted ad failed');
   assert.equal(run.posts.length, COUNT - 1);
   assert.ok(!new URL(listUrls[0]).searchParams.has('q'), 'started from the city page');
