@@ -212,7 +212,6 @@ function describeCriteria(c) {
   if (!c) return 'جستجو';
   const parts = [];
   const lim = P.limitsOf(c);
-  if (c.source === 'bama') parts.push('باما:');
   if (c.query) parts.push(c.query);
   else if (c.searchUrl && c.source === 'bama') parts.push('جستجوی باما');
   else if (c.searchUrl) {

@@ -167,7 +167,8 @@ class Cloud {
     return {
       payload: {
         since: this.st.cursor,
-        state: { busy, busyKey: this.busyKey(), loggedIn: this.loggedIn == null ? null : this.loggedIn, today: s.dailyCount(), dailyLimit: this.dailyLimit || 300, pending: this.pending.length },
+        state: { busy, busyKey: this.busyKey(), loggedIn: this.loggedIn == null ? null : this.loggedIn, today: s.dailyCount(), dailyLimit: this.dailyLimit || 300, pending: this.pending.length,
+          queue: this.pending.slice(0, 40).map((c) => ({ id: c.qid, createdAt: c.queuedAt, criteria: c })) },
         ads,
         gone: hasGone ? gone : undefined,
         searches: ch.searches ? s.db.searches : undefined,
@@ -288,6 +289,26 @@ class Cloud {
   dequeue(qid) {
     this.pending = this.pending.filter((c) => c.qid !== qid);
     this.saveState({ pending: this.pending });
+    this.syncSoon();
+  }
+
+  /** Change the order of the waiting searches: to = 'top' | 'up' | 'down'. */
+  moveQueued(qid, to) {
+    const i = this.pending.findIndex((c) => c.qid === qid);
+    if (i < 0) return false;
+    const [item] = this.pending.splice(i, 1);
+    const at = to === 'top' ? 0 : to === 'up' ? Math.max(0, i - 1) : Math.min(this.pending.length, i + 1);
+    this.pending.splice(at, 0, item);
+    this.saveState({ pending: this.pending });
+    this.syncSoon();
+    return true;
+  }
+
+  /** Empty the waiting list. */
+  clearQueue() {
+    this.pending = [];
+    this.saveState({ pending: this.pending });
+    this.syncSoon();
   }
 
   /** «پایان» on a search that is part of a batch stops the rest of that batch too. */
@@ -309,6 +330,12 @@ class Cloud {
       // «حذف جستجو» in the online panel.
       this.deleteSearch(String((q.body || {}).key || ''));
       this.syncSoon();
+    } else if (q.kind === 'queue') {
+      // order / remove waiting searches from the online panel
+      const { qid, action, to } = q.body || {};
+      if (action === 'remove') this.dequeue(String(qid || ''));
+      else if (action === 'move') this.moveQueued(String(qid || ''), to);
+      else if (action === 'clear') this.clearQueue();
     } else if (q.kind === 'cmd') {
       const { runId, action } = q.body || {};
       if (this.scanner.current && this.scanner.current.id === runId && ['continue', 'pause', 'resume', 'stop', 'cancel'].includes(action)) {

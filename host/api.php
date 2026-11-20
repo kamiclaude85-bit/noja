@@ -112,8 +112,22 @@ try {
         queue_add('del', ['key' => $key]);
         json_out(200, ['ok' => true] + $r);
     }
-    if (preg_match('#^/queue/([a-f0-9]+)$#', $path, $m) && $method === 'DELETE') {
-        db()->prepare('DELETE FROM radyab_queue WHERE id = ? AND taken = 0')->execute([$m[1]]);
+    if (preg_match('#^/queue/([a-z0-9]+)$#', $path, $m) && $method === 'DELETE') {
+        $st = db()->prepare('DELETE FROM radyab_queue WHERE id = ? AND taken = 0');
+        $st->execute([$m[1]]);
+        // already with the bot: ask it to drop it
+        if ($st->rowCount() === 0) queue_add('queue', ['qid' => $m[1], 'action' => 'remove']);
+        json_out(200, ['ok' => true]);
+    }
+    if (preg_match('#^/queue/([a-z0-9]+)/move$#', $path, $m) && $method === 'POST') {
+        $to = (string) (body_json(10000)['to'] ?? '');
+        if (!in_array($to, ['top', 'up', 'down'], true)) json_out(400, ['error' => 'جای تازه نامعتبر است.']);
+        queue_add('queue', ['qid' => $m[1], 'action' => 'move', 'to' => $to]);
+        json_out(200, ['ok' => true]);
+    }
+    if ($path === '/queue' && $method === 'DELETE') {
+        db()->exec("DELETE FROM radyab_queue WHERE kind = 'scan' AND taken = 0");
+        queue_add('queue', ['action' => 'clear']);
         json_out(200, ['ok' => true]);
     }
     if (preg_match('#^/runs/([A-Za-z0-9_-]+)$#', $path, $m) && $method === 'GET') {

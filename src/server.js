@@ -163,6 +163,14 @@ function createServer({ scanner, store, context, notifier, cloud }) {
       }
       const qm = p.match(/^\/api\/queue\/([a-z0-9]+)$/);
       if (qm && req.method === 'DELETE' && cloud) { cloud.dequeue(qm[1]); return send(res, 200, { ok: true }); }
+      const mm = p.match(/^\/api\/queue\/([a-z0-9]+)\/move$/);
+      if (mm && req.method === 'POST' && cloud) {
+        const to = String((await readBody(req)).to || '');
+        if (!['top', 'up', 'down'].includes(to)) return send(res, 400, { error: 'جای تازه نامعتبر است.' });
+        cloud.moveQueued(mm[1], to);
+        return send(res, 200, { ok: true });
+      }
+      if (p === '/api/queue' && req.method === 'DELETE' && cloud) { cloud.clearQueue(); return send(res, 200, { ok: true }); }
       if (p === '/api/scan' && req.method === 'POST') {
         const criteria = cleanCriteria(await readBody(req));
         if (!criteria.query && !criteria.searchUrl && !criteria.priceMin && !criteria.priceMax) {

@@ -168,7 +168,8 @@ function panel_state(): array {
     return [
         'mode' => 'host',
         'bot' => ['online' => $b['online'], 'lastSeenAt' => $b['lastSeenAt']],
-        'queue' => $queue,
+        // first what the bot already holds (in its order), then what it has not picked up yet
+        'queue' => array_merge($b['online'] && is_array($st['queue'] ?? null) ? $st['queue'] : [], $queue),
         'busy' => $b['online'] ? ($st['busy'] ?? null) : null,
         'loggedIn' => $st['loggedIn'] ?? null,
         'today' => (int) ($st['today'] ?? 0),

@@ -818,35 +818,99 @@ function deleteSearchDialog(s, done) {
 }
 
 function renderRuns(view) {
-  const STATUS = { done: 'تمام شده', stopped: 'متوقف شده', error: 'خطا' };
   const runs = App.state.runs || [];
+  const busyId = App.state.busy;
+  const live = typeof LIVE !== 'undefined' && LIVE.run && LIVE.run.id === busyId ? LIVE.run : null;
+  const cur = busyId ? (live || runs.find((r) => r.id === busyId) || { id: busyId }) : null;
+  const queue = App.queue || [];
+  const redraw = async () => { await App.refreshState(); if (PAGE.name === 'runs') renderRuns(view); };
+  const act = async (fn) => { try { await fn(); } catch (e) { toast(e.message, 'err'); } await redraw(); };
+  const site = (c) => (c && c.source === 'bama' ? h('span', { class: 'src-tag bama' }, 'باما') : h('span', { class: 'src-tag divar' }, 'دیوار'));
+  const where = (c) => [c && c.city && CITY_NAME[c.city] ? CITY_NAME[c.city] : '', c && c.maxAds ? `تا ${fa(c.maxAds)} آگهی` : ''].filter(Boolean).join(' · ');
+
+  // ---- 1. now ----
+  const NOW = { starting: 'در حال شروع', 'waiting-login': 'منتظر ورود شما به دیوار', collecting: 'در حال جمع کردن فهرست آگهی‌ها', reading: 'در حال خواندن آگهی‌ها',
+    resting: 'استراحت کوتاه (مثل یک آدم)', blocked: 'منتظر شما — دیوار سؤال امنیتی پرسیده', paused: 'مکث کرده' };
+  let nowCard;
+  if (cur) {
+    const c = cur.criteria || {};
+    const total = cur.toVisit || 0;
+    const done = cur.stats ? cur.stats.opened || 0 : 0;
+    const paused = cur.status === 'paused';
+    const control = (action) => act(() => api(`/api/runs/${encodeURIComponent(cur.id)}/${action}`, { method: 'POST' }));
+    nowCard = h('section', { class: 'card run-now' },
+      h('div', { class: 'run-now-h' }, h('span', { class: `live-pulse${paused ? ' off' : ''}`, 'aria-hidden': 'true' }), h('b', null, 'الان'), site(c),
+        h('span', { class: 'run-state' }, NOW[cur.status] || 'در حال کار')),
+      h('h2', { class: 'run-now-title' }, describeCriteria(c)),
+      where(c) ? h('small', { class: 'muted' }, where(c)) : null,
+      cur.message ? h('p', { class: 'run-now-msg' }, cur.message, cur.activity ? [' — ', h('bdi', null, `«${cur.activity}»`)] : null) : null,
+      total ? h('div', { class: 'run-progress' },
+        h('div', { class: 'live-progress' }, h('span', { style: `width:${Math.min(100, Math.round((done / total) * 100))}%` })),
+        h('small', { class: 'num' }, `${fa(done)} از ${fa(total)} آگهی`)) : null,
+      cur.stats ? h('div', { class: 'run-stats' },
+        h('span', null, h('b', { class: 'num' }, fa(cur.stats.newAds || 0)), ' آگهی جدید'),
+        cur.stats.priceChanged ? h('span', null, h('b', { class: 'num' }, fa(cur.stats.priceChanged)), ' تغییر قیمت') : null) : null,
+      h('div', { class: 'run-actions' },
+        h('button', { class: 'btn danger', type: 'button', onclick: () => control(cur.status === 'collecting' ? 'cancel' : 'stop') }, icon('stop', 'sm'), 'توقف این جستجو'),
+        paused ? h('button', { class: 'btn', type: 'button', onclick: () => control('resume') }, icon('play', 'sm'), 'ادامه')
+          : h('button', { class: 'btn', type: 'button', onclick: () => control('pause') }, icon('pause', 'sm'), 'مکث'),
+        h('a', { class: 'btn ghost', href: `#/run/${encodeURIComponent(cur.id)}` }, 'دیدن آگهی‌های این جستجو')),
+      h('p', { class: 'muted run-note' }, cur.status === 'reading' ? '«توقف» آگهی‌ای را که باز است تمام می‌کند و بعد می‌ایستد؛ آگهی‌های خوانده‌شده می‌مانند.' : 'با «توقف»، جستجوی بعدی نوبت شروع می‌شود.'));
+  } else {
+    const off = App.host && !App.bot.online;
+    nowCard = h('section', { class: 'card run-now idle' },
+      h('div', { class: 'run-now-h' }, h('span', { class: 'live-pulse off', 'aria-hidden': 'true' }), h('b', null, off ? 'ربات خاموش است' : 'ربات بیکار است')),
+      h('p', { class: 'muted' }, off ? 'کامپیوتر ربات روشن نیست؛ جستجوهای نوبت با روشن شدنش شروع می‌شوند.' : queue.length ? 'جستجوی بعدی نوبت تا چند ثانیهٔ دیگر شروع می‌شود.' : 'جستجویی در نوبت نیست.'),
+      h('a', { class: 'btn primary', href: '#/search' }, icon('plus', 'sm'), 'جستجوی جدید'));
+  }
+
+  // ---- 2. waiting, in order ----
+  const move = (q, to) => act(() => api(`/api/queue/${encodeURIComponent(q.id)}/move`, { method: 'POST', body: { to } }));
+  const queueCard = h('section', { class: 'card run-queue' },
+    h('div', { class: 'card-h' }, h('h2', null, icon('clock', 'sm'), 'در نوبت', h('small', { class: 'num' }, ` ${fa(queue.length)}`)),
+      queue.length > 1 ? h('button', { class: 'btn sm danger-ghost', type: 'button', onclick: () => { if (confirm('همهٔ جستجوهای نوبت حذف شوند؟')) act(() => api('/api/queue', { method: 'DELETE' })); } }, icon('trash', 'sm'), 'خالی کردن نوبت') : null),
+    queue.length ? h('ol', { class: 'q-list' }, queue.map((q, i) => h('li', { class: 'q-item' },
+      h('span', { class: 'q-no num' }, fa(i + 1)),
+      h('div', { class: 'q-main' }, h('b', null, describeCriteria(q.criteria)), h('small', { class: 'muted' }, site(q.criteria), ' ', where(q.criteria))),
+      h('div', { class: 'q-actions' },
+        i > 0 ? h('button', { class: 'btn sm', type: 'button', title: 'اول از همه', onclick: () => move(q, 'top') }, 'اول') : null,
+        i > 0 ? h('button', { class: 'btn sm icon-only', type: 'button', 'aria-label': 'یکی بالاتر', title: 'یکی بالاتر', onclick: () => move(q, 'up') }, '▲') : null,
+        i < queue.length - 1 ? h('button', { class: 'btn sm icon-only', type: 'button', 'aria-label': 'یکی پایین‌تر', title: 'یکی پایین‌تر', onclick: () => move(q, 'down') }, '▼') : null,
+        h('button', { class: 'btn sm icon-only danger-ghost', type: 'button', 'aria-label': 'حذف از نوبت', title: 'حذف از نوبت', onclick: () => act(() => api(`/api/queue/${encodeURIComponent(q.id)}`, { method: 'DELETE' })) }, icon('x', 'sm'))))))
+      : h('p', { class: 'muted empty-line' }, 'نوبت خالی است.'),
+    queue.length ? h('p', { class: 'muted run-note' }, 'ربات جستجوها را یکی‌یکی و به همین ترتیب انجام می‌دهد. با «اول» یا فلش‌ها ترتیب را عوض کنید.') : null);
+
+  // ---- 3. done ----
+  const STATUS = { done: ['تمام شد', 'ok'], stopped: ['متوقف شد', 'muted'], error: ['خطا', 'bad'] };
+  const past = runs.filter((r) => r.id !== busyId && !ACTIVE_RUN.includes(r.status)).slice(0, 15);
+  const historyCard = h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h2', null, icon('history', 'sm'), 'انجام‌شده')),
+    past.length ? h('ul', { class: 'items run-history' }, past.map((r) => {
+      const [label, cls] = STATUS[r.status] || [r.status, 'muted'];
+      return h('li', { class: 'item' },
+        h('a', { class: 'item-main', href: `#/run/${encodeURIComponent(r.id)}` },
+          h('b', null, describeCriteria(r.criteria)),
+          h('small', null, site(r.criteria), ` ${agoFa(r.createdAt)} · ${fa(r.read)} آگهی خوانده شد${r.newCount != null ? ` · ${fa(r.newCount)} جدید` : ''}${r.criteria && r.criteria.auto ? ' · خودکار' : ''}`)),
+        h('div', { class: 'item-actions' }, h('span', { class: `run-pill ${cls}` }, label),
+          r.criteria ? h('button', { class: 'btn sm', type: 'button', title: 'همین جستجو دوباره', onclick: () => rerunSearch(r.criteria) }, icon('refresh', 'sm'), 'دوباره') : null));
+    })) : h('p', { class: 'muted empty-line' }, 'هنوز جستجویی تمام نشده.'));
+
+  // ---- 4. saved searches ----
+  const savedCard = App.searches.length ? h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h2', null, icon('search', 'sm'), 'جستجوهای ذخیره‌شده')),
+    h('ul', { class: 'items saved-list' }, App.searches.map((s) => h('li', { class: 'item' },
+      h('a', { class: 'item-main', href: `#/ads?search=${encodeURIComponent(s.key)}` }, h('b', null, describeCriteria(s.criteria)),
+        h('small', null, `${fa(s.count)} آگهی${s.lastRunAt ? ` · آخرین بررسی ${agoFa(s.lastRunAt)}` : ''}`),
+        s.auto && s.auto.on ? h('small', { class: 'auto-line' }, icon('clock', 'sm'), autoLabel(s.auto)) : null),
+      h('div', { class: 'item-actions' }, s.criteria ? h('button', { class: `btn sm${s.auto && s.auto.on ? ' on' : ''}`, type: 'button', 'aria-label': 'بررسی خودکار روزانه', title: 'بررسی خودکار روزانه', onclick: () => autoDialog(s, () => renderRuns(view)) },
+        icon('clock', 'sm'), 'خودکار') : null, s.criteria ? h('button', { class: 'btn sm', type: 'button', onclick: () => rerunSearch(s.criteria) },
+        icon('refresh', 'sm'), 'بررسی جدیدها') : null,
+      h('button', { class: 'btn danger-ghost sm', type: 'button', 'aria-label': 'حذف جستجو', title: 'حذف جستجو', onclick: () => deleteSearchDialog(s, () => renderRuns(view)) },
+        icon('trash', 'sm'))))))) : null;
+
   view.replaceChildren(h('div', { class: 'page' },
-    pageHead('جستجوهای من', 'جستجوهای ذخیره‌شده و تاریخچهٔ اجرای ربات.', h('a', { class: 'btn primary', href: '#/search' }, icon('plus', 'sm'), 'جستجوی جدید')),
-    App.queue.length ? h('section', { class: 'card' },
-      h('div', { class: 'card-h' }, h('h2', null, icon('clock', 'sm'), 'در صف ربات')),
-      h('ul', { class: 'items' }, App.queue.map((q) => h('li', { class: 'item' },
-        h('div', { class: 'item-main' }, h('b', null, describeCriteria(q.criteria)),
-          h('small', null, `${agoFa(q.createdAt)} · ${!App.host ? 'در نوبت؛ بعد از جستجوی قبلی شروع می‌شود' : App.bot.online ? 'الان شروع می‌شود' : 'با روشن شدن کامپیوتر شروع می‌شود'}`)),
-        h('div', { class: 'item-actions' }, h('button', { class: 'btn sm', type: 'button', onclick: async () => {
-          try { await api(`/api/queue/${encodeURIComponent(q.id)}`, { method: 'DELETE' }); await App.refreshState(); renderRuns(view); } catch (e) { toast(e.message, 'err'); }
-        } }, icon('x', 'sm'), 'لغو')))))) : null,
-    App.searches.length ? h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h2', null, icon('search', 'sm'), 'جستجوهای ذخیره‌شده')),
-      h('ul', { class: 'items saved-list' }, App.searches.map((s) => h('li', { class: 'item' },
-        h('a', { class: 'item-main', href: `#/ads?search=${encodeURIComponent(s.key)}` }, h('b', null, describeCriteria(s.criteria)),
-          h('small', null, `${fa(s.count)} آگهی${s.hidden ? ` · ${fa(s.hidden)} نامربوط کنار رفت` : ''}${s.lastRunAt ? ` · آخرین بررسی ${agoFa(s.lastRunAt)}` : ''}`),
-          s.auto && s.auto.on ? h('small', { class: 'auto-line' }, icon('clock', 'sm'), autoLabel(s.auto)) : null),
-        h('div', { class: 'item-actions' }, s.criteria ? h('button', { class: `btn sm${s.auto && s.auto.on ? ' on' : ''}`, type: 'button', 'aria-label': 'بررسی خودکار روزانه', title: 'بررسی خودکار روزانه', onclick: () => autoDialog(s, () => renderRuns(view)) },
-          icon('clock', 'sm'), 'خودکار') : null, s.criteria ? h('button', { class: 'btn sm', type: 'button', disabled: !!App.state.busy && !App.host, onclick: () => rerunSearch(s.criteria) },
-          icon('refresh', 'sm'), 'بررسی جدیدها') : null,
-        h('button', { class: 'btn danger-ghost sm', type: 'button', 'aria-label': 'حذف جستجو', title: 'حذف جستجو', onclick: () => deleteSearchDialog(s, () => renderRuns(view)) },
-          icon('trash', 'sm'))))))) : null,
-    h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h2', null, icon('history', 'sm'), 'اجراهای ربات')),
-      runs.length ? h('ul', { class: 'items' }, runs.map((r) => h('li', { class: 'item' },
-        h('a', { class: 'item-main', href: `#/run/${encodeURIComponent(r.id)}` }, h('b', null, describeCriteria(r.criteria)),
-          h('small', null, `${new Date(r.createdAt).toLocaleString('fa-IR', { dateStyle: 'medium', timeStyle: 'short' })} · ${fa(r.read)} آگهی${r.newCount != null ? ` (${fa(r.newCount)} جدید)` : ''}${r.criteria && r.criteria.auto ? ' · خودکار' : ''}`)),
-        h('div', { class: 'item-actions' }, h('span', { class: 'muted' }, ACTIVE_RUN.includes(r.status) ? 'در حال انجام' : (STATUS[r.status] || r.status))))))
-        : h('p', { class: 'muted empty-line' }, 'هنوز جستجویی انجام نشده.')),
-    blocksCard()));
+    pageHead('جستجوهای من', 'کاری که ربات الان می‌کند، جستجوهایی که در نوبت‌اند، و آن‌هایی که تمام شده‌اند.', h('a', { class: 'btn primary', href: '#/search' }, icon('plus', 'sm'), 'جستجوی جدید')),
+    nowCard, queueCard, historyCard, savedCard, blocksCard()));
+  // the current search's details (message, ad being read) come with the live bar's next update
+  if (busyId && !live && typeof updateLiveBar === 'function') updateLiveBar().then(() => { if (PAGE.name === 'runs' && typeof LIVE !== 'undefined' && LIVE.run) renderRuns(view); });
 }
 
 // =========================================================

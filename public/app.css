@@ -942,3 +942,34 @@ tr.sold { opacity: .55; }
 .pbar-new { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 8px; font-size: 13px; color: var(--text); }
 .pbar-new small { color: var(--text-2); }
 .city-field { margin-top: 8px; max-width: 280px; }
+/* «جستجوهای من»: now / waiting / done */
+.card.run-now { display: flex; flex-direction: column; gap: 8px; border-color: color-mix(in srgb, var(--primary) 30%, var(--line)); }
+.card.run-now.idle { border-color: var(--line); }
+.run-now-h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; }
+.run-now-h .src-tag { margin: 0; }
+.run-state { margin-inline-start: auto; font-size: 13px; color: var(--text-2); }
+.run-now-title { margin: 0; font-size: 19px; }
+.run-now-msg { margin: 0; font-size: 14px; color: var(--text-2); }
+.run-progress { display: flex; align-items: center; gap: 10px; }
+.run-progress .live-progress { flex: 1; height: 6px; }
+.run-progress small { color: var(--text-2); white-space: nowrap; }
+.run-stats { display: flex; gap: 16px; font-size: 13.5px; color: var(--text-2); }
+.run-stats b { color: var(--text); font-size: 16px; }
+.run-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.run-note { margin: 0; font-size: 12.5px; }
+.live-pulse.off { background: var(--text-3); animation: none; box-shadow: none; }
+.card.run-queue, .card.run-now { margin-bottom: 12px; }
+.q-list { list-style: none; margin: 4px 0 0; padding: 0; }
+.q-item { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.q-item:first-child { border-top: 0; }
+.q-no { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--primary-soft); color: var(--primary); font-weight: 700; font-size: 13px; }
+.q-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.q-main b { font-size: 14px; }
+.q-main .src-tag { margin: 0; }
+.q-actions { display: flex; gap: 4px; flex: none; }
+.q-actions .btn.icon-only { width: 30px; padding: 0; justify-content: center; font-size: 11px; }
+.run-pill { font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 99px; background: var(--surface-2); color: var(--text-2); white-space: nowrap; }
+.run-pill.ok { background: var(--good-soft); color: var(--good); }
+.run-pill.bad { background: var(--bad-soft); color: var(--bad); }
+.run-history .item-main small .src-tag { margin: 0 0 0 4px; }
+@media (max-width: 520px) { .q-item { flex-wrap: wrap; } .q-actions { width: 100%; justify-content: flex-end; } }
