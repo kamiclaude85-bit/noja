@@ -35,7 +35,7 @@ async function updateLiveBar() {
     LIVE.at = Date.now();
     try { LIVE.run = await api(`/api/runs/${encodeURIComponent(id)}`); } catch (_) { /* keep the last one */ }
     // «جستجوهای من» shows the same run in detail: redraw it with the fresh numbers
-    if (PAGE.name === 'runs' && PAGE.update && !userIsTyping()) PAGE.update();
+    if (LIVE.run && LIVE.run.id === id && PAGE.name === 'runs' && PAGE.update && !userIsTyping()) PAGE.update();
     LIVE.busy = false;
   }
   const run = LIVE.run && LIVE.run.id === id ? LIVE.run : null;

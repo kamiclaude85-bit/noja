@@ -909,8 +909,8 @@ function renderRuns(view) {
   view.replaceChildren(h('div', { class: 'page' },
     pageHead('جستجوهای من', 'کاری که ربات الان می‌کند، جستجوهایی که در نوبت‌اند، و آن‌هایی که تمام شده‌اند.', h('a', { class: 'btn primary', href: '#/search' }, icon('plus', 'sm'), 'جستجوی جدید')),
     nowCard, queueCard, historyCard, savedCard, blocksCard()));
-  // the current search's details (message, ad being read) come with the live bar's next update
-  if (busyId && !live && typeof updateLiveBar === 'function') updateLiveBar().then(() => { if (PAGE.name === 'runs' && typeof LIVE !== 'undefined' && LIVE.run) renderRuns(view); });
+  // (the live bar fetches it and redraws this page when it has it)
+  if (busyId && !live && typeof updateLiveBar === 'function') updateLiveBar();
 }
 
 // =========================================================
