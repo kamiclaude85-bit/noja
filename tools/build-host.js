@@ -37,6 +37,12 @@ const stamp = now.toISOString().replace(/[-:]/g, '').slice(0, 13).replace('T', '
 const version = `${pkg.version}-${stamp}`;
 fs.writeFileSync(path.join(OUT, 'version.json'), JSON.stringify({ app: 'radyab', version, commit, builtAt: now.getTime() }, null, 2));
 
+// The version on every script and stylesheet link, so a browser holding an old copy fetches the new
+// one right after an install instead of whenever its cache runs out.
+const indexFile = path.join(OUT, 'index.html');
+const tagged = fs.readFileSync(indexFile, 'utf8').replace(/(<(?:script|link)\b[^>]*?\b(?:src|href)=")(?!https?:|\/\/|data:)([^"?#]+\.(?:js|css))"/g, `$1$2?v=${stamp}"`);
+fs.writeFileSync(indexFile, tagged);
+
 /** Zip a folder with plain names (api.php, lib/boot.php …), not «./api.php». */
 function zipDir(dir, zipFile, skip = []) {
   const entries = fs.readdirSync(dir).filter((n) => !skip.includes(n));

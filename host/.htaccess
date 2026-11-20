@@ -25,5 +25,6 @@ SetEnvIf X-Radyab-Key "(.*)" HTTP_X_RADYAB_KEY=$1
   Header set X-Frame-Options "DENY"
   <FilesMatch "\.(html|js|css)$">
     Header set Cache-Control "no-cache"
+    Header unset Expires
   </FilesMatch>
 </IfModule>
