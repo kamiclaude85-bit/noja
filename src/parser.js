@@ -674,7 +674,7 @@
    * model year). Usual in Iran is 15–20 thousand a year; the ads here have a middle of about 13.
    * Returns { perYear, level: low|normal|high|veryHigh, label } or null (unknown, or 0 km).
    */
-  const USAGE_LEVELS = [[8000, 'low', 'کم‌کار'], [20000, 'normal', 'کارکرد معمول'], [30000, 'high', 'پرکار'], [Infinity, 'veryHigh', 'خیلی پرکار']];
+  const USAGE_LEVELS = [[8000, 'low', 'کم‌کار'], [20000, 'normal', 'کارکرد معقول'], [30000, 'high', 'پرکار'], [Infinity, 'veryHigh', 'خیلی پرکار']];
   function usageRate(post, now = Date.now()) {
     if (!post || post.mileage == null || post.mileage < 1000 || !post.year) return null;
     const d = new Date(now);

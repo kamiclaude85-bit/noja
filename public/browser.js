@@ -13,7 +13,7 @@ function defaultFilters(c = {}) {
     yearMin: c.yearMin ? String(c.yearMin) : '', yearMax: c.yearMax ? String(c.yearMax) : '',
     kmMax: c.mileageMax ? String(c.mileageMax) : '',
     gearbox: [], color: [],
-    bodyOk: false, engineOk: false, priced: false, tracking: false, onlyNew: false, hideSold: false,
+    bodyOk: false, engineOk: false, kmOk: false, priceOk: false, priced: false, tracking: false, onlyNew: false, hideSold: false,
     keyword: c.keyword || '',
     strictYear: !!c.strictYear,
   };
@@ -64,6 +64,8 @@ function refreshBrowser(force) {
 }
 
 // ---------- filtering ----------
+// yearly mileage low or reasonable (a zero-km car counts; unknown mileage does not)
+const usageOk = (p) => { if (p.mileage == null) return false; const u = P.usageRate(p); return !u || u.level === 'low' || u.level === 'normal'; };
 const numIn = (v) => { const n = P.parseNumber(v); return n == null ? null : n; };
 
 function passes(p, f, skip) {
@@ -84,6 +86,8 @@ function passes(p, f, skip) {
   if (skip !== 'color' && f.color.length && !f.color.includes(p.color)) return false;
   if (f.bodyOk && !bodyClean(p)) return false;
   if (f.engineOk && (!p.engine || conditionClass(p.engine) === 'bad')) return false;
+  if (f.kmOk && !usageOk(p)) return false;
+  if (f.priceOk && !(p.price && p._deal && p._deal.expected && p.price <= p._deal.expected * NojaDeals.ZONES.fair)) return false;
   if (f.tracking && !App.meta.activeStages.includes(p._f.stage)) return false;
   if (f.onlyNew && !p.isNew && !p.priceChange) return false;
   if (f.hideSold && p._f.sold) return false;
@@ -181,6 +185,8 @@ function renderFilters(force) {
       B.opts.showOnlyNew ? toggle('onlyNew', `فقط جدیدها و تغییر قیمت‌ها (${fa(fresh)})`) : null,
       toggle('bodyOk', 'فقط بدنهٔ سالم / بی‌رنگ'),
       toggle('engineOk', 'موتور سالم'),
+      toggle('kmOk', 'فقط کارکرد معقول یا کم'),
+      toggle('priceOk', 'فقط قیمت معقول یا ارزان‌تر'),
       toggle('priced', 'فقط آگهی‌های قیمت‌دار'),
       toggle('tracking', 'فقط آگهی‌های در حال پیگیری'),
       toggle('hideSold', 'آگهی‌های حذف‌شده از دیوار را نشان نده')),
@@ -237,8 +243,9 @@ function delta(p) {
   const r = p.price / p._deal.expected;
   const ap = p._deal.approx ? 'حدود ' : ''; // compared with nearby years / other trims
   if (r <= 0.95) return { cls: 'low', text: `${ap}${fa(Math.round((1 - r) * 100))}٪ زیر قیمت معمول` };
-  if (r >= 1.05) return { cls: 'high', text: `${ap}${fa(Math.round((r - 1) * 100))}٪ بالای قیمت معمول` };
-  return null;
+  // above the «fair» end of the price bar it is expensive; in between, a reasonable price
+  if (r > NojaDeals.ZONES.fair) return { cls: 'high', text: `${ap}${fa(Math.round((r - 1) * 100))}٪ بالای قیمت معمول` };
+  return { cls: 'fair', text: `${p._deal.approx ? 'تقریباً ' : ''}قیمت معقول` };
 }
 
 function priceChangeOf(p) {
@@ -389,7 +396,7 @@ function renderRow(p, d) {
     h('div', { class: 'row-side' },
       p.price ? h('div', { class: 'price num' }, formatPrice(p.price), ' ', h('small', null, 'تومان')) : h('div', { class: 'price none' }, p.priceText || 'بدون قیمت'),
       dealBadge(p._deal),
-      d ? h('span', { class: `delta ${d.cls}` }, icon('trend', 'sm'), d.text) : null,
+      d ? h('span', { class: `delta ${d.cls}` }, d.cls === 'fair' ? null : icon('trend', 'sm'), d.text) : null,
       priceChangeBadge(p),
       sellerBadge(p),
       h('div', { class: 'row-actions' },
@@ -650,7 +657,7 @@ function zeroKmLine(p) {
       h('small', null, ` (${market.trim || market.model}${market.note ? `، ${market.note}` : ''}) — این آگهی ${pct < 1 ? 'هم‌قیمت آن' : `${fa(pct)}٪ ${diff < 0 ? 'ارزان‌تر' : 'گران‌تر'}`}`)));
 }
 
-const ZONE_TEXT = { great: 'قیمت عالی', good: 'قیمت خوب', fair: 'قیمت منصفانه', high: 'گران' };
+const ZONE_TEXT = { great: 'قیمت عالی', good: 'قیمت خوب', fair: 'قیمت معقول', high: 'گران' };
 
 /**
  * Drawer: where the price sits on a bar of the usual price for this car (model, trim, year,
@@ -703,7 +710,7 @@ function priceBar(p) {
     h('ul', { class: 'pbar-advice' },
       h('li', { class: 'great' }, h('i'), 'عالی: تا ', h('b', { class: 'num' }, formatPrice(v.great))),
       h('li', { class: 'good' }, h('i'), 'خوب: تا ', h('b', { class: 'num' }, formatPrice(v.good))),
-      h('li', { class: 'fair' }, h('i'), 'منصفانه: تا ', h('b', { class: 'num' }, formatPrice(v.fair))),
+      h('li', { class: 'fair' }, h('i'), 'معقول: تا ', h('b', { class: 'num' }, formatPrice(v.fair))),
       h('li', { class: 'high' }, h('i'), 'گران: بالای ', h('b', { class: 'num' }, formatPrice(v.fair)))),
     h('small', { class: 'pbar-note' }, `${d.approx ? 'تقریبی — ' : ''}از روی ${d.approx === 'few' ? 'فقط ' : ''}${fa(d.peers)} آگهی ${d.approx === 'years' ? 'همین مدل و تیپ از سال‌های نزدیک' : d.approx === 'trims' ? 'همین مدل با تیپ‌های دیگر' : 'هم‌مدل و هم‌سال'} (بدون خودِ این آگهی)، با کارکرد و ${d.body && d.body.level && d.body.level !== 'clean' ? `بدنهٔ «${d.body.label}»` : 'بدنهٔ'} همین ماشین.`),
     // what it was compared with, so a verdict can be checked by eye
