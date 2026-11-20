@@ -423,6 +423,17 @@ function enrich(post) {
 }
 
 /** «پیشنهاد ویژه» / «با احتیاط» badge for an ad, or null. */
+/**
+ * «کم‌کار / پرکار» chip from the yearly mileage. On cards only the unusual ones (long = false);
+ * on the ad page every one, with the number.
+ */
+function usageChip(p, long) {
+  const u = P.usageRate(p);
+  if (!u || (!long && u.level === 'normal')) return null;
+  const per = `حدود ${fa(Math.round(u.perYear / 1000))} هزار کیلومتر در سال`;
+  return h('span', { class: `use-tag u-${u.level}`, title: `${per} (معمول در ایران: ۱۵ تا ۲۰ هزار)` }, long ? `${u.label} — ${per}` : u.label);
+}
+
 function dealBadge(deal, long) {
   if (!deal || !deal.level) return null;
   const pct = fa(Math.round(deal.discount * 100));

@@ -902,3 +902,10 @@ tr.sold { opacity: .55; }
 .pc-mark { stroke: var(--warn); stroke-width: 2; stroke-dasharray: 3 3; }
 .pc-mark-dot { fill: var(--surface); stroke: var(--warn); stroke-width: 3; }
 .pc-legend i.ln.mark { background: repeating-linear-gradient(90deg, var(--warn) 0 3px, transparent 3px 6px); }
+/* yearly mileage */
+.use-tag { display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 99px; margin-inline-start: 6px; white-space: nowrap; }
+.use-tag.u-low { background: var(--primary-soft); color: var(--primary); }
+.use-tag.u-normal { background: var(--surface-2); color: var(--text-2); }
+.use-tag.u-high { background: var(--warn-soft); color: var(--warn); }
+.use-tag.u-veryHigh { background: var(--bad-soft); color: var(--bad); }
+.d-price .use-tag { margin-inline-start: 0; font-size: 12.5px; padding: 3px 10px; }

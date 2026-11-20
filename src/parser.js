@@ -658,6 +658,23 @@
     return y != null && y > 1700 ? y - 621 : y;
   }
 
+  /**
+   * Yearly mileage: km ÷ age (model year to now, half a year added: a car is sold through its
+   * model year). Usual in Iran is 15–20 thousand a year; the ads here have a middle of about 13.
+   * Returns { perYear, level: low|normal|high|veryHigh, label } or null (unknown, or 0 km).
+   */
+  const USAGE_LEVELS = [[8000, 'low', 'کم‌کار'], [20000, 'normal', 'کارکرد معمول'], [30000, 'high', 'پرکار'], [Infinity, 'veryHigh', 'خیلی پرکار']];
+  function usageRate(post, now = Date.now()) {
+    if (!post || post.mileage == null || post.mileage < 1000 || !post.year) return null;
+    const d = new Date(now);
+    // the Persian year starts around 21 March
+    const curYear = d.getFullYear() - (d.getMonth() > 2 || (d.getMonth() === 2 && d.getDate() >= 21) ? 621 : 622);
+    const age = Math.max(0.5, curYear - shamsiYear(post.year) + 0.5);
+    const perYear = post.mileage / age;
+    const [, level, label] = USAGE_LEVELS.find(([max]) => perYear < max);
+    return { perYear: Math.round(perYear), level, label };
+  }
+
   /** Is the model year inside the range? Either side may be a Persian or a Western year. */
   function yearInRange(year, min, max) {
     const y = shamsiYear(year);
@@ -829,6 +846,7 @@
     bodyWordsIn,
     BODY_LEVELS,
     shamsiYear,
+    usageRate,
     yearInRange,
     fakePrice,
     doorsOf,
