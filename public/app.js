@@ -22,7 +22,41 @@ function alerts() {
   return out.sort((a, b) => (b.t || 0) - (a.t || 0));
 }
 
+// ---- live bar: what the bot is searching right now, on every page ----
+const LIVE = { id: null, at: 0, run: null, busy: false };
+async function updateLiveBar() {
+  const bar = $('#liveBar');
+  const id = App.state.busy;
+  if (!id || App.offline || (App.host && !App.bot.online)) { bar.hidden = true; LIVE.run = null; return; }
+  // the run itself (message, ad being read), at most every 8 seconds
+  if ((LIVE.id !== id || Date.now() - LIVE.at > 8000) && !LIVE.busy) {
+    LIVE.busy = true;
+    LIVE.id = id;
+    LIVE.at = Date.now();
+    try { LIVE.run = await api(`/api/runs/${encodeURIComponent(id)}`); } catch (_) { /* keep the last one */ }
+    LIVE.busy = false;
+  }
+  const run = LIVE.run && LIVE.run.id === id ? LIVE.run : null;
+  const c = (run && run.criteria) || {};
+  const total = run ? run.toVisit || 0 : 0;
+  const done = run && run.stats ? run.stats.opened || 0 : 0;
+  const reading = run && run.status === 'reading' && total;
+  const queued = (App.state.queue || []).length;
+  bar.replaceChildren(
+    h('span', { class: 'live-pulse', 'aria-hidden': 'true' }),
+    h('div', { class: 'live-text' },
+      h('div', { class: 'live-what' }, 'ربات در حال جستجو: ', h('b', null, run ? describeCriteria(c) : '…'),
+        c.source === 'bama' ? h('span', { class: 'src-tag bama' }, 'باما') : h('span', { class: 'src-tag' }, 'دیوار'),
+        queued ? h('small', null, ` · ${fa(queued)} جستجوی دیگر در نوبت`) : null),
+      run ? h('div', { class: 'live-now' }, run.message || '', run.activity ? [' — ', h('bdi', null, `«${run.activity}»`)] : null) : null,
+      reading ? h('div', { class: 'live-progress', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(total), 'aria-valuenow': String(done) },
+        h('span', { style: `width:${Math.min(100, Math.round((done / total) * 100))}%` })) : null),
+    h('a', { class: 'btn sm', href: `#/run/${encodeURIComponent(id)}` }, 'جزئیات'));
+  bar.hidden = false;
+}
+
 function updateShell() {
+  updateLiveBar();
   let newCount = 0; let due = 0;
   for (const a of App.ads.values()) {
     const f = adFlags(a);
@@ -211,4 +245,5 @@ window.addEventListener('hashchange', render);
   render();
   setInterval(() => { App.refreshState(); App.refreshAds(); }, 15000);
   setInterval(updateShell, 60000); // due-call times move on even without new data
+  setInterval(() => { if (App.state.busy) updateLiveBar(); }, 5000); // the ad being read changes often
 })();
