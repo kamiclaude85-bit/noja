@@ -126,6 +126,7 @@ function createServer({ scanner, store, context, notifier, cloud }) {
       if (p === '/api/state' && req.method === 'GET') {
         return send(res, 200, {
           busy: scanner.busy ? scanner.current.id : null,
+          busyAll: scanner.runs.map((r) => r.id), // Divar and Bama can run together
           loggedIn: await isLoggedIn(context).catch(() => false),
           today: store.dailyCount(),
           dailyLimit: DEFAULT_DAILY_LIMIT,
@@ -152,7 +153,7 @@ function createServer({ scanner, store, context, notifier, cloud }) {
       // Delete a saved search for good (its run history and the ads only it had found): { key }.
       if (p === '/api/search-delete' && req.method === 'POST') {
         const key = String((await readBody(req)).key || '');
-        if (scanner.busy && scanner.current && searchKey(scanner.current.criteria || {}) === key) {
+        if (scanner.runs.some((r) => searchKey(r.criteria || {}) === key)) {
           return send(res, 409, { error: 'این جستجو الان در حال اجراست؛ اول «پایان» را بزنید.' });
         }
         try {
@@ -176,7 +177,7 @@ function createServer({ scanner, store, context, notifier, cloud }) {
         if (!criteria.query && !criteria.searchUrl && !criteria.priceMin && !criteria.priceMax) {
           return send(res, 400, { error: 'نام خودرو یا محدودهٔ قیمت (یا لینک جستجوی دیوار) را وارد کنید.' });
         }
-        if (scanner.busy) return send(res, 409, { error: 'یک جستجو در حال انجام است.', id: scanner.current.id });
+        if (!scanner.free(criteria)) return send(res, 409, { error: `یک جستجوی ${criteria.source === 'bama' ? 'باما' : 'دیوار'} در حال انجام است.`, id: scanner.scannerFor(criteria).current.id });
         const run = scanner.start(criteria);
         return send(res, 200, { id: run.id });
       }
@@ -188,13 +189,12 @@ function createServer({ scanner, store, context, notifier, cloud }) {
       }
       let m = p.match(/^\/api\/runs\/([A-Za-z0-9_-]+)$/);
       if (m && req.method === 'GET') {
-        const run = scanner.current && scanner.current.id === m[1] ? scanner.current : store.loadRun(m[1]);
+        const run = scanner.runById(m[1]) || store.loadRun(m[1]);
         return run ? send(res, 200, publicRun(run, store)) : send(res, 404, { error: 'not found' });
       }
       m = p.match(/^\/api\/runs\/([A-Za-z0-9_-]+)\/(continue|pause|resume|stop|cancel|focus)$/);
       if (m && req.method === 'POST') {
-        if (!scanner.current || scanner.current.id !== m[1]) return send(res, 409, { error: 'این جستجو فعال نیست.' });
-        scanner[m[2]]();
+        if (!scanner.control(m[1], m[2])) return send(res, 409, { error: 'این جستجو فعال نیست.' });
         return send(res, 200, { ok: true });
       }
 

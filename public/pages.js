@@ -232,6 +232,8 @@ function modelStrip(ads, modelKey, trimKey, go) {
 // «قیمت‌یاب»: what is a good price to buy, and to sell your own car
 // =========================================================
 let PRICE_TYPED = ''; // words in the model box, kept while the page redraws itself
+// «ماشین خودم»: year, trim, mileage and body, kept while the page redraws itself
+const MY_CAR = {};
 const BODY_OPTIONS = [['clean', 'سالم و بی‌رنگ'], ['scratches', 'خط و خش جزیی'], ['paint', 'رنگ‌شدگی'], ['accident', 'تصادفی']];
 
 /** The guide entry for an ad's model, trim and year (or for its model and year). */
@@ -304,28 +306,57 @@ function renderPrices(view, params) {
 
   // ---- «ماشین خودم» ----
   const myBox = h('div', { class: 'my-result' });
-  const years = Array.from(new Set(sure.map((g) => g.year))).sort((a, b) => b - a);
+  // Every year from the oldest to the newest ad of this model (not only the years with enough
+  // ads): a year without enough is priced from the nearest one, about 2% a year apart.
+  const seenYears = mine.map((g) => g.year);
+  const years = [];
+  if (seenYears.length) for (let y = Math.max(...seenYears); y >= Math.min(...seenYears) - 3; y--) years.push(y);
   const ySel = h('select', { name: 'year', 'aria-label': 'سال' }, years.map((y) => h('option', { value: y }, faYear(y))));
   const tSel = h('select', { name: 'trim', 'aria-label': 'تیپ' });
   const km = h('input', { name: 'km', inputmode: 'numeric', placeholder: 'مثلاً ۸۰٬۰۰۰' });
   const body = h('select', { name: 'body', 'aria-label': 'بدنه' }, BODY_OPTIONS.map(([v, t]) => h('option', { value: v }, t)));
+  // what was chosen before the page redrew itself (same model only)
+  const mem = MY_CAR.model === modelKey ? { ...MY_CAR } : {};
+  if (mem.year && years.includes(mem.year)) ySel.value = String(mem.year);
+  if (mem.km) km.value = mem.km;
+  if (mem.body) body.value = mem.body;
+  const keep = () => Object.assign(MY_CAR, { model: modelKey, year: Number(ySel.value), trim: tSel.value, km: km.value, body: body.value });
+  // trims of that year if read, else every trim of the model (value: the normalized trim)
+  const allTrims = Array.from(new Map(mine.map((g) => [P.normalizeText(g.trim), g.trim || 'بدون تیپ'])).entries());
   const fillTrims = () => {
     const y = Number(ySel.value);
-    tSel.replaceChildren(...sure.filter((g) => g.year === y).map((g) => h('option', { value: g.key }, g.trim || 'بدون تیپ')));
+    const ofYear = Array.from(new Map(mine.filter((g) => g.year === y).map((g) => [P.normalizeText(g.trim), g.trim || 'بدون تیپ'])).entries());
+    tSel.replaceChildren(...(ofYear.length ? ofYear : allTrims).map(([v, t]) => h('option', { value: v }, t)));
+    if (mem.trim && [...tSel.options].some((o) => o.value === mem.trim)) tSel.value = mem.trim;
     tSel.closest('label').hidden = tSel.options.length < 2;
   };
+  /** The market for the chosen year and trim: exact, else the nearest year (same trim first), moved ~2% a year. */
+  const marketFor = (y, t) => {
+    const exact = sure.find((g) => g.year === y && P.normalizeText(g.trim) === t);
+    if (exact) return { g: exact, from: null };
+    const pool = sure.filter((g) => P.normalizeText(g.trim) === t);
+    const list = (pool.length ? pool : sure).slice().sort((a, b) => Math.abs(a.year - y) - Math.abs(b.year - y));
+    const near = list[0];
+    if (!near) return null;
+    const f = 1.02 ** (P.shamsiYear(y) - P.shamsiYear(near.year));
+    const g = { ...near, market: near.market * f, sellList: near.sellList * f, sellFast: near.sellFast * f, buyGood: near.buyGood * f };
+    return { g, from: near };
+  };
   const calc = () => {
-    const g = sure.find((x) => x.key === tSel.value);
+    const m = marketFor(Number(ySel.value), tSel.value);
+    const g = m && m.g;
     const r = g && NojaDeals.myCarPrice(g, { mileage: P.parseNumber(km.value), body: body.value });
     myBox.replaceChildren(...(r ? [
       h('p', { class: 'my-line' }, 'آگهی‌تان را با ', h('b', null, price(r.sellList)), ' ثبت کنید.', h('small', null, ' کمی بالاتر از قیمت بازار است تا جای چانه بماند.')),
       h('p', { class: 'my-line' }, 'اگر عجله دارید، تا ', h('b', null, price(r.sellFast)), ' پایین بیایید.', h('small', null, ' کمتر از این نفروشید.')),
-      h('p', { class: 'muted' }, `از روی ${fa(g.n)} آگهی${g.sure ? '' : ' — کم‌اطمینان'}`),
+      h('p', { class: 'muted' }, m.from
+        ? `تقریبی: از این سال و تیپ آگهی کافی نیست؛ از روی ${fa(m.from.n)} آگهی ${m.from.trim || ''} ${faYear(m.from.year)}، با حدود ۲٪ فرق برای هر سال.`
+        : `از روی ${fa(g.n)} آگهی${g.sure ? '' : ' — کم‌اطمینان'}`),
     ] : [h('p', { class: 'muted' }, 'برای این مدل هنوز آگهی کافی نیست.')]));
   };
-  ySel.addEventListener('change', () => { fillTrims(); calc(); });
-  for (const el of [tSel, body]) el.addEventListener('change', calc);
-  km.addEventListener('input', calc);
+  ySel.addEventListener('change', () => { mem.trim = ''; fillTrims(); calc(); keep(); });
+  for (const el of [tSel, body]) el.addEventListener('change', () => { calc(); keep(); });
+  km.addEventListener('input', () => { calc(); keep(); });
   const myCard = sure.length ? h('section', { class: 'card my-car' },
     h('div', { class: 'card-h' }, h('h2', null, icon('car', 'sm'), 'ماشین خودم را بفروشم؟')),
     h('div', { class: 'my-form' },
@@ -819,9 +850,10 @@ function deleteSearchDialog(s, done) {
 
 function renderRuns(view) {
   const runs = App.state.runs || [];
-  const busyId = App.state.busy;
-  const live = typeof LIVE !== 'undefined' && LIVE.run && LIVE.run.id === busyId ? LIVE.run : null;
-  const cur = busyId ? (live || runs.find((r) => r.id === busyId) || { id: busyId }) : null;
+  // Divar and Bama can run together: one «الان» card each
+  const ids = typeof liveIds === 'function' ? liveIds() : (App.state.busy ? [App.state.busy] : []);
+  const busyId = ids[0] || null;
+  const currents = ids.map((id) => (typeof liveRun === 'function' && liveRun(id)) || runs.find((r) => r.id === id) || { id });
   const queue = App.queue || [];
   const redraw = async () => { await App.refreshState(); if (PAGE.name === 'runs') renderRuns(view); };
   const act = async (fn) => { try { await fn(); } catch (e) { toast(e.message, 'err'); } await redraw(); };
@@ -831,14 +863,13 @@ function renderRuns(view) {
   // ---- 1. now ----
   const NOW = { starting: 'در حال شروع', 'waiting-login': 'منتظر ورود شما به دیوار', collecting: 'در حال جمع کردن فهرست آگهی‌ها', reading: 'در حال خواندن آگهی‌ها',
     resting: 'استراحت کوتاه (مثل یک آدم)', blocked: 'منتظر شما — دیوار سؤال امنیتی پرسیده', paused: 'مکث کرده' };
-  let nowCard;
-  if (cur) {
+  const nowCardFor = (cur) => {
     const c = cur.criteria || {};
     const total = cur.toVisit || 0;
     const done = cur.stats ? cur.stats.opened || 0 : 0;
     const paused = cur.status === 'paused';
     const control = (action) => act(() => api(`/api/runs/${encodeURIComponent(cur.id)}/${action}`, { method: 'POST' }));
-    nowCard = h('section', { class: 'card run-now' },
+    return h('section', { class: 'card run-now' },
       h('div', { class: 'run-now-h' }, h('span', { class: `live-pulse${paused ? ' off' : ''}`, 'aria-hidden': 'true' }), h('b', null, 'الان'), site(c),
         h('span', { class: 'run-state' }, NOW[cur.status] || 'در حال کار')),
       h('h2', { class: 'run-now-title' }, describeCriteria(c)),
@@ -856,7 +887,10 @@ function renderRuns(view) {
           : h('button', { class: 'btn', type: 'button', onclick: () => control('pause') }, icon('pause', 'sm'), 'مکث'),
         h('a', { class: 'btn ghost', href: `#/run/${encodeURIComponent(cur.id)}` }, 'دیدن آگهی‌های این جستجو')),
       h('p', { class: 'muted run-note' }, cur.status === 'reading' ? '«توقف» آگهی‌ای را که باز است تمام می‌کند و بعد می‌ایستد؛ آگهی‌های خوانده‌شده می‌مانند.' : 'با «توقف»، جستجوی بعدی نوبت شروع می‌شود.'));
-  } else {
+  };
+  let nowCard;
+  if (currents.length) nowCard = currents.map(nowCardFor);
+  else {
     const off = App.host && !App.bot.online;
     nowCard = h('section', { class: 'card run-now idle' },
       h('div', { class: 'run-now-h' }, h('span', { class: 'live-pulse off', 'aria-hidden': 'true' }), h('b', null, off ? 'ربات خاموش است' : 'ربات بیکار است')),
@@ -882,7 +916,7 @@ function renderRuns(view) {
 
   // ---- 3. done ----
   const STATUS = { done: ['تمام شد', 'ok'], stopped: ['متوقف شد', 'muted'], error: ['خطا', 'bad'] };
-  const past = runs.filter((r) => r.id !== busyId && !ACTIVE_RUN.includes(r.status)).slice(0, 15);
+  const past = runs.filter((r) => !ids.includes(r.id) && !ACTIVE_RUN.includes(r.status)).slice(0, 15);
   const historyCard = h('section', { class: 'card' }, h('div', { class: 'card-h' }, h('h2', null, icon('history', 'sm'), 'انجام‌شده')),
     past.length ? h('ul', { class: 'items run-history' }, past.map((r) => {
       const [label, cls] = STATUS[r.status] || [r.status, 'muted'];
@@ -910,7 +944,7 @@ function renderRuns(view) {
     pageHead('جستجوهای من', 'کاری که ربات الان می‌کند، جستجوهایی که در نوبت‌اند، و آن‌هایی که تمام شده‌اند.', h('a', { class: 'btn primary', href: '#/search' }, icon('plus', 'sm'), 'جستجوی جدید')),
     nowCard, queueCard, historyCard, savedCard, blocksCard()));
   // (the live bar fetches it and redraws this page when it has it)
-  if (busyId && !live && typeof updateLiveBar === 'function') updateLiveBar();
+  if (ids.some((id) => !(typeof liveRun === 'function' && liveRun(id))) && typeof updateLiveBar === 'function') updateLiveBar();
 }
 
 // =========================================================

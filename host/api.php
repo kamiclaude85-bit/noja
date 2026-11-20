@@ -104,7 +104,8 @@ try {
         $searches = kv_get('searches', []) ?: [];
         if ($key === '' || !isset($searches[$key])) json_out(404, ['error' => 'این جستجو پیدا نشد']);
         $bot = bot_status();
-        if ($bot['online'] && ($bot['state']['busy'] ?? null) && ($bot['state']['busyKey'] ?? null) === $key) {
+        $running = is_array($bot['state']['busyKeys'] ?? null) ? $bot['state']['busyKeys'] : [$bot['state']['busyKey'] ?? null];
+        if ($bot['online'] && ($bot['state']['busy'] ?? null) && in_array($key, $running, true)) {
             json_out(409, ['error' => 'این جستجو الان در حال اجراست؛ اول «پایان» را بزنید.']);
         }
         backup_now(true);

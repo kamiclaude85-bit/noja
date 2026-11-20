@@ -22,38 +22,55 @@ function alerts() {
   return out.sort((a, b) => (b.t || 0) - (a.t || 0));
 }
 
-// ---- live bar: what the bot is searching right now, on every page ----
-const LIVE = { id: null, at: 0, run: null, busy: false };
+// ---- live bar: what the bot is searching right now (Divar and Bama can run together) ----
+const LIVE = { runs: new Map(), busy: false };
+/** Ids of the runs in progress now. */
+function liveIds() {
+  const all = App.state.busyAll && App.state.busyAll.length ? App.state.busyAll : App.state.busy ? [App.state.busy] : [];
+  return Array.from(new Set(all));
+}
+/** The fresh copy of a running run (message, ad being read), or null. */
+function liveRun(id) { const x = LIVE.runs.get(id); return x ? x.run : null; }
 async function updateLiveBar() {
   const bar = $('#liveBar');
-  const id = App.state.busy;
-  if (!id || App.offline || (App.host && !App.bot.online)) { bar.hidden = true; LIVE.run = null; return; }
-  // the run itself (message, ad being read), at most every 8 seconds
-  if ((LIVE.id !== id || Date.now() - LIVE.at > 8000) && !LIVE.busy) {
+  const ids = liveIds();
+  if (!ids.length || App.offline || (App.host && !App.bot.online)) { bar.hidden = true; LIVE.runs.clear(); return; }
+  for (const k of Array.from(LIVE.runs.keys())) if (!ids.includes(k)) LIVE.runs.delete(k);
+  // each run itself, at most every 8 seconds
+  const stale = ids.filter((id) => { const x = LIVE.runs.get(id); return !x || Date.now() - x.at > 8000; });
+  if (stale.length && !LIVE.busy) {
     LIVE.busy = true;
-    LIVE.id = id;
-    LIVE.at = Date.now();
-    try { LIVE.run = await api(`/api/runs/${encodeURIComponent(id)}`); } catch (_) { /* keep the last one */ }
-    // «جستجوهای من» shows the same run in detail: redraw it with the fresh numbers
-    if (LIVE.run && LIVE.run.id === id && PAGE.name === 'runs' && PAGE.update && !userIsTyping()) PAGE.update();
+    let fresh = false;
+    for (const id of stale) {
+      let run = liveRun(id);
+      try { const r = await api('/api/runs/' + encodeURIComponent(id)); if (r && r.id === id) { run = r; fresh = true; } } catch (_) { /* keep the last one */ }
+      LIVE.runs.set(id, { run, at: Date.now() });
+    }
     LIVE.busy = false;
+    // «جستجوهای من» shows the same runs in detail: redraw it with the fresh numbers
+    if (fresh && PAGE.name === 'runs' && PAGE.update && !userIsTyping()) PAGE.update();
   }
-  const run = LIVE.run && LIVE.run.id === id ? LIVE.run : null;
-  const c = (run && run.criteria) || {};
-  const total = run ? run.toVisit || 0 : 0;
-  const done = run && run.stats ? run.stats.opened || 0 : 0;
-  const reading = run && run.status === 'reading' && total;
   const queued = (App.state.queue || []).length;
+  const rows = ids.map((id) => {
+    const run = liveRun(id);
+    const c = (run && run.criteria) || {};
+    const total = run ? run.toVisit || 0 : 0;
+    const done = run && run.stats ? run.stats.opened || 0 : 0;
+    const reading = run && run.status === 'reading' && total;
+    return h('div', { class: 'live-row' },
+      h('div', { class: 'live-what' }, h('span', { class: 'src-tag ' + (c.source === 'bama' ? 'bama' : 'divar') }, c.source === 'bama' ? 'باما' : 'دیوار'),
+        h('b', null, run ? describeCriteria(c) : '…')),
+      run ? h('div', { class: 'live-now' }, run.message || '', run.activity ? [' — ', h('bdi', null, '«' + run.activity + '»')] : null) : null,
+      reading ? h('div', { class: 'live-progress', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(total), 'aria-valuenow': String(done) },
+        h('span', { style: 'width:' + Math.min(100, Math.round((done / total) * 100)) + '%' })) : null);
+  });
   bar.replaceChildren(
     h('span', { class: 'live-pulse', 'aria-hidden': 'true' }),
     h('div', { class: 'live-text' },
-      h('div', { class: 'live-what' }, 'ربات در حال جستجو: ', h('b', null, run ? describeCriteria(c) : '…'),
-        c.source === 'bama' ? h('span', { class: 'src-tag bama' }, 'باما') : h('span', { class: 'src-tag' }, 'دیوار'),
-        queued ? h('small', null, ` · ${fa(queued)} جستجوی دیگر در نوبت`) : null),
-      run ? h('div', { class: 'live-now' }, run.message || '', run.activity ? [' — ', h('bdi', null, `«${run.activity}»`)] : null) : null,
-      reading ? h('div', { class: 'live-progress', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(total), 'aria-valuenow': String(done) },
-        h('span', { style: `width:${Math.min(100, Math.round((done / total) * 100))}%` })) : null),
-    h('a', { class: 'btn sm', href: `#/run/${encodeURIComponent(id)}` }, 'جزئیات'));
+      h('div', { class: 'live-title' }, ids.length > 1 ? 'ربات همزمان در حال جستجو در دیوار و باما' : 'ربات در حال جستجو',
+        queued ? h('small', null, ' · ' + fa(queued) + ' جستجوی دیگر در نوبت') : null),
+      rows),
+    h('a', { class: 'btn sm', href: ids.length > 1 ? '#/runs' : '#/run/' + encodeURIComponent(ids[0]) }, 'جزئیات'));
   bar.hidden = false;
 }
 
@@ -63,6 +80,7 @@ function freshFilters() {
   BUDGET_MEM = {};
   BUDGET_TYPED = '';
   PRICE_TYPED = '';
+  for (const k of Object.keys(MY_CAR)) delete MY_CAR[k];
   for (const k of Object.keys(BUDGET_OPEN)) delete BUDGET_OPEN[k];
   prefs.set('radyab.city', '');
   prefs.set('radyab.period', DEFAULT_PERIOD);
@@ -247,11 +265,15 @@ function userIsTyping() {
 App.onChange((what) => {
   updateShell();
   if (!PAGE.update) return;
+  // Ad lists keep their own filters and scroll: they follow new ads at once.
   if (what === 'ads' && (PAGE.name === 'ads' || PAGE.name === 'deals')) { PAGE.update(); return; }
   if (overlay || userIsTyping()) return; // do not yank the page while the user works
-  // The search form does not change with the bot's state; redrawing it only gets in the way.
-  if (what === 'state' && PAGE.name === 'search' && parseRoute().params.get('go') !== '1') return;
-  if (what === 'ads' || (what === 'state' && PAGE.name !== 'ads')) PAGE.update();
+  // The bot's state (every 15 s) only matters to the pages that show the bot's work; the live
+  // bar shows it everywhere else. Redrawing forms on it reset what was being chosen.
+  if (what === 'state' && !['runs', 'dash'].includes(PAGE.name)) return;
+  const y = window.scrollY; // keep the place on the page
+  PAGE.update();
+  window.scrollTo(0, y);
 });
 window.addEventListener('hashchange', render);
 
@@ -260,5 +282,5 @@ window.addEventListener('hashchange', render);
   render();
   setInterval(() => { App.refreshState(); App.refreshAds(); }, 15000);
   setInterval(updateShell, 60000); // due-call times move on even without new data
-  setInterval(() => { if (App.state.busy) updateLiveBar(); }, 5000); // the ad being read changes often
+  setInterval(() => { if (liveIds().length) updateLiveBar(); }, 5000); // the ad being read changes often
 })();

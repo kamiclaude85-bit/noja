@@ -177,7 +177,7 @@ test('search queue: waits for the bot, keeps order, holds at the daily cap, drop
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'radyab-queue-'));
   let today = 0;
   const started = [];
-  const scanner = { busy: false, start: (c) => { started.push(c.query); return { id: 'x' }; } };
+  const scanner = { busy: false, free: () => !scanner.busy, start: (c) => { started.push(c.query); return { id: 'x' }; } };
   const cloud = new Cloud({ store: { dailyCount: () => today }, scanner, dataDir: dir });
   cloud.enqueue([{ query: 'a', batch: 'b1' }, { query: 'b', batch: 'b1' }, { query: 'c', batch: 'b2' }]);
   scanner.busy = true; cloud.startPending(); assert.deepEqual(started, [], 'waits while busy');
@@ -186,4 +186,35 @@ test('search queue: waits for the bot, keeps order, holds at the daily cap, drop
   today = 0; cloud.dropBatch('b1'); cloud.startPending(); assert.deepEqual(started, ['a', 'c'], 'the stopped batch is dropped');
   // kept on disk
   assert.deepEqual(new Cloud({ store: { dailyCount: () => 0 }, scanner, dataDir: dir }).pending.length, 0);
+});
+
+test('search queue: a Bama search starts while a Divar one runs; each site keeps its order', () => {
+  const os = require('node:os');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { Cloud } = require('../src/cloud.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'radyab-queue2-'));
+  const busy = { divar: true, bama: false };
+  const started = [];
+  const site = (c) => (c.source === 'bama' ? 'bama' : 'divar');
+  const scanner = { free: (c) => !busy[site(c)], start: (c) => { started.push(c.query); busy[site(c)] = true; return { id: c.query }; } };
+  const cloud = new Cloud({ store: { dailyCount: () => 0 }, scanner, dataDir: dir });
+  cloud.enqueue([{ query: 'd1' }, { query: 'b1', source: 'bama' }, { query: 'd2' }, { query: 'b2', source: 'bama' }]);
+  cloud.startPending();
+  assert.deepEqual(started, ['b1'], 'Divar busy: the first Bama search starts');
+  busy.divar = false; busy.bama = false; cloud.startPending();
+  assert.deepEqual(started, ['b1', 'd1', 'b2'], 'one of each, in their order');
+  assert.deepEqual(cloud.pending.map((c) => c.query), ['d2']);
+});
+
+test('scanner pool: one bot per site', () => {
+  const { ScannerPool } = require('../src/pool');
+  const pool = new ScannerPool({ context: null, store: {} });
+  const fake = (id) => ({ id, criteria: {} });
+  pool.scanners.divar.current = fake('r1'); pool.scanners.divar.current.status = 'reading';
+  assert.equal(pool.free({ source: 'bama' }), true);
+  assert.equal(pool.free({}), false);
+  assert.equal(pool.runById('r1').id, 'r1');
+  assert.equal(pool.byRun('nope'), null);
+  assert.deepEqual(pool.runs.map((r) => r.id), ['r1']);
 });

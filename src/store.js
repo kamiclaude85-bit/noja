@@ -151,7 +151,9 @@ class Store {
   }
 
   listRuns() {
-    const files = fs.readdirSync(this.runsDir).filter((f) => f.endsWith('.json')).sort().reverse();
+    // newest first by time («reread_…» runs used to sort above every dated run by their name)
+    const stamp = (f) => { try { return fs.statSync(path.join(this.runsDir, f)).mtimeMs; } catch (_) { return 0; } };
+    const files = fs.readdirSync(this.runsDir).filter((f) => f.endsWith('.json')).map((f) => [f, stamp(f)]).sort((a, b) => b[1] - a[1]).map(([f]) => f);
     for (const old of files.slice(MAX_RUNS)) fs.rmSync(path.join(this.runsDir, old), { force: true });
     return files.slice(0, MAX_RUNS).map((f) => {
       const run = this.loadRun(f.replace(/\.json$/, ''));
@@ -165,7 +167,7 @@ class Store {
         read: Object.keys(run.posts).length,
         newCount: run.stats && run.stats.newAds != null ? run.stats.newAds : null,
       };
-    }).filter(Boolean);
+    }).filter(Boolean).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
   }
 
   // ---------- permanent ad memory ----------

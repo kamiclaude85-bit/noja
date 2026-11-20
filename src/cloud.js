@@ -156,10 +156,11 @@ class Cloud {
     }
     const runs = [];
     for (const id of Array.from(ch.runs).slice(0, 5)) {
-      const run = this.scanner.current && this.scanner.current.id === id ? this.scanner.current : s.loadRun(id);
+      const run = this.scanner.runById(id) || s.loadRun(id);
       if (run) runs.push(this.slimRun(run));
     }
     const busy = this.scanner.busy && this.scanner.current ? this.scanner.current.id : null;
+    const busyAll = this.scanner.runs.map((r) => r.id);
     // Ads and runs deleted here («حذف جستجو»), so the online panel deletes them too.
     const g = s.gone();
     const gone = { ads: g.ads.filter((t) => !s.db.ads[t]).slice(0, 500), runs: g.runs.slice(0, 100) };
@@ -167,7 +168,7 @@ class Cloud {
     return {
       payload: {
         since: this.st.cursor,
-        state: { busy, busyKey: this.busyKey(), loggedIn: this.loggedIn == null ? null : this.loggedIn, today: s.dailyCount(), dailyLimit: this.dailyLimit || 300, pending: this.pending.length,
+        state: { busy, busyAll, busyKey: this.busyKey(), busyKeys: this.scanner.runs.map((r) => { try { return require('./scanner').searchKey(r.criteria); } catch (_) { return null; } }).filter(Boolean), loggedIn: this.loggedIn == null ? null : this.loggedIn, today: s.dailyCount(), dailyLimit: this.dailyLimit || 300, pending: this.pending.length,
           queue: this.pending.slice(0, 40).map((c) => ({ id: c.qid, createdAt: c.queuedAt, criteria: c })) },
         ads,
         gone: hasGone ? gone : undefined,
@@ -255,7 +256,7 @@ class Cloud {
       // Only now forget what was sent (a failed request is simply sent again next time).
       const ch = this.store.changes;
       for (const t of sent.tokens) { ch.ads.delete(t); ch.crm.delete(t); }
-      for (const id of sent.runs) if (!(this.scanner.busy && this.scanner.current && this.scanner.current.id === id)) ch.runs.delete(id);
+      for (const id of sent.runs) if (!this.scanner.runById(id)) ch.runs.delete(id);
       if (sent.searches) ch.searches = false;
       if (sent.gone && body.gone) this.store.clearGone(sent.gone); // an older panel does not answer: keep them for later
       this.events.splice(0, sent.events);
@@ -338,23 +339,29 @@ class Cloud {
       else if (action === 'clear') this.clearQueue();
     } else if (q.kind === 'cmd') {
       const { runId, action } = q.body || {};
-      if (this.scanner.current && this.scanner.current.id === runId && ['continue', 'pause', 'resume', 'stop', 'cancel'].includes(action)) {
-        this.scanner[action]();
+      if (['continue', 'pause', 'resume', 'stop', 'cancel'].includes(action) && this.scanner.control(runId, action)) {
         this.syncSoon(); // let the panel see the change right away
       }
     }
   }
 
   startPending() {
-    if (!this.pending.length || this.scanner.busy) return;
-    // Daily cap reached: the rest waits until tomorrow (checked again every hour).
-    const cap = Number(this.pending[0].dailyLimit) || 300;
-    if (this.store.dailyCount() >= cap) return;
-    try {
-      this.scanner.start(this.pending[0]);
-    } catch (e) { this.log(e); return; } // not started: it stays first in line
-    this.pending.shift();
-    this.saveState({ pending: this.pending });
+    // The first waiting search of each site whose bot is free starts: a Divar search and a Bama
+    // search can run together; within one site the order is kept.
+    let started = false;
+    for (const site of ['divar', 'bama']) {
+      const i = this.pending.findIndex((c) => (c.source === 'bama' ? 'bama' : 'divar') === site);
+      if (i < 0 || !this.scanner.free(this.pending[i])) continue;
+      // Daily cap reached: the rest waits until tomorrow (checked again every hour).
+      const cap = Number(this.pending[i].dailyLimit) || 300;
+      if (this.store.dailyCount() >= cap) continue;
+      try {
+        this.scanner.start(this.pending[i]);
+      } catch (e) { this.log(e); continue; } // not started: it stays in line
+      this.pending.splice(i, 1);
+      started = true;
+    }
+    if (started) this.saveState({ pending: this.pending });
   }
 }
 

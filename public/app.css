@@ -973,3 +973,8 @@ tr.sold { opacity: .55; }
 .run-pill.bad { background: var(--bad-soft); color: var(--bad); }
 .run-history .item-main small .src-tag { margin: 0 0 0 4px; }
 @media (max-width: 520px) { .q-item { flex-wrap: wrap; } .q-actions { width: 100%; justify-content: flex-end; } }
+.live-title { font-size: 13px; color: var(--text-2); }
+.live-title small { color: var(--text-3); }
+.live-row { display: flex; flex-direction: column; gap: 2px; }
+.live-row + .live-row { padding-top: 4px; border-top: 1px dashed color-mix(in srgb, var(--primary) 25%, transparent); }
+.live-what .src-tag { margin: 0 0 0 6px; }

@@ -439,7 +439,7 @@ function bamaNewPrices(modelKey) {
   for (const r of bp.items) {
     const m = P.modelOf({ brand: `${P.divarModelName(`${r.make} ${r.model}`)} ${r.trim || ''}` });
     if (m.key !== modelKey) continue;
-    out.push({ ...r, trimKey: P.normalizeText(m.trim) });
+    out.push({ ...r, trim: m.trim || r.trim, trimKey: P.normalizeText(m.trim) }); // «S دنده ای بنزینی», not just «دنده ای بنزینی»
   }
   return out.sort((a, b) => b.year - a.year || a.trim.localeCompare(b.trim));
 }

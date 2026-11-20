@@ -171,6 +171,7 @@ function panel_state(): array {
         // first what the bot already holds (in its order), then what it has not picked up yet
         'queue' => array_merge($b['online'] && is_array($st['queue'] ?? null) ? $st['queue'] : [], $queue),
         'busy' => $b['online'] ? ($st['busy'] ?? null) : null,
+        'busyAll' => $b['online'] && is_array($st['busyAll'] ?? null) ? $st['busyAll'] : [],
         'loggedIn' => $st['loggedIn'] ?? null,
         'today' => (int) ($st['today'] ?? 0),
         'dailyLimit' => (int) ($st['dailyLimit'] ?? 300),

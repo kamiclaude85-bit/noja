@@ -4,7 +4,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { Store } = require('./store');
-const { Scanner } = require('./scanner');
+const { ScannerPool } = require('./pool');
 const { createServer, cleanCriteria } = require('./server');
 const { followUpSearches } = require('./budget');
 const { Notifier } = require('./notify');
@@ -90,7 +90,8 @@ async function startApp(opts = {}) {
     }
     setTimeout(() => cloud.startPending(), 3000); // next search in line
   };
-  const scanner = new Scanner({ context, store, log, onEvent: (run, kind) => {
+  // One bot for Divar and one for Bama, side by side (see pool.js).
+  const scanner = new ScannerPool({ context, store, log, onEvent: (run, kind) => {
     if (cloud) cloud.syncSoon();
     if (['done', 'stopped', 'error'].includes(kind)) onFinish(run, kind);
     return notifier.runEvent(run, kind);
@@ -125,7 +126,7 @@ async function startApp(opts = {}) {
   const autoCheck = () => {
     try {
       const busy = new Set(cloud.pending.map((c) => searchKey(c)));
-      if (scanner.busy && scanner.current) busy.add(searchKey(scanner.current.criteria));
+      for (const r of scanner.runs) busy.add(searchKey(r.criteria));
       const due = dueSearches(store.db.searches, Date.now(), busy);
       if (!due.length) return;
       const today = localDay(Date.now());
