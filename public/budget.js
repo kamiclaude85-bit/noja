@@ -56,9 +56,15 @@ const BUDGET_PREF = 'radyab.budget2';
 // Folded sections the user opened or closed stay that way when the page redraws.
 const BUDGET_OPEN = {};
 let BUDGET_TYPED = ''; // words in the model box, kept while the page redraws itself
+// The bot settings are kept on this device; the car, budget and filters only while you stay on
+// the page (a search opened again starts empty).
+const BUDGET_KEEP = ['speed', 'maxAds', 'sites'];
+let BUDGET_MEM = {};
 function budgetPrefs() {
+  const saved = prefs.get(BUDGET_PREF, {});
+  const keep = Object.fromEntries(BUDGET_KEEP.filter((k) => saved[k] != null).map((k) => [k, saved[k]]));
   return { from: '', to: '', picks: [], origin: '', yearMin: '', yearMax: '', gearbox: '', personal: false, bodyOk: false, chassisOk: false, kmMax: '',
-    speed: 'slow', maxAds: '100', link: '', sites: 'both', ...prefs.get(BUDGET_PREF, {}) };
+    speed: 'slow', maxAds: '100', link: '', sites: 'both', ...keep, ...BUDGET_MEM };
 }
 
 /** Divar search address for one pick (or for all cars) with the limits and filters. */
@@ -99,7 +105,11 @@ function searchNotices() {
 function renderBudget(view, params) {
   if (!CATALOG.brands) { view.replaceChildren(h('div', { class: 'page' }, h('p', { class: 'muted' }, 'در حال بارگذاری…'))); loadCatalog().then(() => render()); return; }
   const s = budgetPrefs();
-  const save = (patch) => { Object.assign(s, patch); prefs.set(BUDGET_PREF, s); };
+  const save = (patch) => {
+    Object.assign(s, patch);
+    BUDGET_MEM = { ...s };
+    prefs.set(BUDGET_PREF, Object.fromEntries(BUDGET_KEEP.map((k) => [k, s[k]])));
+  };
   // Prices are typed in millions; a big number is taken as toman.
   const toToman = (v) => { const n = P.parseNumber(v); return n == null ? 0 : (n < 100000 ? n * 1e6 : n); };
   // Years as Divar filters them: Persian («۹۸» → 1398; a Western year → its Persian one).

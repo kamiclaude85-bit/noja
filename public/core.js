@@ -361,7 +361,10 @@ App.refreshAds = async (force) => {
     App.version = r.version;
     const ads = App.relevant(r.ads, r.searches);
     App.ads = new Map(ads.map((a) => [a.token, a]));
-    App.searches = r.searches.sort((a, b) => (b.lastRunAt || 0) - (a.lastRunAt || 0));
+    // Bama's new-car prices travel as a hidden entry of the searches list.
+    const hidden = r.searches.find((s) => s.criteria && s.criteria.hidden && s.criteria.bamaPrices);
+    App.bamaPrices = hidden ? hidden.criteria.bamaPrices : null;
+    App.searches = r.searches.filter((s) => !(s.criteria && s.criteria.hidden)).sort((a, b) => (b.lastRunAt || 0) - (a.lastRunAt || 0));
     App.meta = { stages: r.stages, activeStages: r.activeStages, rejectReasons: r.rejectReasons, callResults: r.callResults };
     App.deals = globalThis.NojaDeals.computeDeals(ads.map((a) => ({ ...a.post, removed: a.removed })));
     App.dups = globalThis.NojaDeals.crossDuplicates(ads.map((a) => a.post).filter(Boolean));
@@ -426,13 +429,44 @@ function enrich(post) {
 }
 
 /** «پیشنهاد ویژه» / «با احتیاط» badge for an ad, or null. */
-/** «باما» for ads read from Bama, and «در دیوار هم هست» when the same car is in both. */
+/**
+ * Bama's new-car prices of one model (Divar's model key), as
+ * [{ trim, trimKey, year, note, kind, price, change }], newest year first.
+ */
+function bamaNewPrices(modelKey) {
+  const bp = App.bamaPrices;
+  if (!bp || !bp.items) return [];
+  const out = [];
+  for (const r of bp.items) {
+    const m = P.modelOf({ brand: `${P.divarModelName(`${r.make} ${r.model}`)} ${r.trim || ''}` });
+    if (m.key !== modelKey) continue;
+    out.push({ ...r, trimKey: P.normalizeText(m.trim) });
+  }
+  return out.sort((a, b) => b.year - a.year || a.trim.localeCompare(b.trim));
+}
+
+/** The best Bama new-car row for an ad (same model and year; the trim with most words in common). */
+function bamaNewPriceFor(p, kind = 'بازار') {
+  const m = P.modelOf(p);
+  const rows = bamaNewPrices(m.key).filter((r) => r.kind === kind && P.shamsiYear(r.year) === P.shamsiYear(p.year));
+  if (!rows.length) return null;
+  const words = P.normalizeText(`${m.trim} ${p.title || ''}`).split(' ').filter(Boolean);
+  const has = (w) => words.some((x) => x === w || (w.length > 2 && (x.startsWith(w) || w.startsWith(x)) && x.length > 2));
+  // words of the trim the ad also has count for it, words it does not have («پانوراما») against it
+  const score = (r) => {
+    const rw = P.normalizeText(r.trim).split(' ').filter(Boolean);
+    const hit = rw.filter(has).length;
+    return hit * 2 - (rw.length - hit) * 3;
+  };
+  return rows.slice().sort((a, b) => score(b) - score(a) || a.price - b.price)[0];
+}
+
+/** Where the ad was read: «دیوار» or «باما», and «· در باما هم هست» when the same car is on both. */
 function sourceChip(p) {
   const other = App.dups && App.dups.get(p.token);
   const bama = p.source === 'bama';
-  if (!bama && !other) return null;
-  const text = other ? (bama ? 'باما · در دیوار هم هست' : 'در باما هم هست') : 'باما';
-  return h('span', { class: `src-tag${bama ? ' bama' : ''}`, title: other ? 'همین ماشین (همان مدل، سال، کارکرد و قیمت) در هر دو سایت آگهی شده؛ در قیمت‌ها یک بار حساب می‌شود.' : 'این آگهی از باما خوانده شده' }, text);
+  const text = `${bama ? 'باما' : 'دیوار'}${other ? ` · در ${bama ? 'دیوار' : 'باما'} هم هست` : ''}`;
+  return h('span', { class: `src-tag ${bama ? 'bama' : 'divar'}`, title: other ? 'همین ماشین (همان مدل، سال، کارکرد و قیمت) در هر دو سایت آگهی شده؛ در قیمت‌ها یک بار حساب می‌شود.' : `این آگهی از ${bama ? 'باما' : 'دیوار'} خوانده شده` }, text);
 }
 
 /**

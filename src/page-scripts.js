@@ -329,4 +329,33 @@ function extractBamaAd() {
   };
 }
 
-module.exports = { collectListItems, clickLoadMore, nextPageLink, detectBlock, extractAdPage, collectBamaList, collectBamaLinks, extractBamaAd };
+/**
+ * Bama's «قیمت روز خودرو» page: one row per make/model/trim/year and kind of price.
+ * [{ make, model, trim, year, note, kind: 'بازار'|'کارخانه'|'نمایندگی', price, change }]
+ */
+function extractBamaPrices() {
+  const out = [];
+  for (const a of document.querySelectorAll('a[href^="/price/"]')) {
+    const nameBox = a.querySelector('span.direction-ltr');
+    const names = nameBox ? [...nameBox.children].map((s) => s.textContent.replace(/,/g, '').trim()).filter(Boolean) : [];
+    const leaves = [...a.querySelectorAll('span')].filter((s) => !s.children.length).map((s) => s.textContent.trim()).filter((t) => t && t !== ',');
+    const yAt = leaves.findIndex((t) => /^(1[34]\d\d|20\d\d)$/.test(t));
+    const kind = (leaves.find((t) => /^قیمت (بازار|کارخانه|نمایندگی)$/.test(t)) || '').replace('قیمت ', '');
+    const priceText = leaves.find((t) => /^\d{1,3}(,\d{3}){2,}$/.test(t));
+    if (names.length < 2 || yAt < 0 || !kind || !priceText) continue;
+    const next = leaves[yAt + 1] || '';
+    out.push({
+      make: names[0],
+      model: names[1],
+      trim: names.slice(2).join(' '),
+      year: Number(leaves[yAt]),
+      note: /^(دیروز|امروز|قیمت|\d)/.test(next) ? '' : next,
+      kind,
+      price: Number(priceText.replace(/,/g, '')),
+      change: leaves.find((t) => /%$/.test(t)) || '',
+    });
+  }
+  return out;
+}
+
+module.exports = { collectListItems, clickLoadMore, nextPageLink, detectBlock, extractAdPage, collectBamaList, collectBamaLinks, extractBamaAd, extractBamaPrices };

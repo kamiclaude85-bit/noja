@@ -928,3 +928,16 @@ tr.sold { opacity: .55; }
 .live-now { font-size: 12.5px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .live-progress { height: 4px; border-radius: 99px; background: color-mix(in srgb, var(--primary) 18%, transparent); overflow: hidden; }
 .live-progress span { display: block; height: 100%; background: var(--primary); border-radius: 99px; transition: width .4s; }
+.src-tag.divar { background: #fdecec; color: #b42318; }
+@media (prefers-color-scheme: dark) { .src-tag.divar { background: #3a1612; color: #f97066; } }
+/* Bama's new-car prices */
+.card.new-prices { margin-top: 12px; padding: 14px 16px; }
+.card.new-prices .card-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.card.new-prices .card-h h2 { margin: 0; font-size: 16px; display: flex; align-items: center; gap: 6px; }
+.np-table { margin-top: 8px; display: flex; flex-direction: column; }
+.np-row { display: grid; grid-template-columns: minmax(0, 1.6fr) 1fr 1fr; gap: 8px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.np-row.np-head { border-top: 0; font-size: 12px; color: var(--text-3); padding-top: 0; }
+.np-row small { color: var(--text-3); font-size: 12px; }
+.np-note { margin: 8px 0 0; font-size: 12px; }
+.pbar-new { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 8px; font-size: 13px; color: var(--text); }
+.pbar-new small { color: var(--text-2); }

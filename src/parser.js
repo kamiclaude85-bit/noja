@@ -299,6 +299,17 @@
     'بنز', 'بی‌ام‌و', 'ب‌ام‌و', 'فولکس', 'فولکس‌واگن', 'شورولت', 'فورد', 'لکسوس', 'جک', 'چری', 'ام‌وی‌ام', 'هایما', 'لیفان', 'جیلی', 'بسترن',
     'دانگ‌فنگ', 'دنگ‌فنگ', 'بایک', 'کی‌ام‌سی', 'فیدلیتی', 'دیگنیتی', 'سانگ‌یانگ', 'تارا', 'آریسان', 'زامیاد', 'مدیران', 'کرمان', 'لاماری', 'جیپ', 'لندرور', 'پورشه', 'آئودی', 'ولوو', 'سیتروئن'];
 
+  // Model names Bama writes differently from Divar (normalized Bama name → Divar's).
+  const MODEL_ALIASES = {
+    'پژو 207': 'پژو 207i',
+  };
+  /** «پژو 207» (Bama) → «پژو 207i» (Divar); other names as they are. */
+  function divarModelName(name) {
+    const n = normalizeText(name);
+    for (const [from, to] of Object.entries(MODEL_ALIASES)) if (n === from || n.startsWith(`${from} `)) return to + String(name).trim().slice(from.length);
+    return String(name).trim();
+  }
+
   /** Which car model an ad is: { key, label, trim }. Uses Divar's breadcrumbs when read, else «برند و مدل». */
   // Models whose second word is a different vehicle (پیکان وانت / پیکان سواری).
   const WITH_BODY = ['پیکان'];
@@ -839,6 +850,8 @@
     estimatePublished,
     placeOf,
     modelOf,
+    divarModelName,
+    MODEL_ALIASES,
     valueTags,
     valueBoost,
     bodyCondition,

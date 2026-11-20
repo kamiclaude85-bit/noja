@@ -72,9 +72,7 @@ function listUrl(modelUrl, c = {}, { sort } = {}) {
 }
 
 // Bama's model names that Divar writes differently (normalized Bama name → Divar's).
-const MODEL_ALIASES = {
-  'پژو 207': 'پژو 207i',
-};
+const MODEL_ALIASES = P.MODEL_ALIASES;
 
 // Bama's «وضعیت بدنه» in Divar's words, so the same body rules apply to both.
 function bodyInDivarWords(v) {
@@ -107,7 +105,7 @@ function toPost(raw, item = {}) {
   const model = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
   const trim = String(raw.trim || '').trim();
   // Divar's name for the same model, so both sites land in one price market.
-  const divarModel = MODEL_ALIASES[P.normalizeText(`${make} ${model}`)] || `${make} ${model}`.trim();
+  const divarModel = P.divarModelName(`${make} ${model}`);
   const brand = [divarModel, trim].filter(Boolean).join(' ').replace(/\s+/g, ' ');
   const price = ld.offers && Number(ld.offers.price) > 0 ? Number(ld.offers.price) : priceOf(item.lines);
   const km = ld.mileageFromOdometer && ld.mileageFromOdometer.value != null ? Number(ld.mileageFromOdometer.value) : null;

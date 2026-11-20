@@ -26,7 +26,7 @@ function mountBrowser(opts) {
   B = {
     opts,
     posts: [],
-    filters: { ...defaultFilters(opts.criteria), ...prefs.get(`noja.filters.${opts.key}`, {}) },
+    filters: { ...defaultFilters(opts.criteria), ...(FILTER_MEM.get(opts.key) || {}) },
     sort: prefs.get('noja.sort', 'default'),
     view: prefs.get('noja.view', 'list'),
     q: '',
@@ -101,7 +101,9 @@ function passes(p, f, skip) {
   return true;
 }
 
-function saveFilters() { prefs.set(`noja.filters.${B.opts.key}`, B.filters); }
+// Filters last while you stay on a page (it redraws itself); a page opened again starts empty.
+const FILTER_MEM = new Map();
+function saveFilters() { FILTER_MEM.set(B.opts.key, { ...B.filters }); }
 function setFilter(patch) {
   Object.assign(B.filters, patch);
   saveFilters();
@@ -634,6 +636,20 @@ function guideLine(p) {
     h('a', { href: `#/prices?model=${encodeURIComponent(g.modelKey)}` }, 'قیمت‌یاب'));
 }
 
+/** Zero-km ad: Bama's market (and factory) price of the day for that model, trim and year. */
+function zeroKmLine(p) {
+  if (!p.price || (p.mileage != null && p.mileage > 1000)) return null;
+  const market = bamaNewPriceFor(p, 'بازار');
+  if (!market) return null;
+  const factory = bamaNewPriceFor(p, 'کارخانه');
+  const diff = p.price - market.price;
+  const pct = Math.round((Math.abs(diff) / market.price) * 100);
+  return h('div', { class: 'pbar-new' }, icon('trend', 'sm'),
+    h('span', null, 'قیمت روز صفر در باما: ', h('b', { class: 'num' }, formatPrice(market.price)),
+      factory ? [' · کارخانه ', h('b', { class: 'num' }, formatPrice(factory.price))] : null,
+      h('small', null, ` (${market.trim || market.model}${market.note ? `، ${market.note}` : ''}) — این آگهی ${pct < 1 ? 'هم‌قیمت آن' : `${fa(pct)}٪ ${diff < 0 ? 'ارزان‌تر' : 'گران‌تر'}`}`)));
+}
+
 const ZONE_TEXT = { great: 'قیمت عالی', good: 'قیمت خوب', fair: 'قیمت منصفانه', high: 'گران' };
 
 /**
@@ -667,6 +683,7 @@ function priceBar(p) {
       `قیمت را ${formatPrice(was - p.price)} کم کرد: از ${formatPrice(was)} (${ZONE_TEXT[old.zone]}) به ${formatPrice(p.price)} (${ZONE_TEXT[v.zone]})`);
   })() : null;
   const amount = formatPrice(Math.abs(Math.round(v.diff / 1e6) * 1e6));
+  const newLine = zeroKmLine(p);
   const bubble = Math.abs(v.diff) < d.expected * 0.01 ? 'هم‌قیمت بازار'
     : v.diff < 0 ? `${amount} پایین‌تر از قیمت معمول` : `${amount} بالاتر از قیمت معمول`;
   return h('div', { class: `pbar z-${v.zone}` },
@@ -682,6 +699,7 @@ function priceBar(p) {
         was > p.price ? h('span', { class: 'pbar-was', title: `قیمت قبلی: ${formatPrice(was)}`, style: `inset-inline-start:${at(was)}` }) : null,
         h('span', { class: 'pbar-dot', style: `inset-inline-start:${at(p.price)}` }))),
     dropLine,
+    newLine,
     h('ul', { class: 'pbar-advice' },
       h('li', { class: 'great' }, h('i'), 'عالی: تا ', h('b', { class: 'num' }, formatPrice(v.great))),
       h('li', { class: 'good' }, h('i'), 'خوب: تا ', h('b', { class: 'num' }, formatPrice(v.good))),

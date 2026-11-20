@@ -15,6 +15,7 @@ const CRM = require('./crm');
 const P = require('./parser');
 
 const MAX_RUNS = 30;
+const BAMA_PRICES_KEY = '__bama_prices'; // see setBamaPrices
 const MAX_BACKUPS = 30;
 /** Backup files: radyab-YYYY-MM-DD(-n).json.gz; older ones from before the rename are noja-…. */
 const BACKUP_NAME_RE = /^(radyab|noja)-\d{4}-\d{2}-\d{2}(-\d+)?\.json\.gz$/;
@@ -377,6 +378,22 @@ class Store {
     this.db.gone.ads = this.db.gone.ads.filter((t) => !ads.has(t));
     this.db.gone.runs = this.db.gone.runs.filter((id) => !runs.has(id));
     this.scheduleFlush();
+  }
+
+  /**
+   * Bama's daily new-car prices. Kept as a hidden entry of the searches list, so they reach the
+   * online panel the way searches already do (the panel takes them out of the list).
+   */
+  setBamaPrices(items) {
+    this.db.searches[BAMA_PRICES_KEY] = { tokens: [], createdAt: Date.now(), criteria: { hidden: true, bamaPrices: { at: Date.now(), items } } };
+    this.changes.searches = true;
+    this.bump();
+    this.scheduleFlush();
+  }
+
+  bamaPricesAt() {
+    const s = this.db.searches[BAMA_PRICES_KEY];
+    return (s && s.criteria && s.criteria.bamaPrices && s.criteria.bamaPrices.at) || 0;
   }
 
   touchSearch(key, criteria) {

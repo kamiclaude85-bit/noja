@@ -342,6 +342,10 @@ class Scanner {
           await this.idle(H.natural(...pace.gap));
         }
       }
+      // Bama's new-car prices of the day, once a day, after a Bama search.
+      if (bama && !this.control.stop && Date.now() - this.store.bamaPricesAt() > 20 * 3600 * 1000) {
+        await this.refreshBamaPrices(run, page).catch((e) => this.log(e));
+      }
       return this.finish(run, this.control.stop ? 'stopped' : 'done');
     } finally {
       this.store.flush();
@@ -679,6 +683,27 @@ class Scanner {
     const want = B.listUrl(target, c, { sort: c.bamaSort });
     if (page.url() !== want) { await H.sleep(H.natural(800, 1800)); await this.gotoChecked(run, page, want); }
     return page.url();
+  }
+
+  /** «قیمت روز خودرو» on Bama: open it, scroll it slowly to the end, keep every row. */
+  async refreshBamaPrices(run, page) {
+    this.setStatus(run, 'reading', 'در حال خواندن قیمت روز ماشین‌های صفر از باما…', '');
+    await H.sleep(H.natural(1500, 3500));
+    await this.gotoChecked(run, page, B.HOST + '/price');
+    await page.waitForSelector('a[href^="/price/"]', { timeout: 20000 }).catch(() => {});
+    // The page shows only the rows near the screen: collect them on the way down.
+    const found = new Map();
+    let idle = 0;
+    for (let i = 0; i < 150 && idle < 6 && !this.control.stop; i++) {
+      const before = found.size;
+      for (const r of await page.evaluate(S.extractBamaPrices).catch(() => [])) found.set([r.make, r.model, r.trim, r.year, r.note, r.kind].join('|'), r);
+      const atEnd = await page.evaluate(() => window.scrollY + window.innerHeight >= document.body.scrollHeight - 80).catch(() => true);
+      idle = found.size === before && atEnd ? idle + 1 : 0;
+      await H.scrollBy(page, H.rand(700, 1100));
+      await H.sleep(H.natural(500, 1200));
+    }
+    const rows = Array.from(found.values());
+    if (rows.length >= 20) this.store.setBamaPrices(rows);
   }
 
   /** Bama's list: the cards on the page, scrolling a little for more (as a visitor would). */

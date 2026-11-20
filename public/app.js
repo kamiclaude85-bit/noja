@@ -55,6 +55,18 @@ async function updateLiveBar() {
   bar.hidden = false;
 }
 
+/** Opening a page again (or the app): no filters left from last time. Bot settings stay. */
+function freshFilters() {
+  FILTER_MEM.clear();
+  BUDGET_MEM = {};
+  BUDGET_TYPED = '';
+  PRICE_TYPED = '';
+  for (const k of Object.keys(BUDGET_OPEN)) delete BUDGET_OPEN[k];
+  prefs.set('radyab.city', '');
+  prefs.set('radyab.period', DEFAULT_PERIOD);
+}
+freshFilters();
+
 function updateShell() {
   updateLiveBar();
   let newCount = 0; let due = 0;
@@ -185,6 +197,7 @@ function render() {
   bellPop.hidden = true;
   markNav(route);
   const view = $('#view');
+  if (PAGE.name && PAGE.name !== route.name) freshFilters(); // another page: its filters start empty
   PAGE = { name: route.name, route, update: null };
   switch (route.name) {
     case 'ads':

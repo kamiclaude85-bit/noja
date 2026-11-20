@@ -410,8 +410,36 @@ function renderPrices(view, params) {
 
   view.replaceChildren(h('div', { class: 'page' }, head, picker,
     h('div', { class: 'price-title' }, h('h2', null, h('bdi', null, label), trimName ? h('small', null, ' · ', h('bdi', null, trimName)) : null)),
-    trimChips, kmBox, chart, h('div', { class: 'guide-grid' }, cards), myCard));
+    trimChips, kmBox, newCarCard(modelKey, trimKey), chart, h('div', { class: 'guide-grid' }, cards), myCard));
   if (sure.length) { fillTrims(); calc(); }
+}
+
+/**
+ * «قیمت روز صفر» from Bama for this model (or the chosen trim): market and factory price of
+ * each trim and year, as Bama lists them that day.
+ */
+function newCarCard(modelKey, trimKey) {
+  const rows = bamaNewPrices(modelKey).filter((r) => !trimKey || r.trimKey === trimKey);
+  if (!rows.length) return null;
+  const groups = new Map();
+  for (const r of rows) {
+    const k = `${r.year}|${r.trim}|${r.note}`;
+    const g = groups.get(k) || { year: r.year, trim: r.trim, note: r.note };
+    if (r.kind === 'بازار') g.market = r; else if (r.kind === 'کارخانه') g.factory = r; else g.dealer = r;
+    groups.set(k, g);
+  }
+  const list = Array.from(groups.values()).filter((g) => g.market || g.factory).sort((a, b) => b.year - a.year || (a.market ? a.market.price : 0) - (b.market ? b.market.price : 0));
+  const at = App.bamaPrices && App.bamaPrices.at;
+  return h('section', { class: 'card new-prices' },
+    h('div', { class: 'card-h' }, h('h2', null, icon('trend', 'sm'), 'قیمت روز صفر کیلومتر'),
+      h('small', { class: 'muted' }, `از باما${at ? ` · ${agoFa(at)}` : ''}`)),
+    h('div', { class: 'np-table', role: 'table' },
+      h('div', { class: 'np-row np-head', role: 'row' }, h('span', null, 'تیپ'), h('span', null, 'بازار'), h('span', null, 'کارخانه')),
+      list.slice(0, 14).map((g) => h('div', { class: 'np-row', role: 'row' },
+        h('span', null, h('bdi', null, g.trim || 'معمولی'), h('small', null, ` ${toFaYearShort(g.year)}${g.note ? ` · ${g.note}` : ''}`)),
+        h('b', { class: 'num' }, g.market ? formatPrice(g.market.price) : '—'),
+        h('span', { class: 'num muted' }, g.factory ? formatPrice(g.factory.price) : '—')))),
+    h('p', { class: 'muted np-note' }, 'قیمت بازار یعنی قیمت صفرِ تحویلی امروز در بازار؛ قیمت کارخانه یعنی قیمت فروش رسمی شرکت (با ثبت‌نام و انتظار).'));
 }
 
 // Colors of the trims on the chart: fixed order (most ads first), validated palette; the rest is «سایر».
