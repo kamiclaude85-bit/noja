@@ -59,13 +59,25 @@ function pickLink(links, query) {
   return best;
 }
 
-/** The list address for a model page and the search's limits (one model year goes in the path). */
+// Bama's city in the address (province_city), for the cities of the panel. Not found: Zahedan.
+const CITIES = {
+  tehran: 'tehran-tehran', karaj: 'alborz-karaj', mashhad: 'razavi_khorasan-mashhad', isfahan: 'isfahan-isfahan', shiraz: 'fars-shiraz',
+  tabriz: 'azarbaijan_sharghi-tabriz', ahvaz: 'khuzestan-ahvaz', qom: 'qom-qom', rasht: 'gilan-rasht', kermanshah: 'kermanshah-kermanshah',
+  urmia: 'azarbaijan_gharbi-urmia', kerman: 'kerman-kerman', yazd: 'yazd-yazd', hamedan: 'hamedan-hamedan', qazvin: 'qazvin-qazvin',
+  arak: 'markazi-arak', sari: 'mazandaran-sari', gorgan: 'golestan-gorgan', zanjan: 'zanjan-zanjan', ardabil: 'ardebil-ardabil',
+  'bandar-abbas': 'hormozgan-bandar_abbas',
+};
+
+/** The list address for a model page and the search's limits (one model year and the city go in the path). */
 function listUrl(modelUrl, c = {}, { sort } = {}) {
   const u = new URL(modelUrl, HOST);
   const lim = P.limitsOf(c);
   const y1 = lim.yearMin != null ? P.shamsiYear(lim.yearMin) : null;
   const y2 = lim.yearMax != null ? P.shamsiYear(lim.yearMax) : null;
   if (y1 && y1 === y2 && /^\/car\/[a-z0-9-]+$/.test(u.pathname) && !/-y\d{4}$/.test(u.pathname)) u.pathname += `-y${y1}`;
+  const city = CITIES[c.city];
+  if (city && u.pathname === '/car') u.pathname = `/car/all/${city}`;
+  else if (city && /^\/car\/[a-z0-9-]+$/.test(u.pathname)) u.pathname += `/${city}`;
   if (c.personalOnly) u.searchParams.set('seller', '1');
   if (sort === 'cheapest') u.searchParams.set('sort', '4');
   return u.href;
@@ -156,4 +168,4 @@ function alignModel(post) {
   return post;
 }
 
-module.exports = { alignModel, HOST, TOKEN_PREFIX, isBamaUrl, isBamaToken, tokenOf, yearOfHref, priceOf, pickLink, listUrl, bodyInDivarWords, toPost };
+module.exports = { CITIES, alignModel, HOST, TOKEN_PREFIX, isBamaUrl, isBamaToken, tokenOf, yearOfHref, priceOf, pickLink, listUrl, bodyInDivarWords, toPost };

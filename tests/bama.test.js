@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const B = require('../src/bama');
 const D = require('../src/deals');
+const P = require('../src/parser');
 
 const makes = [
   { href: 'https://bama.ir/car/peugeot', text: 'خرید و فروش پژو' },
@@ -37,6 +38,13 @@ test('bama: tokens, years and list addresses', () => {
   assert.equal(B.listUrl('https://bama.ir/car/peugeot-207', { yearMin: 1400, yearMax: 1403, personalOnly: true }, { sort: 'cheapest' }), 'https://bama.ir/car/peugeot-207?seller=1&sort=4');
 });
 
+test('bama: the city goes in the address', () => {
+  assert.equal(B.listUrl('https://bama.ir/car/peugeot-207', { city: 'karaj', yearMin: 1402, yearMax: 1402 }), 'https://bama.ir/car/peugeot-207-y1402/alborz-karaj');
+  assert.equal(B.listUrl('https://bama.ir/car', { city: 'tehran' }), 'https://bama.ir/car/all/tehran-tehran');
+  assert.equal(B.listUrl('https://bama.ir/car/saina', { city: 'iran' }), 'https://bama.ir/car/saina', 'all of Iran: no city');
+  assert.equal(B.listUrl('https://bama.ir/car/saina/fars-shiraz', { city: 'tehran' }), 'https://bama.ir/car/saina/fars-shiraz', 'a pasted link keeps its city');
+});
+
 test('bama: an ad page becomes a post like a Divar one; body words in Divar terms', () => {
   assert.equal(B.bodyInDivarWords('بدون رنگ'), 'سالم و بی‌خط و خش');
   assert.equal(B.bodyInDivarWords('دو لکه رنگ'), 'رنگ‌شدگی در ۲ ناحیه');
@@ -62,7 +70,7 @@ test('bama: an ad page becomes a post like a Divar one; body words in Divar term
   assert.equal(p.body, 'سالم و بی‌خط و خش');
   assert.equal(p.description, 'سورن پلاس فول سفارشی');
   assert.equal(p.seller, 'personal');
-  assert.ok(!JSON.stringify(p).includes('09'), 'no phone number');
+  assert.ok(!/09\d{9}/.test(P.toEnDigits(JSON.stringify({ ...p, publishedAt: 0 }))), 'no phone number');
   const dealer = B.toPost({ ...raw, dealer: 'تجارت خودرو خسروانی' }, { href: raw.ld.url });
   assert.equal(dealer.seller, 'dealer');
 });

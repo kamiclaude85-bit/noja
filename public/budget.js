@@ -58,13 +58,13 @@ const BUDGET_OPEN = {};
 let BUDGET_TYPED = ''; // words in the model box, kept while the page redraws itself
 // The bot settings are kept on this device; the car, budget and filters only while you stay on
 // the page (a search opened again starts empty).
-const BUDGET_KEEP = ['speed', 'maxAds', 'sites'];
+const BUDGET_KEEP = ['speed', 'maxAds', 'sites', 'city'];
 let BUDGET_MEM = {};
 function budgetPrefs() {
   const saved = prefs.get(BUDGET_PREF, {});
   const keep = Object.fromEntries(BUDGET_KEEP.filter((k) => saved[k] != null).map((k) => [k, saved[k]]));
   return { from: '', to: '', picks: [], origin: '', yearMin: '', yearMax: '', gearbox: '', personal: false, bodyOk: false, chassisOk: false, kmMax: '',
-    speed: 'slow', maxAds: '100', link: '', sites: 'both', ...keep, ...BUDGET_MEM };
+    speed: 'slow', maxAds: '100', link: '', sites: 'both', city: 'tehran', ...keep, ...BUDGET_MEM };
 }
 
 /** Divar search address for one pick (or for all cars) with the limits and filters. */
@@ -80,7 +80,7 @@ function divarBudgetUrl(path, o) {
   if (o.bodyOk) q.set('body_status', 'intact');
   if (o.chassisOk) q.set('chassis_status', 'both-healthy');
   const qs = q.toString();
-  return `https://divar.ir/s/${budgetCity()}/car${path ? `/${path}` : ''}${qs ? `?${qs}` : ''}`;
+  return `https://divar.ir/s/${o.city || budgetCity()}/car${path ? `/${path}` : ''}${qs ? `?${qs}` : ''}`;
 }
 
 /** What the bot is doing right now, when it matters for starting a search. */
@@ -200,6 +200,9 @@ function renderBudget(view, params) {
       h('label', { class: 'check wide' }, recheck, 'این بار همهٔ آگهی‌ها دوباره باز شوند (کندتر؛ معمولاً لازم نیست)')));
 
   const err = h('p', { class: 'form-error', role: 'alert' });
+  // which city (kept on this device): Divar and Bama both search only there
+  const citySel = h('select', { 'aria-label': 'شهر', onchange: (e) => save({ city: e.target.value }) },
+    CITIES.map(([v, t]) => h('option', { value: v, selected: (s.city || 'tehran') === v }, v === 'iran' ? 'همهٔ شهرها (سراسر ایران)' : t)));
   // where the bot looks: Divar, Bama or both
   const SITES = [['both', 'دیوار و باما'], ['divar', 'فقط دیوار'], ['bama', 'فقط باما']];
   const siteName = () => ({ both: 'دیوار و باما', divar: 'دیوار', bama: 'باما' }[s.sites || 'both']);
@@ -222,6 +225,7 @@ function renderBudget(view, params) {
       h('label', { class: 'field' }, h('span', null, 'حداکثر کارکرد (کیلومتر)'), km)),
     more, bot,
     h('div', { class: 'field-label' }, 'کجا بگردد؟'), sitesSeg,
+    h('label', { class: 'field city-field' }, h('span', null, 'شهر'), citySel),
     h('div', { class: 'form-actions' }, goBtn, showBtn),
     err);
   // What is typed stays, even if the page redraws itself before a button is pressed.
@@ -261,8 +265,8 @@ function renderBudget(view, params) {
     return found.length ? found : [{ path: '', q: i.fa, name: i.fa }];
   };
   const searchDivar = async (L, btn) => {
-    const o = { min: L.min, max: L.max, yearMin: L.yMin, yearMax: L.yMax, kmMax: L.kmMax, origin: s.origin, gearbox: s.gearbox, personal: s.personal, bodyOk: s.bodyOk, chassisOk: s.chassisOk };
-    const base = { city: budgetCity(), maxAgeDays: reviewPeriod(), maxAds: P.parseNumber(s.maxAds) || 100, speed: s.speed || 'slow', recheckAll: recheck.checked,
+    const o = { city: s.city || 'tehran', min: L.min, max: L.max, yearMin: L.yMin, yearMax: L.yMax, kmMax: L.kmMax, origin: s.origin, gearbox: s.gearbox, personal: s.personal, bodyOk: s.bodyOk, chassisOk: s.chassisOk };
+    const base = { city: s.city || 'tehran', maxAgeDays: reviewPeriod(), maxAds: P.parseNumber(s.maxAds) || 100, speed: s.speed || 'slow', recheckAll: recheck.checked,
       priceMin: L.min || null, priceMax: L.max || null, yearMin: L.yMin, yearMax: L.yMax, mileageMax: L.kmMax };
     let list;
     if (s.link) {
