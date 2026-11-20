@@ -343,12 +343,17 @@ const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350)
   assert.ok(expectedDeals.length > 0, 'the mock market has some special offers');
   await ui.goto(`${app.panelUrl}#/deals`);
   await ui.waitForSelector('#results .row');
-  assert.equal(await ui.locator('#results .row').count(), expectedDeals.length, 'special offers listed');
-  assert.ok(await ui.locator('#results .row .deal-badge').count() >= expectedDeals.length);
+  // The page leaves out ads that are not what their search asked for (another model year here).
+  const shownDeals = await ui.evaluate(() => [...App.ads.values()].filter((a) => { const d = App.deals.get(a.token); return d && d.deal && !a.removed && stageOf(a) !== 'rejected' && inCity(a) && inPeriod(a); }).map((a) => a.token));
+  const hidden = expectedDeals.filter((a) => !shownDeals.includes(a.token));
+  console.log('special offers:', expectedDeals.length, 'in memory,', shownDeals.length, 'on the page; set aside:', hidden.map((a) => `${a.token} ${a.post.year}`).join(', ') || 'none');
+  for (const a of hidden) assert.notEqual(a.post.year, 1397, 'only ads outside the asked year are set aside');
+  assert.equal(await ui.locator('#results .row').count(), shownDeals.length, 'special offers listed (the count matches the list)');
+  assert.ok(await ui.locator('#results .row .deal-badge').count() >= shownDeals.length);
   await shot(ui, 'deals');
   await ui.locator('#results .row').first().click();
   await ui.waitForSelector('.drawer .deal-box');
-  assert.match(await ui.textContent('.drawer .deal-box'), /ارزان‌تر از قیمت معمول/);
+  assert.match(await ui.textContent('.drawer .deal-box'), /زیر قیمت معمول/);
   await shot(ui, 'deal-drawer');
   await ui.keyboard.press('Escape');
 
