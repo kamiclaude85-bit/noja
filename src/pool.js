@@ -44,7 +44,7 @@ class ScannerPool {
 
   start(criteria) {
     const s = this.scannerFor(criteria);
-    if (s.busy) throw new Error(`یک جستجوی ${siteOf(criteria) === 'bama' ? 'باما' : 'دیوار'} در حال انجام است.`);
+    if (s.busy) throw new Error(`یک جستجوی ${siteOf(criteria) === 'bama' ? 'باما' : 'آگهی‌ها'} در حال انجام است.`);
     return s.start(criteria);
   }
 

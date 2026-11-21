@@ -219,7 +219,7 @@ function describeCriteria(c) {
     let path = '';
     try { path = decodeURIComponent(new URL(c.searchUrl).pathname).split('/car/')[1] || ''; } catch (_) { path = ''; }
     const item = path && typeof catalogItems === 'function' ? catalogItems().find((i) => i.path === path) : null;
-    parts.push(item ? item.fa : path ? 'جستجوی دیوار' : 'همهٔ خودروها');
+    parts.push(item ? item.fa : path ? 'جستجوی آگهی‌ها' : 'همهٔ خودروها');
   } else if (lim.priceMin || lim.priceMax) parts.push('همهٔ خودروها');
   if (lim.yearMin || lim.yearMax) {
     parts.push(lim.yearMin === lim.yearMax ? `مدل ${faYear(lim.yearMin)}` : `مدل ${lim.yearMin ? faYear(lim.yearMin) : '…'} تا ${lim.yearMax ? faYear(lim.yearMax) : '…'}`);
@@ -466,8 +466,8 @@ function bamaNewPriceFor(p, kind = 'بازار') {
 function sourceChip(p) {
   const other = App.dups && App.dups.get(p.token);
   const bama = p.source === 'bama';
-  const text = `${bama ? 'باما' : 'دیوار'}${other ? ` · در ${bama ? 'دیوار' : 'باما'} هم هست` : ''}`;
-  return h('span', { class: `src-tag ${bama ? 'bama' : 'divar'}`, title: other ? 'همین ماشین (همان مدل، سال، کارکرد و قیمت) در هر دو سایت آگهی شده؛ در قیمت‌ها یک بار حساب می‌شود.' : `این آگهی از ${bama ? 'باما' : 'دیوار'} خوانده شده` }, text);
+  const text = `${bama ? 'باما' : 'آگهی‌ها'}${other ? ` · در ${bama ? 'آگهی‌ها' : 'باما'} هم هست` : ''}`;
+  return h('span', { class: `src-tag ${bama ? 'bama' : 'divar'}`, title: other ? 'همین ماشین (همان مدل، سال، کارکرد و قیمت) در هر دو سایت آگهی شده؛ در قیمت‌ها یک بار حساب می‌شود.' : `این آگهی از ${bama ? 'باما' : 'آگهی‌ها'} خوانده شده` }, text);
 }
 
 /**

@@ -16,7 +16,7 @@ function alerts() {
     if (f.callDue) out.push({ kind: 'call', t: a.crm.nextCallAt, token: p.token, text: `وقت تماس با «${p.title}»`, sub: f.missed ? `${fa(f.missed)} بار جواب نداده` : whenFa(a.crm.nextCallAt) });
     if (f.visitOverdue) out.push({ kind: 'visit', t: a.crm.visitAt, token: p.token, text: `نتیجهٔ بازدید «${p.title}» را ثبت کنید`, sub: whenFa(a.crm.visitAt) });
     else if (f.visitToday) out.push({ kind: 'visit', t: a.crm.visitAt, token: p.token, text: `بازدید امروز: «${p.title}»`, sub: whenFa(a.crm.visitAt) });
-    if (f.sold && App.meta.activeStages.includes(f.stage)) out.push({ kind: 'sold', t: a.removed, token: p.token, text: `«${p.title}» از دیوار حذف شد`, sub: 'احتمالاً فروخته شده' });
+    if (f.sold && App.meta.activeStages.includes(f.stage)) out.push({ kind: 'sold', t: a.removed, token: p.token, text: `«${p.title}» از سایت حذف شد`, sub: 'احتمالاً فروخته شده' });
     if (f.priceDrop && Date.now() - f.priceDrop.t < DAY && f.stage !== 'rejected') out.push({ kind: 'drop', t: f.priceDrop.t, token: p.token, text: `«${p.title}» ارزان‌تر شد`, sub: `${formatPrice(f.priceDrop.from)} ← ${formatPrice(f.priceDrop.to)}` });
   }
   return out.sort((a, b) => (b.t || 0) - (a.t || 0));
@@ -58,7 +58,7 @@ async function updateLiveBar() {
     const done = run && run.stats ? run.stats.opened || 0 : 0;
     const reading = run && run.status === 'reading' && total;
     return h('div', { class: 'live-row' },
-      h('div', { class: 'live-what' }, h('span', { class: 'src-tag ' + (c.source === 'bama' ? 'bama' : 'divar') }, c.source === 'bama' ? 'باما' : 'دیوار'),
+      h('div', { class: 'live-what' }, h('span', { class: 'src-tag ' + (c.source === 'bama' ? 'bama' : 'divar') }, c.source === 'bama' ? 'باما' : 'آگهی‌ها'),
         h('b', null, run ? describeCriteria(c) : '…')),
       run ? h('div', { class: 'live-now' }, run.message || '', run.activity ? [' — ', h('bdi', null, '«' + run.activity + '»')] : null) : null,
       reading ? h('div', { class: 'live-progress', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(total), 'aria-valuenow': String(done) },
@@ -67,7 +67,7 @@ async function updateLiveBar() {
   bar.replaceChildren(
     h('span', { class: 'live-pulse', 'aria-hidden': 'true' }),
     h('div', { class: 'live-text' },
-      h('div', { class: 'live-title' }, ids.length > 1 ? 'ربات همزمان در حال جستجو در دیوار و باما' : 'ربات در حال جستجو',
+      h('div', { class: 'live-title' }, ids.length > 1 ? 'ربات همزمان در حال جستجو در آگهی‌ها و باما' : 'ربات در حال جستجو',
         queued ? h('small', null, ' · ' + fa(queued) + ' جستجوی دیگر در نوبت') : null),
       rows),
     h('a', { class: 'btn sm', href: ids.length > 1 ? '#/runs' : '#/run/' + encodeURIComponent(ids[0]) }, 'جزئیات'));
@@ -126,7 +126,7 @@ function updateShell() {
     return;
   }
   acc.classList.toggle('on', !!App.state.loggedIn);
-  $('.label', acc).textContent = App.offline ? 'ربات در دسترس نیست' : App.state.loggedIn ? 'به دیوار وصل هستید' : 'ورود به دیوار';
+  $('.label', acc).textContent = App.offline ? 'ربات در دسترس نیست' : App.state.loggedIn ? 'به سایت آگهی‌ها وصل هستید' : 'ورود به سایت آگهی‌ها';
   $('#todayCount').textContent = App.offline ? '' : `امروز ${fa(App.state.today || 0)} آگهی باز شد`;
 }
 

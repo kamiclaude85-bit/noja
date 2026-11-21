@@ -96,8 +96,8 @@ function searchNotices() {
   }
   if (App.state.loggedIn === false && !App.offline && !App.host) {
     out.push(h('div', { class: 'notice' }, icon('login'),
-      h('div', { class: 'grow' }, h('b', null, 'یک بار وارد حساب دیوار شوید. '), 'می‌توانید همین حالا جستجو را شروع کنید؛ ربات صبر می‌کند تا وارد شوید.'),
-      h('button', { class: 'btn sm', type: 'button', onclick: () => api('/api/login', { method: 'POST' }).catch(() => {}) }, 'ورود به دیوار')));
+      h('div', { class: 'grow' }, h('b', null, 'یک بار وارد حساب سایت آگهی‌ها شوید. '), 'می‌توانید همین حالا جستجو را شروع کنید؛ ربات صبر می‌کند تا وارد شوید.'),
+      h('button', { class: 'btn sm', type: 'button', onclick: () => api('/api/login', { method: 'POST' }).catch(() => {}) }, 'ورود به سایت آگهی‌ها')));
   }
   return out;
 }
@@ -158,7 +158,7 @@ function renderBudget(view, params) {
     const all = q && list.length > 1 && !picks.includes(`t:${search.value.trim()}`) ? [h('button', { class: 'chip-btn', type: 'button', role: 'option', onclick: () => { takeTyped(); search.focus(); } }, h('b', null, `همهٔ «${search.value.trim()}»ها`))] : [];
     sugg.replaceChildren(...all, ...list.map((i) => h('button', { class: 'chip-btn', type: 'button', role: 'option', onclick: () => { addPick(i.key); search.focus(); } },
       i.brand ? h('b', null, i.fa) : i.fa, i.brand ? h('small', null, 'همهٔ مدل‌ها') : null)),
-    ...(q && !list.length ? [h('span', { class: 'muted' }, 'در فهرست دیوار نیست؛ با همین نوشته جستجو می‌شود.')] : []));
+    ...(q && !list.length ? [h('span', { class: 'muted' }, 'در فهرست سایت نیست؛ با همین نوشته جستجو می‌شود.')] : []));
   };
   search.addEventListener('input', drawSugg);
   search.addEventListener('keydown', (e) => { if (e.key === 'Enter' && search.value.trim()) { e.preventDefault(); takeTyped(); } });
@@ -195,8 +195,8 @@ function renderBudget(view, params) {
       h('label', { class: 'field' }, h('span', null, 'سرعت ربات'), speed),
       h('label', { class: 'field' }, h('span', null, 'حداکثر آگهی جدید در هر جستجو'), maxAds,
         h('span', { class: 'help' }, `امروز ${fa(App.state.today || 0)} آگهی باز شده`)),
-      h('label', { class: 'field wide' }, h('span', null, 'یا لینک یک جستجوی آماده در دیوار یا باما'), link,
-        h('span', { class: 'help' }, 'اگر خودتان در دیوار یا باما فیلتر کرده‌اید، لینک صفحه را اینجا بگذارید؛ به‌جای انتخاب‌های بالا همین جستجو می‌شود.')),
+      h('label', { class: 'field wide' }, h('span', null, 'یا لینک یک جستجوی آماده در سایت آگهی‌ها یا باما'), link,
+        h('span', { class: 'help' }, 'اگر خودتان در سایت آگهی‌ها یا باما فیلتر کرده‌اید، لینک صفحه را اینجا بگذارید؛ به‌جای انتخاب‌های بالا همین جستجو می‌شود.')),
       h('label', { class: 'check wide' }, recheck, 'این بار همهٔ آگهی‌ها دوباره باز شوند (کندتر؛ معمولاً لازم نیست)')));
 
   const err = h('p', { class: 'form-error', role: 'alert' });
@@ -204,8 +204,8 @@ function renderBudget(view, params) {
   const citySel = h('select', { 'aria-label': 'شهر', onchange: (e) => save({ city: e.target.value }) },
     CITIES.map(([v, t]) => h('option', { value: v, selected: (s.city || 'tehran') === v }, v === 'iran' ? 'همهٔ شهرها (سراسر ایران)' : t)));
   // where the bot looks: Divar, Bama or both
-  const SITES = [['both', 'دیوار و باما'], ['divar', 'فقط دیوار'], ['bama', 'فقط باما']];
-  const siteName = () => ({ both: 'دیوار و باما', divar: 'دیوار', bama: 'باما' }[s.sites || 'both']);
+  const SITES = [['both', 'آگهی‌ها و باما'], ['divar', 'فقط آگهی‌ها'], ['bama', 'فقط باما']];
+  const siteName = () => ({ both: 'آگهی‌ها و باما', divar: 'آگهی‌ها', bama: 'باما' }[s.sites || 'both']);
   const goBtn = h('button', { class: 'btn primary lg', type: 'submit' }, icon('search'), `جستجو در ${siteName()}`);
   const sitesSeg = h('div', { class: 'seg sites' }, SITES.map(([v, t]) => h('button', {
     type: 'button', 'aria-pressed': String((s.sites || 'both') === v),
@@ -270,7 +270,7 @@ function renderBudget(view, params) {
       priceMin: L.min || null, priceMax: L.max || null, yearMin: L.yMin, yearMax: L.yMax, mileageMax: L.kmMax };
     let list;
     if (s.link) {
-      if (!/^https:\/\/([a-z0-9-]+\.)?(divar\.ir\/s\/|bama\.ir\/car)/.test(s.link)) { err.textContent = 'لینک باید نشانی یک صفحهٔ جستجوی دیوار (divar.ir/s/…) یا باما (bama.ir/car/…) باشد.'; return; }
+      if (!/^https:\/\/([a-z0-9-]+\.)?(divar\.ir\/s\/|bama\.ir\/car)/.test(s.link)) { err.textContent = 'لینک باید نشانی یک صفحهٔ جستجوی سایت آگهی‌ها یا باما (bama.ir/car/…) باشد.'; return; }
       // A ready-made Divar search: its own filters are the limits.
       list = [{ city: base.city, maxAgeDays: base.maxAgeDays, maxAds: base.maxAds, speed: base.speed, recheckAll: base.recheckAll, searchUrl: s.link }];
     } else {
@@ -310,7 +310,7 @@ function renderBudget(view, params) {
   drawPicks();
   drawSugg();
 
-  const head = pageHead('جستجوی ماشین', 'ماشین و محدوده‌ات را بگو؛ ربات از دیوار جمع می‌کند و بهترین‌ها را با هم‌مدل و هم‌سال خودشان می‌سنجد.',
+  const head = pageHead('جستجوی ماشین', 'ماشین و محدوده‌ات را بگو؛ ربات از سایت آگهی‌ها جمع می‌کند و بهترین‌ها را با هم‌مدل و هم‌سال خودشان می‌سنجد.',
     [citySelect(() => { App.computeGuide(); render(); }), periodSelect(() => { App.computeGuide(); render(); })]);
   if (!shown) {
     const y = window.scrollY; // a redraw keeps the place on the page
@@ -352,7 +352,7 @@ function renderBudget(view, params) {
   if (L.min || L.max) bits.push(L.min && L.max ? `${formatPrice(L.min)} تا ${formatPrice(L.max)}` : L.min ? `از ${formatPrice(L.min)}` : `تا ${formatPrice(L.max)}`);
   if (L.yMin || L.yMax) bits.push(L.yMin === L.yMax ? `مدل ${faYear(L.yMin)}` : `مدل ${L.yMin ? faYear(L.yMin) : '…'} تا ${L.yMax ? faYear(L.yMax) : '…'}`);
   if (L.kmMax) bits.push(`تا ${fa(Math.round(L.kmMax / 1000))} هزار کیلومتر`);
-  const divarBtn = h('button', { class: 'btn sm primary', type: 'button', onclick: () => searchDivar(L, divarBtn) }, icon('search', 'sm'), 'جستجو در دیوار');
+  const divarBtn = h('button', { class: 'btn sm primary', type: 'button', onclick: () => searchDivar(L, divarBtn) }, icon('search', 'sm'), 'جستجو در آگهی‌ها');
   const summary = h('div', { class: 'budget-summary' },
     h('div', { class: 'grow' },
       h('b', null, bits.join(' · ')),
@@ -386,7 +386,7 @@ function renderBudget(view, params) {
     },
     title: (n) => `${caution ? 'با احتیاط' : 'بهترین خریدها'} — ${fa(n)} آگهی`,
     emptyTitle: r.total ? 'آگهی قابل مقایسه‌ای نیست' : 'هنوز آگهی‌ای نیست',
-    emptyText: '«جستجو در دیوار» را بزنید؛ ربات آگهی‌های همین ماشین‌ها در این محدوده را جمع می‌کند.',
+    emptyText: '«جستجو در آگهی‌ها» را بزنید؛ ربات آگهی‌های همین ماشین‌ها در این محدوده را جمع می‌کند.',
   });
   B.sort = 'default';
   renderResults();
