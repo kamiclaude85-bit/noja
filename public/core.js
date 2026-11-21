@@ -81,7 +81,7 @@ function agoFa(t) {
 function safeDivarUrl(u) {
   try {
     const url = new URL(u);
-    return url.protocol === 'https:' && /(^|\.)(divar|bama)\.ir$/.test(url.hostname) ? url.href : null;
+    return url.protocol === 'https:' && /(^|\.)((divar|bama)\.ir|hamrah-mechanic\.com|khodro45\.com)$/.test(url.hostname) ? url.href : null;
   } catch (_) { return null; }
 }
 function safeImg(u) {
@@ -199,11 +199,19 @@ function publishedLine(p, cls = 'where') {
   return bits.length ? h('div', { class: cls }, bits) : null;
 }
 
+// Where ads are read from, and the two companies that inspect and sell cars themselves.
+const SITE_FA = { divar: 'دیوار', bama: 'باما', hamrah: 'همراه مکانیک', k45: 'خودرو۴۵' };
+const isCompanyAd = (p) => !!p && (p.source === 'hamrah' || p.source === 'k45');
+/** «شخصی», «نمایشگاهی», or the company («hamrah», «k45») for the seller filter. */
+const sellerKind = (p) => (isCompanyAd(p) ? p.source : p.seller);
+
 function sellerLabel(p) {
+  if (isCompanyAd(p)) return `${SITE_FA[p.source]} · کارشناسی‌شده`;
   if (p.seller === 'dealer') return p.sellerConfidence === 'high' ? 'نمایشگاهی' : 'احتمالاً نمایشگاهی';
   return 'شخصی';
 }
 function sellerBadge(p) {
+  if (isCompanyAd(p)) return h('span', { class: `seller company ${p.source}`, title: `این ماشین را ${SITE_FA[p.source]} کارشناسی کرده و خودش می‌فروشد` }, icon('check'), sellerLabel(p));
   return h('span', { class: `seller ${p.seller}`, title: (p.sellerReasons || []).join('\n') },
     icon(p.seller === 'dealer' ? 'store' : 'user'), sellerLabel(p));
 }
@@ -213,13 +221,13 @@ function describeCriteria(c) {
   const parts = [];
   const lim = P.limitsOf(c);
   if (c.query) parts.push(c.query);
-  else if (c.searchUrl && c.source === 'bama') parts.push('جستجوی باما');
+  else if (c.searchUrl && SITE_FA[c.source] && c.source !== 'divar') parts.push(`جستجوی ${SITE_FA[c.source]}`);
   else if (c.searchUrl) {
     // A search made from Divar's own pages: name the car from the address («…/car/pride/132» → «پراید 132»).
     let path = '';
     try { path = decodeURIComponent(new URL(c.searchUrl).pathname).split('/car/')[1] || ''; } catch (_) { path = ''; }
     const item = path && typeof catalogItems === 'function' ? catalogItems().find((i) => i.path === path) : null;
-    parts.push(item ? item.fa : path ? 'جستجوی آگهی‌ها' : 'همهٔ خودروها');
+    parts.push(item ? item.fa : path ? 'جستجوی دیوار' : 'همهٔ خودروها');
   } else if (lim.priceMin || lim.priceMax) parts.push('همهٔ خودروها');
   if (lim.yearMin || lim.yearMax) {
     parts.push(lim.yearMin === lim.yearMax ? `مدل ${faYear(lim.yearMin)}` : `مدل ${lim.yearMin ? faYear(lim.yearMin) : '…'} تا ${lim.yearMax ? faYear(lim.yearMax) : '…'}`);
@@ -465,9 +473,11 @@ function bamaNewPriceFor(p, kind = 'بازار') {
 /** Where the ad was read: «دیوار» or «باما», and «· در باما هم هست» when the same car is on both. */
 function sourceChip(p) {
   const other = App.dups && App.dups.get(p.token);
-  const bama = p.source === 'bama';
-  const text = `${bama ? 'باما' : 'آگهی‌ها'}${other ? ` · در ${bama ? 'آگهی‌ها' : 'باما'} هم هست` : ''}`;
-  return h('span', { class: `src-tag ${bama ? 'bama' : 'divar'}`, title: other ? 'همین ماشین (همان مدل، سال، کارکرد و قیمت) در هر دو سایت آگهی شده؛ در قیمت‌ها یک بار حساب می‌شود.' : `این آگهی از ${bama ? 'باما' : 'آگهی‌ها'} خوانده شده` }, text);
+  const src = SITE_FA[p.source] ? p.source : 'divar';
+  const oa = other && App.ads.get(other);
+  const osrc = oa && oa.post && SITE_FA[oa.post.source] ? oa.post.source : (src === 'divar' ? 'bama' : 'divar');
+  const text = `${SITE_FA[src]}${other ? ` · در ${SITE_FA[osrc]} هم هست` : ''}`;
+  return h('span', { class: `src-tag ${src}`, title: other ? 'همین ماشین (همان مدل، سال، کارکرد و قیمت) در دو سایت آگهی شده؛ در قیمت‌ها یک بار حساب می‌شود.' : `این آگهی از ${SITE_FA[src]} خوانده شده` }, text);
 }
 
 /**

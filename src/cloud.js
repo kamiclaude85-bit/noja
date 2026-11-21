@@ -352,8 +352,9 @@ class Cloud {
     // The first waiting search of each site whose bot is free starts: a Divar search and a Bama
     // search can run together; within one site the order is kept.
     let started = false;
-    for (const site of ['divar', 'bama']) {
-      const i = this.pending.findIndex((c) => (c.source === 'bama' ? 'bama' : 'divar') === site);
+    const { SITE_IDS, siteOf } = require('./pool');
+    for (const site of SITE_IDS) {
+      const i = this.pending.findIndex((c) => siteOf(c) === site);
       if (i < 0 || !this.scanner.free(this.pending[i])) continue;
       // Daily cap reached: the rest waits until tomorrow (checked again every hour).
       const cap = Number(this.pending[i].dailyLimit) || 300;

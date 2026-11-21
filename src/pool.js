@@ -1,6 +1,6 @@
 /*
- * Two bots side by side: one for Divar, one for Bama, each in its own tab of the same Chrome.
- * Each site still sees one slow visitor; the two only run at the same time.
+ * Bots side by side: one per site (Divar, Bama, Hamrah Mechanic, Khodro45), each in its own tab of
+ * the same Chrome. Each site still sees one slow visitor; they only run at the same time.
  *
  * Has the same face as a single Scanner (busy, current, start, controls) so the rest of the
  * code keeps working, plus what knows about both: runs, free(criteria), byRun(id).
@@ -9,14 +9,16 @@
 
 const { Scanner } = require('./scanner');
 
-const siteOf = (c) => (c && c.source === 'bama' ? 'bama' : 'divar');
+const SITE_IDS = ['divar', 'bama', 'hamrah', 'k45'];
+const SITE_NAMES = { divar: 'دیوار', bama: 'باما', hamrah: 'همراه مکانیک', k45: 'خودرو۴۵' };
+const siteOf = (c) => (c && SITE_IDS.includes(c.source) ? c.source : 'divar');
 
 class ScannerPool {
   constructor(opts) {
-    this.scanners = { divar: new Scanner(opts), bama: new Scanner(opts) };
+    this.scanners = Object.fromEntries(SITE_IDS.map((id) => [id, new Scanner(opts)]));
   }
 
-  /** Runs in progress now (0, 1 or 2). */
+  /** Runs in progress now (one at most per site). */
   get runs() {
     return Object.values(this.scanners).filter((s) => s.busy && s.current).map((s) => s.current);
   }
@@ -44,7 +46,7 @@ class ScannerPool {
 
   start(criteria) {
     const s = this.scannerFor(criteria);
-    if (s.busy) throw new Error(`یک جستجوی ${siteOf(criteria) === 'bama' ? 'باما' : 'آگهی‌ها'} در حال انجام است.`);
+    if (s.busy) throw new Error(`یک جستجوی ${SITE_NAMES[siteOf(criteria)]} در حال انجام است.`);
     return s.start(criteria);
   }
 
@@ -59,4 +61,4 @@ class ScannerPool {
   focus() { const s = this.byRun(this.current && this.current.id); if (s) s.focus(); }
 }
 
-module.exports = { ScannerPool, siteOf };
+module.exports = { ScannerPool, siteOf, SITE_IDS, SITE_NAMES };

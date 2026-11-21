@@ -17,6 +17,7 @@ const P = require('./parser');
 const S = require('./page-scripts');
 const H = require('./human');
 const B = require('./bama');
+const CO = require('./companies');
 
 /** Timing profiles (milliseconds). */
 const SPEEDS = {
@@ -37,6 +38,7 @@ const MAX_LIST_PAGES = 15;
 function searchKey(c) {
   if (c.searchUrl) return `url:${c.searchUrl}`;
   if (c.source === 'bama') return ['bama', P.normalizeText(c.query || ''), c.yearMin || '', c.yearMax || '', c.priceMin || '', c.priceMax || ''].join('|');
+  if (CO.isCompany(c.source)) return [c.source, c.city || '', P.normalizeText(c.query || ''), c.yearMin || '', c.yearMax || '', c.priceMin || '', c.priceMax || ''].join('|');
   const key = ['q', c.city || 'tehran', P.normalizeText(c.query || ''), c.yearMin || '', c.yearMax || ''];
   if (c.priceMin || c.priceMax) key.push(`p${c.priceMin || ''}-${c.priceMax || ''}`);
   return key.join('|');
@@ -79,7 +81,7 @@ class Scanner {
       createdAt: now.getTime(),
       criteria,
       status: 'starting',
-      message: 'در حال باز کردن سایت…',
+      message: 'در حال باز کردن دیوار…',
       activity: '',
       waitUntil: null,
       sourceUrl: '',
@@ -180,7 +182,7 @@ class Scanner {
     if (last) ev.sinceLastBlockMin = Math.round((ev.t - last.t) / 60000);
     await page.bringToFront().catch(() => {});
     const how = await this.waitForUser(run, 'blocked',
-      'سایت تأیید خواسته (کپچا یا «درخواست زیاد»). در پنجرهٔ سایت حلش کنید و «ادامه» را بزنید. اگر کاری نکنید، ربات ۵ دقیقه صبر می‌کند و آرام ادامه می‌دهد.',
+      'دیوار تأیید خواسته (کپچا یا «درخواست زیاد»). در پنجرهٔ دیوار حلش کنید و «ادامه» را بزنید. اگر کاری نکنید، ربات ۵ دقیقه صبر می‌کند و آرام ادامه می‌دهد.',
       { untilMs: Date.now() + 5 * 60 * 1000 });
     ev.resolved = how; // 'user' (you pressed «ادامه»), 'timeout' (waited 5 min), 'stop'
     ev.waitedSec = Math.round((Date.now() - ev.t) / 1000);
@@ -197,26 +199,27 @@ class Scanner {
     this.page = page;
     try {
       // ---- 1. Login ----
-      // Bama needs no account.
-      if (c.source !== 'bama' && c.requireLogin !== false && !(await isLoggedIn(this.context))) {
+      // Bama, Hamrah Mechanic and Khodro45 need no account.
+      if ((!c.source || c.source === 'divar') && c.requireLogin !== false && !(await isLoggedIn(this.context))) {
         await page.goto('https://divar.ir/', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
         await page.bringToFront().catch(() => {});
         await this.waitForUser(run, 'waiting-login',
-          'در پنجرهٔ سایت آگهی‌ها روی دکمهٔ حساب و بعد «ورود به حساب کاربری» بزنید و با شماره و کد پیامکی وارد شوید. ربات خودش متوجه می‌شود؛ اگر نشد «ادامه» را بزنید.',
+          'در پنجرهٔ دیوار روی «دیوار من» و بعد «ورود به حساب کاربری» بزنید و با شماره و کد پیامکی وارد شوید. ربات خودش متوجه می‌شود؛ اگر نشد «ادامه» را بزنید.',
           { autoCheck: () => isLoggedIn(this.context) });
         if (this.control.stop) return this.finish(run, 'stopped');
       }
 
       // ---- 2. Search ----
       const bama = c.source === 'bama';
-      this.setStatus(run, 'collecting', bama ? 'در حال رفتن به باما و پیدا کردن مدل…' : 'در حال رفتن به سایت و جستجو…', '');
-      const listUrl = bama ? await this.openBamaSearch(run, page) : await this.openSearch(run, page);
+      const co = CO.isCompany(c.source);
+      this.setStatus(run, 'collecting', bama ? 'در حال رفتن به باما و پیدا کردن مدل…' : co ? `در حال رفتن به ${CO.SITES[c.source].name} و پیدا کردن مدل…` : 'در حال رفتن به دیوار و جستجو…', '');
+      const listUrl = bama ? await this.openBamaSearch(run, page) : co ? await this.openCompanySearch(run, page) : await this.openSearch(run, page);
       run.sourceUrl = listUrl;
 
       // ---- 3. Collect the list (stops early at ads already seen) ----
       const key = searchKey(c);
       this.store.touchSearch(key, c);
-      if (bama) await this.collectBama(run, page); else await this.collect(run, page);
+      if (bama) await this.collectBama(run, page); else if (co) await this.collectCompany(run, page); else await this.collect(run, page);
       if (this.control.cancel) return this.finish(run, 'stopped', `متوقف شد. ${fa(run.items.length)} آگهی در فهرست پیدا شد و باز نشد.`);
 
       // ---- 4. Decide what to open: only new ads, and old ads whose price changed ----
@@ -298,7 +301,7 @@ class Scanner {
         this.setStatus(run, 'reading', `در حال خواندن آگهی ${fa(n)} از ${fa(queue.length)}`, item.title || '');
         const t0 = Date.now();
         try {
-          const post = bama ? await this.readBamaAd(run, page, item, pace, listUrl) : await this.readAd(run, page, item, pace, listUrl);
+          const post = bama ? await this.readBamaAd(run, page, item, pace, listUrl) : co ? await this.readCompanyAd(run, page, item, pace, listUrl) : await this.readAd(run, page, item, pace, listUrl);
           if (post) {
             const rec = this.store.rememberAd(post, key);
             post.firstSeenAt = rec.firstSeenAt;
@@ -651,12 +654,15 @@ class Scanner {
   /** Click a link on the page like a person; open its address when it is not there. */
   async clickTo(run, page, href) {
     const path = new URL(href).pathname;
-    const link = await page.$('a[href="' + path + '"]').catch(() => null);
+    // a link written with or without the last «/»
+    const bare = path.replace(/\/$/, '');
+    const same = (p) => p.replace(/\/$/, '') === bare;
+    const link = await page.$([path, bare, bare + '/'].map((x) => 'a[href="' + x + '"]').join(', ')).catch(() => null);
     if (link && (await link.isVisible().catch(() => false))) {
       await H.clickElement(page, link).catch(() => {});
-      await page.waitForURL((u) => u.pathname === path, { timeout: 20000 }).catch(() => {});
+      await page.waitForURL((u) => same(u.pathname), { timeout: 20000 }).catch(() => {});
     }
-    if (new URL(page.url()).pathname !== path) await this.gotoChecked(run, page, href);
+    if (!same(new URL(page.url()).pathname)) await this.gotoChecked(run, page, href);
     await H.sleep(H.natural(900, 2000));
   }
 
@@ -687,6 +693,173 @@ class Scanner {
     const want = B.listUrl(target, c, { sort: c.bamaSort || (P.limitsOf(c).priceMax ? 'cheapest' : '') });
     if (page.url() !== want) { await H.sleep(H.natural(800, 1800)); await this.gotoChecked(run, page, want); }
     return page.url();
+  }
+
+  /**
+   * همراه مکانیک / خودرو۴۵: all cars → the make → the model, picked from the site's own lists the
+   * way a person clicks through them; then the model's list (Khodro45: in the search's city).
+   * A pasted link of the site is used as it is.
+   */
+  async openCompanySearch(run, page) {
+    const c = run.criteria;
+    const site = c.source;
+    const s = CO.SITES[site];
+    const modelOf = (path) => {
+      const parts = String(path).split('/').filter(Boolean);
+      return site === 'hamrah' ? (parts[2] && !/^\d+$/.test(parts[2]) ? parts[2] : '') : (parts[1] || '');
+    };
+    if (c.searchUrl && CO.siteOfUrl(c.searchUrl) === site) {
+      await this.gotoChecked(run, page, c.searchUrl);
+      run.companyModel = modelOf(new URL(page.url()).pathname);
+      return page.url();
+    }
+    await this.gotoChecked(run, page, s.host + s.start);
+    await this.idle(H.natural(1500, 3200));
+    let path = s.start;
+    if (c.query) {
+      let pick = null;
+      if (site === 'k45') {
+        pick = CO.pickModel(await page.evaluate(S.k45Catalog).catch(() => []), c.query);
+      } else {
+        const { brands } = await page.evaluate(S.hamrahCatalog).catch(() => ({ brands: [] }));
+        for (const [slug, name] of CO.hamrahMakes(brands, c.query)) {
+          await this.clickTo(run, page, `${s.host}/cars-for-sale/${slug}/`);
+          await this.idle(H.natural(1200, 2600));
+          const { models } = await page.evaluate(S.hamrahCatalog).catch(() => ({ models: [] }));
+          const cat = [{ brand: name, model: '', path: `/cars-for-sale/${slug}/` },
+            ...models.map(([m, mName]) => ({ brand: name, model: mName, path: `/cars-for-sale/${slug}/${encodeURIComponent(m)}/` }))];
+          pick = CO.pickModel(cat, c.query);
+          if (pick) break;
+        }
+      }
+      if (!pick) throw new Error(`«${c.query}» در فهرست خودروهای ${s.name} پیدا نشد.`);
+      path = pick.path;
+      if (site === 'hamrah' || !c.city) await this.clickTo(run, page, s.host + path);
+    }
+    run.companyModel = modelOf(path);
+    const want = CO.listUrl(site, path, c);
+    if (new URL(page.url()).pathname.replace(/\/?$/, '/') !== new URL(want).pathname) {
+      await H.sleep(H.natural(800, 1800));
+      await this.gotoChecked(run, page, want);
+    }
+    return page.url();
+  }
+
+  /** The site's list: the cards on the page, scrolled slowly; Khodro45 has more pages after it. */
+  async collectCompany(run, page) {
+    const c = run.criteria;
+    const site = c.source;
+    const s = CO.SITES[site];
+    const maxNew = Math.max(1, Number(c.maxAds) || 60);
+    const useMemory = !c.recheckAll;
+    const isKnown = (t) => useMemory && !!this.store.knownAd(t);
+    const cityFa = CO.CITY_FA[c.city] || '';
+    const found = new Map();
+    let away = 0;
+    const firstUrl = page.url();
+    const add = async (listUrl) => {
+      for (const it of await page.evaluate(S.collectCompanyList, { site, model: run.companyModel || '' }).catch(() => [])) {
+        if (found.has(it.token)) continue;
+        const card = CO.parseCard(it.lines);
+        // Hamrah Mechanic has no city in its address: cars elsewhere are left on the list
+        if (site === 'hamrah' && !CO.inCity(card.place, cityFa)) { away++; continue; }
+        const title = [card.name, card.trim, card.year].filter(Boolean).join(' ') || it.title;
+        found.set(it.token, { ...it, title, card, listUrl, seenAt: Date.now(), price: card.price, year: card.year });
+      }
+      run.items = Array.from(found.values());
+    };
+    for (let pageNo = 1; pageNo <= 5 && !this.control.stop; pageNo++) {
+      const listUrl = page.url();
+      await page.waitForSelector(s.cardSel, { timeout: 20000 }).catch(() => {});
+      await H.sleep(H.natural(900, 1800));
+      const before0 = found.size;
+      await add(listUrl);
+      let idle = 0;
+      while (!this.control.stop && idle < 3 && found.size < 120) {
+        const fresh = run.items.filter((it) => !isKnown(it.token)).length;
+        if (fresh >= maxNew) break;
+        await this.pauseGate(run);
+        this.setStatus(run, 'collecting', `در حال مرور فهرست ${s.name}: ${fa(fresh)} آگهی جدید`);
+        const before = found.size;
+        await H.scrollBy(page, H.rand(600, 1300));
+        await H.sleep(H.natural(900, 2200));
+        if (H.chance(0.15)) { await H.scrollBy(page, -H.rand(150, 400)); await H.sleep(H.rand(400, 1000)); }
+        await add(listUrl);
+        idle = found.size === before ? idle + 1 : 0;
+      }
+      const fresh = run.items.filter((it) => !isKnown(it.token)).length;
+      // Khodro45 shows 24 cars a page: the next page, as a person would open it
+      if (site !== 'k45' || fresh >= maxNew || found.size === before0 || found.size - before0 < 20) break;
+      await H.sleep(H.natural(1200, 2800));
+      const next = CO.listUrl(site, new URL(firstUrl).pathname, {}, pageNo + 1);
+      await this.gotoChecked(run, page, next);
+    }
+    if (away) run.stats.skipped = (run.stats.skipped || 0) + away;
+    let fresh = 0;
+    const items = [];
+    for (const it of found.values()) {
+      if (!isKnown(it.token)) { if (fresh >= maxNew) continue; fresh++; }
+      items.push(it);
+    }
+    run.items = items.map((it, i) => ({ ...it, order: i }));
+    run.collectStop = this.control.stop ? 'user' : 'end';
+    if (!this.control.cancel) this.control.stop = false;
+    this.store.saveRun(run, true);
+    await H.scrollBy(page, -H.rand(3000, 6000)).catch(() => {});
+  }
+
+  /** Open one ad of همراه مکانیک / خودرو۴۵ (click its card, or its address), read it for a while, go back. */
+  async readCompanyAd(run, page, item, pace, listUrl) {
+    const site = run.criteria.source;
+    let lastErr = null;
+    const list = item.listUrl || listUrl;
+    const tail = new URL(item.href).pathname.split('/').filter(Boolean).pop();
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      if (this.control.stop) return null;
+      try {
+        let response = null;
+        if (!item.direct && page.url() !== list) {
+          if (page.url().includes(tail) || /\/(\d{5,}|cla-[a-z0-9]+)\/?$/i.test(new URL(page.url()).pathname)) await page.goBack({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => null);
+          if (page.url() !== list) await this.gotoChecked(run, page, list);
+          await H.sleep(H.natural(600, 1400));
+        }
+        let card = null;
+        if (attempt === 1 && !item.direct) {
+          for (let i = 0; i < 8 && !card; i++) {
+            card = await page.$(`a[href*="/${tail}"]`).catch(() => null);
+            if (card && !(await card.isVisible().catch(() => false))) card = null;
+            if (!card) { await H.scrollBy(page, H.rand(700, 1200)); await H.sleep(H.natural(400, 900)); }
+          }
+        }
+        if (card) {
+          await H.clickElement(page, card);
+          await page.waitForURL((u) => u.pathname.includes(tail), { timeout: 30000 });
+          await page.waitForLoadState('domcontentloaded', { timeout: 45000 });
+        } else {
+          response = await page.goto(item.href, { waitUntil: 'domcontentloaded', timeout: 45000 });
+        }
+        if (response && [404, 410].includes(response.status())) throw new Error('این آگهی حذف شده است');
+        if (await this.handleBlock(run, page, response)) { attempt--; continue; }
+        const [rMin, rMax] = pace.read;
+        await H.readPage(page, H.natural(rMin, rMax), () => this.control.stop);
+        const raw = await page.evaluate(site === 'hamrah' ? S.extractHamrahAd : S.extractK45Ad);
+        if (raw.removed || raw.sold) throw new Error('این آگهی حذف شده است');
+        if (site === 'k45') {
+          const box = CO.parseCard(raw.boxLines || []);
+          for (const k of ['name', 'year', 'trim', 'km', 'place']) if (raw[k] == null && box[k] != null && box[k] !== '') raw[k] = box[k];
+          if (raw.boxPrice) raw.price = raw.boxPrice;
+        }
+        const post = CO.toPost(site, raw, item);
+        if (!post.title || !post.price) throw new Error('مشخصات آگهی در صفحه پیدا نشد');
+        post.order = item.order;
+        return post;
+      } catch (err) {
+        lastErr = err;
+        if (/حذف شده/.test(err.message)) throw err;
+        await H.sleep(1500 * attempt);
+      }
+    }
+    throw lastErr || new Error('آگهی خوانده نشد');
   }
 
   /** «قیمت روز خودرو» on Bama: open it, scroll it slowly to the end, keep every row. */
@@ -819,7 +992,7 @@ class Scanner {
     }
     const parts = [`${fa(st.newAds || 0)} آگهی جدید`];
     if (st.priceChanged) parts.push(`${fa(st.priceChanged)} تغییر قیمت`);
-    if (st.sold) parts.push(`${fa(st.sold)} آگهی پیگیری‌شده از سایت حذف شد`);
+    if (st.sold) parts.push(`${fa(st.sold)} آگهی پیگیری‌شده از دیوار حذف شد`);
     if (st.known) parts.push(`${fa(st.known)} آگهی از قبل`);
     if (st.offTarget + (st.skipped || 0)) parts.push(`${fa(st.offTarget + (st.skipped || 0))} آگهی نامربوط کنار گذاشته شد`);
     if (st.tooOld) parts.push(`${fa(st.tooOld)} آگهی قدیمی‌تر از بازه باز نشد`);

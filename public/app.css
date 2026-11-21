@@ -763,6 +763,11 @@ tr.sold { opacity: .55; }
 .seg[hidden] { display: none; }
 .seg button { border: 0; background: var(--surface); padding: 8px 16px; font: inherit; font-size: 13.5px; color: var(--text-2); cursor: pointer; }
 .seg button + button { border-inline-start: 1px solid var(--line); }
+/* seller filter: five choices in two rows (همه/شخصی/نمایشگاهی · همراه مکانیک/خودرو۴۵) */
+#sellerSeg { display: grid; grid-template-columns: repeat(6, 1fr); width: 100%; box-sizing: border-box; }
+#sellerSeg button { grid-column: span 2; padding: 6px 4px; }
+#sellerSeg button:nth-child(n+4) { grid-column: span 3; border-top: 1px solid var(--line); }
+#sellerSeg button:nth-child(4) { border-inline-start: 0; }
 .seg button[aria-pressed="true"] { background: var(--primary-soft); color: var(--primary); font-weight: 700; }
 .budget-form .form-actions { margin-top: 16px; }
 .budget-form .form-actions .btn { width: 100%; }
@@ -937,6 +942,10 @@ tr.sold { opacity: .55; }
 .live-progress span { display: block; height: 100%; background: var(--primary); border-radius: 99px; transition: width .4s; }
 .src-tag.divar { background: #fdecec; color: #b42318; }
 @media (prefers-color-scheme: dark) { .src-tag.divar { background: #3a1612; color: #f97066; } }
+.src-tag.hamrah { background: #e8f1fd; color: #1f5fbf; }
+.src-tag.k45 { background: #ecf8f0; color: #1d7a45; }
+@media (prefers-color-scheme: dark) { .src-tag.hamrah { background: #13243d; color: #7fb2f5; } .src-tag.k45 { background: #10291b; color: #6fd39a; } }
+.seller.company { background: var(--primary-soft); color: var(--primary); }
 /* Bama's new-car prices */
 .card.new-prices { margin-top: 12px; padding: 14px 16px; }
 .card.new-prices .card-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }

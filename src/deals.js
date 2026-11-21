@@ -143,7 +143,7 @@
    */
   const sameCarKey = (p) => `${P.modelOf(p).key}|${P.shamsiYear(p.year)}`;
   /** Two ads of the same model and year (see sameCarKey) from different sites, same car? */
-  const sameCar = (a, b) => (a.source === 'bama') !== (b.source === 'bama')
+  const sameCar = (a, b) => (a.source || 'divar') !== (b.source || 'divar')
     && Math.abs((a.mileage || 0) - (b.mileage || 0)) <= 2000
     && Math.abs(a.price - b.price) / Math.max(a.price, b.price) <= 0.03;
   function crossDuplicates(posts) {
@@ -226,6 +226,7 @@
     const havaleh = isHavaleh(p);
     const dealer = p.seller === 'dealer' || havaleh;
     if (havaleh) warnings.push('حواله است، نه ماشین تحویلی؛ احتمالاً واسطه یا نمایشگاه');
+    else if (p.source === 'hamrah' || p.source === 'k45') warnings.push(`فروش از ${p.source === 'hamrah' ? 'همراه مکانیک' : 'خودرو۴۵'} (کارشناسی‌شده)`);
     else if (dealer) warnings.push('نمایشگاهی');
     else reasons.push('فروشنده شخصی');
 

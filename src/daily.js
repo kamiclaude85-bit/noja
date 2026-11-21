@@ -65,7 +65,11 @@ function dueSearches(searches, now = Date.now(), busyKeys = new Set()) {
 const DAILY_KEY = '__daily_check';
 const IDLE_DAYS = 14;
 
-function siteOfSearch(key, c) { return (c && c.source === 'bama') || String(key).startsWith('bama|') ? 'bama' : 'divar'; }
+function siteOfSearch(key, c) {
+  if (c && ['bama', 'hamrah', 'k45'].includes(c.source)) return c.source;
+  const k = String(key).split('|')[0];
+  return ['bama', 'hamrah', 'k45'].includes(k) ? k : 'divar';
+}
 
 /**
  * Which saved searches to run for today's price check.

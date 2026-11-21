@@ -84,10 +84,6 @@ class Store {
       require('./bama').alignModel(rec.post);
       // Photos saved as 200×200 thumbnails: the full-size ones.
       if (Array.isArray(rec.post.images)) rec.post.images = rec.post.images.map(P.fullImage);
-      // The panel says «سایت» where it used to name the site.
-      if (Array.isArray(rec.post.sellerReasons)) {
-        rec.post.sellerReasons = rec.post.sellerReasons.map((r) => String(r).replace('در مشخصات دیوار', 'در مشخصات آگهی').replace('دیوار این آگهی را شخصی', 'سایت این آگهی را شخصی'));
-      }
       // Ads saved before the publish date was read: estimate it from «X ساعت پیش» at read time.
       P.estimatePublished(rec.post, rec.lastReadAt || rec.firstSeenAt);
       if (before !== sig()) this.changes.ads.add(token);

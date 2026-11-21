@@ -358,4 +358,164 @@ function extractBamaPrices() {
   return out;
 }
 
-module.exports = { collectListItems, clickLoadMore, nextPageLink, detectBlock, extractAdPage, collectBamaList, collectBamaLinks, extractBamaAd, extractBamaPrices };
+
+// ---------- همراه مکانیک / خودرو۴۵ ----------
+
+/**
+ * Cards of a Hamrah Mechanic or Khodro45 list page: [{ token, href, title, lines, image }].
+ * opt: { site: 'hamrah' | 'k45', model: the model's address part (cards of other models, e.g.
+ * a «special offers» row, are left out) }.
+ */
+function collectCompanyList(opt) {
+  const hamrah = opt.site === 'hamrah';
+  const re = hamrah ? /^\/cars-for-sale\/([^/]+)\/([^/]+)\/(\d{5,})\/?$/ : /^\/buy-car\/([^/]+)\/([^/]+)\/(cla-[a-z0-9]+)\/?$/i;
+  const out = [];
+  const seen = new Set();
+  for (const a of document.querySelectorAll('a[href]')) {
+    let u;
+    try { u = new URL(a.getAttribute('href'), location.origin); } catch (_) { continue; }
+    const m = decodeURIComponent(u.pathname).match(re);
+    if (!m) continue;
+    const model = (hamrah ? m[2] : m[1]).toLowerCase();
+    const want = String(opt.model || '').toLowerCase();
+    // a make's page (Khodro45 «quick») lists its trims («quick-sr»)
+    if (want && model !== want && !model.startsWith(want + '-')) continue;
+    const id = m[3].toLowerCase();
+    if (seen.has(id)) continue;
+    const lines = (a.innerText || '').split('\n').map((s) => s.trim()).filter(Boolean);
+    if (lines.length < 3) continue;
+    seen.add(id);
+    const img = a.querySelector('img');
+    out.push({
+      token: (hamrah ? 'hm-' : 'k45-') + id,
+      href: u.origin + u.pathname,
+      title: lines.slice(0, 4).join(' '),
+      lines: lines.slice(0, 24),
+      image: (img && (img.currentSrc || img.src)) || '',
+    });
+  }
+  return out;
+}
+
+/** Hamrah Mechanic's makes (and, on a make's page, its models) from the page's own data: { brands: [[slug, name]], models: [[slug, name]] }. */
+function hamrahCatalog() {
+  const d = window.__NEXT_DATA__ && window.__NEXT_DATA__.props && window.__NEXT_DATA__.props.pageProps;
+  if (!d) return { brands: [], models: [] };
+  return { brands: Object.entries(d.brandsDict || {}), models: Object.entries(d.initialModelsDict || {}) };
+}
+
+/** Khodro45's makes and models (Persian name + address part), from the data inside the page. */
+function k45Catalog() {
+  const text = Array.from(document.scripts).map((s) => s.textContent || '').join('\n').replace(/\\"/g, '"');
+  const brands = new Map();
+  for (const m of text.matchAll(/\{"id":(\d+),"title":"([^"]+)","title_en":"[^"]*","seo_slug":"([a-z0-9-]+)"/g)) brands.set(m[1], { name: m[2], slug: m[3] });
+  const out = [];
+  const seen = new Set();
+  // the makes too (Khodro45 files «کوییک», «ساینا» … as makes, their trims as models)
+  for (const b of brands.values()) if (!seen.has(b.slug)) { seen.add(b.slug); out.push({ brand: b.name, model: '', path: '/buy-car/' + b.slug + '/' }); }
+  for (const m of text.matchAll(/\{"id":\d+,"brand_id":(\d+),"title":"([^"]+)","seo_slug":"([a-z0-9-]+)"\}/g)) {
+    const b = brands.get(m[1]);
+    if (!b || seen.has(m[3])) continue;
+    seen.add(m[3]);
+    out.push({ brand: b.name, model: m[2], path: '/buy-car/' + m[3] + '/' });
+  }
+  return out;
+}
+
+/**
+ * A Hamrah Mechanic ad page. From the page's data when it belongs to this address (a page opened
+ * directly), else from what is on screen (opened from a card). Only the car: the consultant's
+ * phone number in the page data is not read.
+ */
+function extractHamrahAd() {
+  const id = (location.pathname.match(/\/(\d{5,})\/?$/) || [])[1] || '';
+  const out = { url: location.origin + location.pathname, rows: {}, parts: [], images: [] };
+  const nd = window.__NEXT_DATA__;
+  const pp = nd && nd.props && nd.props.pageProps;
+  const mine = pp && pp.orderDetails && JSON.stringify(nd.query || {}).includes(id);
+  if (mine) {
+    const c = pp.orderDetails.carInformation || {};
+    out.name = c.carModelName || '';
+    out.trim = c.carTypeName || '';
+    out.year = c.carYear || null;
+    out.km = c.km != null ? c.km : null;
+    out.place = String(c.visitingPlace || '').replace(/,\s*/g, '، ');
+    out.gearbox = c.gearBox || '';
+    out.price = c.price || null;
+    out.sold = !!c.isSold;
+    for (const s of ((pp.orderDetails.carSpecifications || {}).specs || [])) if (s && s.title && s.value != null) out.rows[s.title] = String(s.value);
+    for (const p of ((pp.inspectionReport || {}).damagedParts || [])) if (p && p.text && p.description) out.parts.push({ part: p.text, text: p.description });
+    for (const g of (pp.gallery || [])) if (g && g.largeImage) out.images.push(g.largeImage);
+    return out;
+  }
+  // on screen
+  const lines = (document.body.innerText || '').split('\n').map((s) => s.trim()).filter(Boolean);
+  for (const l of lines) {
+    // specs are written «کارکرد : …» (a space before «:»); report lines «کاپوت: رنگ شدگی» are read below
+    const m = l.match(/^([^:]{2,20}?)\s+:\s*(.{1,40})$/);
+    if (m && !/تماس|تلفن|موبایل|مشاور/.test(m[1])) out.rows[m[1].trim()] = m[2].trim();
+  }
+  const ri = lines.indexOf('گزارش کارشناسی');
+  if (ri >= 0) {
+    for (const l of lines.slice(ri + 1, ri + 40)) {
+      const m = l.match(/^([^:]{2,40}):\s*(.{2,60})$/);
+      if (!m) break;
+      out.parts.push({ part: m[1].trim(), text: m[2].trim() });
+    }
+  }
+  const pi = lines.findIndex((l) => /^قیمت خودرو/.test(l));
+  for (const l of lines.slice(pi >= 0 ? pi : 0, (pi >= 0 ? pi : 0) + 8)) {
+    const n = l.replace(/[^\d۰-۹]/g, '').replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d));
+    if (n.length >= 7 && n.length <= 12 && /تومان|^[\d,]+$/.test(l.replace(/\s/g, ''))) { out.price = Number(n); break; }
+  }
+  const seen = new Set();
+  for (const img of document.querySelectorAll('img')) {
+    const src = (img.currentSrc || img.src || '').split('?')[0];
+    if (/ncdn\.hamrah-mechanic\.com\/[0-9a-f]{20,}\.(jpe?g|webp|png)$/i.test(src) && !seen.has(src)) { seen.add(src); out.images.push(src); }
+  }
+  out.sold = /فروخته شد/.test(document.body.innerText || '') && !out.price;
+  return out;
+}
+
+/** A Khodro45 ad page: the price box, the details, the expert report's damaged parts, the photos. */
+function extractK45Ad() {
+  const out = { url: location.origin + location.pathname, rows: {}, parts: [], images: [], boxLines: [] };
+  const leaves = (el) => Array.from(el.querySelectorAll('*')).filter((e) => !e.children.length).map((e) => (e.textContent || '').trim()).filter(Boolean);
+  const boxes = Array.from(document.querySelectorAll('div,aside,section')).filter((e) => {
+    const t = e.textContent || '';
+    return /قیمت/.test(t) && /خرید نقدی/.test(t) && /کیلومتر/.test(t) && t.length < 900;
+  }).sort((a, b) => a.textContent.length - b.textContent.length);
+  if (boxes[0]) {
+    out.boxLines = leaves(boxes[0]).filter((x) => x !== '|');
+    const pm = (boxes[0].textContent || '').replace(/\s/g, '').match(/قیمت([\d۰-۹,٬]{7,})/);
+    if (pm) out.boxPrice = Number(pm[1].replace(/[,٬]/g, '').replace(/[۰-۹]/g, (d) => '۰۱۲۳۴۵۶۷۸۹'.indexOf(d)));
+  }
+  for (const label of ['کارکرد', 'معاینه فنی', 'بیمه', 'نوع سند', 'گارانتی', 'کارت سوخت', 'رنگ', 'رنگ بدنه', 'گیربکس', 'نوع سوخت']) {
+    const el = Array.from(document.querySelectorAll('span,div,p,dt,th')).find((e) => !e.children.length && (e.textContent || '').trim() === label);
+    if (!el) continue;
+    const sib = el.nextElementSibling || (el.parentElement && el.parentElement.lastElementChild !== el ? el.parentElement.lastElementChild : null);
+    const v = sib ? (sib.textContent || '').trim() : '';
+    if (v && v !== label && v.length < 60) out.rows[label] = v;
+  }
+  const seen = new Set();
+  for (const e of document.querySelectorAll('span,div,p,li')) {
+    // «شاسی جلو راننده <span>(ضربه کف اتاق)</span>»: the part and its note in one small box
+    if (e.children.length > 2) continue;
+    const m = (e.textContent || '').trim().replace(/\s+/g, ' ').match(/^([^()]{2,40}?)\s*\(([^()]{2,80})\)$/);
+    if (!m || /^(بیمه|دارد|ندارد)/.test(m[1]) || seen.has(m[0])) continue;
+    seen.add(m[0]);
+    out.parts.push({ part: m[1].trim(), text: m[2].trim() });
+  }
+  const imgs = new Set();
+  for (const img of document.querySelectorAll('img')) {
+    const src = img.getAttribute('src') || '';
+    const m = src.match(/^(https:\/\/media\.khodro45\.com\/public\/image\/[0-9a-f]+_[a-z_]+)\//i);
+    if (m) imgs.add(m[1] + '/600/800/fit');
+  }
+  out.images = Array.from(imgs);
+  out.removed = !boxes[0] && /یافت نشد|404/.test(document.title + ' ' + (document.body.innerText || '').slice(0, 400));
+  return out;
+}
+
+module.exports = { collectListItems, clickLoadMore, nextPageLink, detectBlock, extractAdPage, collectBamaList, collectBamaLinks, extractBamaAd, extractBamaPrices,
+  collectCompanyList, hamrahCatalog, k45Catalog, extractHamrahAd, extractK45Ad };

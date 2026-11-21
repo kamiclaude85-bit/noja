@@ -123,7 +123,9 @@ const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350)
   await ui.click('.empty.big a[href="#/search"]');
   // The search form (one form for model, budget, year, mileage; site and city)
   await ui.waitForSelector('.budget-form .pick-search input');
-  await ui.waitForSelector('.budget-form .seg.sites');
+  // where to look: four on/off choices (دیوار، باما، همراه مکانیک، خودرو۴۵)
+  await ui.waitForSelector('.budget-form .quick.sites');
+  assert.equal(await ui.locator('.budget-form .quick.sites button').count(), 4, 'four sites to choose from');
   await ui.waitForSelector('.budget-form .city-field select');
   await shot(ui, 'search');
   // The search itself is started the way the form does for typed words: the bot types them into

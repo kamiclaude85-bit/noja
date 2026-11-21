@@ -38,18 +38,21 @@ function cleanCriteria(b) {
   const num = (v) => { const n = P.parseNumber(v); return n == null ? null : n; };
   const year = (v) => { const n = num(v); return n == null ? null : P.normalizeYear(n); };
   let searchUrl = String(b.searchUrl || '').trim();
-  let source = b.source === 'bama' ? 'bama' : 'divar';
+  let source = ['bama', 'hamrah', 'k45'].includes(b.source) ? b.source : 'divar';
   if (searchUrl) {
     try {
       const u = new URL(searchUrl);
       const divar = /(^|\.)divar\.ir$/.test(u.hostname) && u.pathname.startsWith('/s/');
       const bama = /(^|\.)bama\.ir$/.test(u.hostname) && u.pathname.startsWith('/car');
-      if (u.protocol !== 'https:' || !(divar || bama)) searchUrl = '';
-      else { searchUrl = u.href; source = bama ? 'bama' : 'divar'; }
+      // همراه مکانیک / خودرو۴۵: their buy pages
+      const co = require('./companies').siteOfUrl(u.href);
+      const coOk = co && (co === 'hamrah' ? u.pathname.startsWith('/cars-for-sale') : u.pathname.startsWith('/buy-car'));
+      if (u.protocol !== 'https:' || !(divar || bama || coOk)) searchUrl = '';
+      else { searchUrl = u.href; source = bama ? 'bama' : coOk ? co : 'divar'; }
     } catch (_) { searchUrl = ''; }
   }
   return {
-    // where to read: «divar» or «bama» (a link decides it by itself)
+    // where to read: «divar», «bama», «hamrah» or «k45» (a link decides it by itself)
     source,
     personalOnly: !!b.personalOnly,
     bamaSort: b.bamaSort === 'cheapest' ? 'cheapest' : '',
@@ -182,9 +185,9 @@ function createServer({ scanner, store, context, notifier, cloud }) {
       if (p === '/api/scan' && req.method === 'POST') {
         const criteria = cleanCriteria(await readBody(req));
         if (!criteria.query && !criteria.searchUrl && !criteria.priceMin && !criteria.priceMax) {
-          return send(res, 400, { error: 'نام خودرو یا محدودهٔ قیمت (یا لینک جستجوی آگهی‌ها) را وارد کنید.' });
+          return send(res, 400, { error: 'نام خودرو یا محدودهٔ قیمت (یا لینک جستجوی دیوار) را وارد کنید.' });
         }
-        if (!scanner.free(criteria)) return send(res, 409, { error: `یک جستجوی ${criteria.source === 'bama' ? 'باما' : 'آگهی‌ها'} در حال انجام است.`, id: scanner.scannerFor(criteria).current.id });
+        if (!scanner.free(criteria)) return send(res, 409, { error: `یک جستجوی ${require('./pool').SITE_NAMES[require('./pool').siteOf(criteria)]} در حال انجام است.`, id: scanner.scannerFor(criteria).current.id });
         const run = scanner.start(criteria);
         return send(res, 200, { id: run.id });
       }
