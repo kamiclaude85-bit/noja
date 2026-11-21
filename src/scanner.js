@@ -198,9 +198,11 @@ class Scanner {
     const page = await this.context.newPage();
     this.page = page;
     try {
-      // ---- 1. Login ----
-      // Bama, Hamrah Mechanic and Khodro45 need no account.
-      if ((!c.source || c.source === 'divar') && c.requireLogin !== false && !(await isLoggedIn(this.context))) {
+      // ---- 1. Login (optional) ----
+      // Reading ads needs no account on any site (only phone numbers do, never read), so the bot
+      // does not wait for one. The account button in the panel still opens the site's sign-in.
+      // (loginFirst is a new name on purpose: searches saved earlier carry requireLogin: true.)
+      if ((!c.source || c.source === 'divar') && c.loginFirst === true && !(await isLoggedIn(this.context))) {
         await page.goto('https://divar.ir/', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
         await page.bringToFront().catch(() => {});
         await this.waitForUser(run, 'waiting-login',

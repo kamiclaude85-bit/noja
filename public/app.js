@@ -126,7 +126,7 @@ function updateShell() {
     return;
   }
   acc.classList.toggle('on', !!App.state.loggedIn);
-  $('.label', acc).textContent = App.offline ? 'ربات در دسترس نیست' : App.state.loggedIn ? 'به سایت آگهی‌ها وصل هستید' : 'ورود به سایت آگهی‌ها';
+  $('.label', acc).textContent = App.offline ? 'ربات در دسترس نیست' : App.state.loggedIn ? 'به سایت آگهی‌ها وصل هستید' : 'ورود به سایت (اختیاری)';
   $('#todayCount').textContent = App.offline ? '' : `امروز ${fa(App.state.today || 0)} آگهی باز شد`;
 }
 

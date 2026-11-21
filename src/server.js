@@ -70,7 +70,9 @@ function cleanCriteria(b) {
     strictYear: !!b.strictYear,
     speed: ['slow', 'normal', 'fast', 'test'].includes(b.speed) ? b.speed : 'normal',
     dailyLimit: Math.min(Math.max(num(b.dailyLimit) || DEFAULT_DAILY_LIMIT, 1), 2000),
-    requireLogin: b.requireLogin !== false,
+    // Signing in to the site is not needed to read ads (only phone numbers need it, and they are
+    // never read). Searches saved with «true» before this change are not held up either.
+    requireLogin: false,
     recheckAll: !!b.recheckAll,
     // Started by the daily automatic check (not by hand).
     auto: !!b.auto,

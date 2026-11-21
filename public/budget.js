@@ -94,11 +94,7 @@ function searchNotices() {
     out.push(h('div', { class: 'notice' }, icon('clock'),
       h('div', { class: 'grow' }, h('b', null, 'کامپیوتر خاموش است. '), 'جستجو در صف می‌ماند و با روشن شدن ربات شروع می‌شود.')));
   }
-  if (App.state.loggedIn === false && !App.offline && !App.host) {
-    out.push(h('div', { class: 'notice' }, icon('login'),
-      h('div', { class: 'grow' }, h('b', null, 'یک بار وارد حساب سایت آگهی‌ها شوید. '), 'می‌توانید همین حالا جستجو را شروع کنید؛ ربات صبر می‌کند تا وارد شوید.'),
-      h('button', { class: 'btn sm', type: 'button', onclick: () => api('/api/login', { method: 'POST' }).catch(() => {}) }, 'ورود به سایت آگهی‌ها')));
-  }
+  // (no sign-in reminder: reading ads needs no account; the account button in the header stays)
   return out;
 }
 

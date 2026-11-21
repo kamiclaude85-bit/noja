@@ -130,19 +130,17 @@ const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350)
   await shot(ui, 'search');
   // The search itself is started the way the form does for typed words: the bot types them into
   // Divar's own search box (the form's model picks become Divar links, tested in real use).
-  const started = await postJson('api/scan', { query: 'پژو ۲۰۶', yearMin: '97', yearMax: '۹۷', keyword: '206', maxAds: '100', speed: 'test', city: 'tehran' });
+  // (requireLogin: true, as searches saved before sign-in became optional carry it: not waited for)
+  const started = await postJson('api/scan', { query: 'پژو ۲۰۶', yearMin: '97', yearMax: '۹۷', keyword: '206', maxAds: '100', speed: 'test', city: 'tehran', requireLogin: true });
   assert.ok(started.id, 'search started');
   await ui.evaluate((id) => { location.hash = `#/run/${id}`; }, started.id);
   await ui.waitForURL(/#\/run\//);
   const runId = ui.url().split('#/run/')[1];
   const getRun = (id = runId) => getJson(`api/runs/${id}`);
 
-  // ---- Login wait ----
-  await waitFor(async () => (await getRun()).status === 'waiting-login', 'login prompt');
-  await ui.bringToFront();
-  await ui.waitForSelector('#status.attn');
-  assert.match(await ui.textContent('#status'), /وارد حساب سایت آگهی‌ها شوید/);
-  await context.addCookies([{ name: 'token', value: 'x'.repeat(48), domain: '.divar.ir', path: '/' }]);
+  // ---- No sign-in needed: the bot starts reading without waiting for an account ----
+  assert.match(await ui.textContent('#account'), /اختیاری/);
+  assert.notEqual((await getRun()).status, 'waiting-login');
 
   // ---- Captcha wait, user presses «ادامه» ----
   await waitFor(async () => (await getRun()).status === 'blocked', 'captcha prompt');
