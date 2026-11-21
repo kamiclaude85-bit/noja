@@ -249,10 +249,10 @@ class Notifier {
       return this.settings.events[event] ? this.notify(key, text, opts) : false;
     };
     if (kind === 'waiting-login') {
-      return send('needsYou', `run:${run.id}:login`, '🔑 ربات ردیاب منتظر شماست: در پنجرهٔ کروم وارد حساب دیوار شوید.', { urgent: true });
+      return send('needsYou', `run:${run.id}:login`, '🔑 ربات ردیاب منتظر شماست: در پنجرهٔ کروم وارد حساب سایت آگهی‌ها شوید.', { urgent: true });
     }
     if (kind === 'blocked') {
-      return send('needsYou', `run:${run.id}:blocked:${Math.floor(this.now() / (10 * 60 * 1000))}`, '⚠️ دیوار تأیید (کپچا) خواسته. در پنجرهٔ کروم حلش کنید و در ردیاب «ادامه» را بزنید.', { urgent: true });
+      return send('needsYou', `run:${run.id}:blocked:${Math.floor(this.now() / (10 * 60 * 1000))}`, '⚠️ سایت تأیید (کپچا) خواسته. در پنجرهٔ کروم حلش کنید و در ردیاب «ادامه» را بزنید.', { urgent: true });
     }
     if (kind === 'done' || kind === 'stopped') {
       const st = run.stats || {};

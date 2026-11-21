@@ -81,7 +81,7 @@ class Scanner {
       createdAt: now.getTime(),
       criteria,
       status: 'starting',
-      message: 'در حال باز کردن دیوار…',
+      message: 'در حال باز کردن سایت…',
       activity: '',
       waitUntil: null,
       sourceUrl: '',
@@ -182,7 +182,7 @@ class Scanner {
     if (last) ev.sinceLastBlockMin = Math.round((ev.t - last.t) / 60000);
     await page.bringToFront().catch(() => {});
     const how = await this.waitForUser(run, 'blocked',
-      'دیوار تأیید خواسته (کپچا یا «درخواست زیاد»). در پنجرهٔ دیوار حلش کنید و «ادامه» را بزنید. اگر کاری نکنید، ربات ۵ دقیقه صبر می‌کند و آرام ادامه می‌دهد.',
+      'سایت تأیید خواسته (کپچا یا «درخواست زیاد»). در پنجرهٔ سایت حلش کنید و «ادامه» را بزنید. اگر کاری نکنید، ربات ۵ دقیقه صبر می‌کند و آرام ادامه می‌دهد.',
       { untilMs: Date.now() + 5 * 60 * 1000 });
     ev.resolved = how; // 'user' (you pressed «ادامه»), 'timeout' (waited 5 min), 'stop'
     ev.waitedSec = Math.round((Date.now() - ev.t) / 1000);
@@ -204,7 +204,7 @@ class Scanner {
         await page.goto('https://divar.ir/', { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
         await page.bringToFront().catch(() => {});
         await this.waitForUser(run, 'waiting-login',
-          'در پنجرهٔ دیوار روی «دیوار من» و بعد «ورود به حساب کاربری» بزنید و با شماره و کد پیامکی وارد شوید. ربات خودش متوجه می‌شود؛ اگر نشد «ادامه» را بزنید.',
+          'در پنجرهٔ سایت آگهی‌ها روی دکمهٔ حساب و بعد «ورود به حساب کاربری» بزنید و با شماره و کد پیامکی وارد شوید. ربات خودش متوجه می‌شود؛ اگر نشد «ادامه» را بزنید.',
           { autoCheck: () => isLoggedIn(this.context) });
         if (this.control.stop) return this.finish(run, 'stopped');
       }
@@ -212,7 +212,7 @@ class Scanner {
       // ---- 2. Search ----
       const bama = c.source === 'bama';
       const co = CO.isCompany(c.source);
-      this.setStatus(run, 'collecting', bama ? 'در حال رفتن به باما و پیدا کردن مدل…' : co ? `در حال رفتن به ${CO.SITES[c.source].name} و پیدا کردن مدل…` : 'در حال رفتن به دیوار و جستجو…', '');
+      this.setStatus(run, 'collecting', bama ? 'در حال رفتن به باما و پیدا کردن مدل…' : co ? `در حال رفتن به ${CO.SITES[c.source].name} و پیدا کردن مدل…` : 'در حال رفتن به سایت و جستجو…', '');
       const listUrl = bama ? await this.openBamaSearch(run, page) : co ? await this.openCompanySearch(run, page) : await this.openSearch(run, page);
       run.sourceUrl = listUrl;
 
@@ -992,7 +992,7 @@ class Scanner {
     }
     const parts = [`${fa(st.newAds || 0)} آگهی جدید`];
     if (st.priceChanged) parts.push(`${fa(st.priceChanged)} تغییر قیمت`);
-    if (st.sold) parts.push(`${fa(st.sold)} آگهی پیگیری‌شده از دیوار حذف شد`);
+    if (st.sold) parts.push(`${fa(st.sold)} آگهی پیگیری‌شده از سایت حذف شد`);
     if (st.known) parts.push(`${fa(st.known)} آگهی از قبل`);
     if (st.offTarget + (st.skipped || 0)) parts.push(`${fa(st.offTarget + (st.skipped || 0))} آگهی نامربوط کنار گذاشته شد`);
     if (st.tooOld) parts.push(`${fa(st.tooOld)} آگهی قدیمی‌تر از بازه باز نشد`);

@@ -189,7 +189,7 @@ function renderFilters(force) {
       toggle('priceOk', 'فقط قیمت معقول یا ارزان‌تر'),
       toggle('priced', 'فقط آگهی‌های قیمت‌دار'),
       toggle('tracking', 'فقط آگهی‌های در حال پیگیری'),
-      toggle('hideSold', 'آگهی‌های حذف‌شده از دیوار را نشان نده')),
+      toggle('hideSold', 'آگهی‌های حذف‌شده از سایت را نشان نده')),
     f.keyword ? h('div', { class: 'fgroup' }, h('span', { class: 'label' }, 'کلمهٔ لازم در عنوان'),
       h('button', { class: 'tag', type: 'button', onclick: () => setFilter({ keyword: '' }), 'aria-label': `حذف ${f.keyword}` }, f.keyword, icon('x'))) : null,
   ].filter(Boolean));
@@ -280,7 +280,7 @@ function renderResults() {
   const personal = list.filter((p) => p.seller === 'personal').length;
   if (list.length) summary.push(h('span', null, ` · ${fa(personal)} شخصی، ${fa(list.length - personal)} نمایشگاهی`));
 
-  const sortOpts = [['default', 'جدیدترین در دیوار'], ['price-asc', 'ارزان‌ترین'], ['price-desc', 'گران‌ترین'], ['km-asc', 'کم‌کارکردترین'], ['year-desc', 'جدیدترین مدل'], ['published', 'تازه‌ترین انتشار'], ['model-year', 'مدل و سال'],
+  const sortOpts = [['default', 'جدیدترین در سایت'], ['price-asc', 'ارزان‌ترین'], ['price-desc', 'گران‌ترین'], ['km-asc', 'کم‌کارکردترین'], ['year-desc', 'جدیدترین مدل'], ['published', 'تازه‌ترین انتشار'], ['model-year', 'مدل و سال'],
     ['deal', 'بهترین پیشنهاد'], ['updated', 'آخرین پیگیری'], ['next-call', 'نزدیک‌ترین تماس']];
   const sortSel = h('select', { 'aria-label': 'مرتب‌سازی', onchange: (e) => { B.sort = e.target.value; prefs.set('noja.sort', B.sort); renderResults(); } },
     sortOpts.map(([v, t]) => h('option', { value: v, selected: B.sort === v }, t)));
@@ -351,7 +351,7 @@ function followLine(p) {
   const f = p._f;
   const c = (p._ad && p._ad.crm) || {};
   const bits = [];
-  if (f.sold) bits.push(h('span', { class: 'cond bad' }, icon('alert'), 'از دیوار حذف شد (احتمالاً فروخته شد)'));
+  if (f.sold) bits.push(h('span', { class: 'cond bad' }, icon('alert'), 'از سایت حذف شد (احتمالاً فروخته شد)'));
   if (f.visitOverdue) bits.push(h('span', { class: 'cond bad' }, icon('alert'), 'نتیجهٔ بازدید ثبت نشده'));
   else if (f.stage === 'visit' && c.visitAt) bits.push(h('span', { class: 'cond info' }, icon('calendar'), `بازدید ${whenFa(c.visitAt)}`));
   if (c.nextCallAt && !['bought', 'rejected'].includes(f.stage)) {
@@ -406,7 +406,7 @@ function renderRow(p, d) {
           onclick: (e) => { e.stopPropagation(); App.crm(p.token, { action: 'stage', stage: shortlisted ? 'new' : 'shortlist' }); } }, icon('star')) : null,
         h('button', { class: 'btn ghost icon-only sm cmp-toggle', type: 'button', 'aria-pressed': String(cmp), 'aria-label': 'افزودن به مقایسه', title: 'افزودن به مقایسه',
           onclick: (e) => { e.stopPropagation(); toggleCompare(p.token); } }, icon('compare')),
-        safeDivarUrl(p.url) ? h('a', { class: 'btn ghost icon-only sm', href: safeDivarUrl(p.url), target: '_blank', rel: 'noopener', 'aria-label': `باز کردن در ${SITE_FA[p.source] || 'دیوار'}`, title: `باز کردن در ${SITE_FA[p.source] || 'دیوار'}`,
+        safeDivarUrl(p.url) ? h('a', { class: 'btn ghost icon-only sm', href: safeDivarUrl(p.url), target: '_blank', rel: 'noopener', 'aria-label': `باز کردن در ${siteIn(p.source)}`, title: `باز کردن در ${siteIn(p.source)}`,
           onclick: (e) => e.stopPropagation() }, icon('external')) : null)));
 }
 
@@ -559,7 +559,7 @@ function crmSection(p) {
     h('div', { class: 'crm-row' },
       h('label', { class: 'field grow' }, h('span', null, 'مرحلهٔ پیگیری'), stageSel),
       h('button', { class: 'btn danger-ghost sm', type: 'button', onclick: () => rejectDialog(p.token), style: 'align-self:end' }, icon('trash', 'sm'), 'حذف با دلیل')),
-    f.sold ? h('div', { class: 'crm-alert' }, icon('alert'), 'این آگهی از دیوار حذف شده؛ احتمالاً فروخته شده است.') : null,
+    f.sold ? h('div', { class: 'crm-alert' }, icon('alert'), 'این آگهی از سایت حذف شده؛ احتمالاً فروخته شده است.') : null,
     f.visitOverdue ? h('div', { class: 'crm-alert' }, icon('alert'), 'زمان بازدید گذشته؛ نتیجه را ثبت کنید.') : null,
 
     h('div', { class: 'crm-block' },
@@ -668,7 +668,7 @@ function priceBar(p) {
   const d = p._deal;
   const v = d && NojaDeals.priceVerdict(p.price, d.expected);
   const divar = (p.fields || {})['ارزیابی قیمت'];
-  const divarLine = divar ? h('div', { class: 'pbar-divar' }, 'ارزیابی دیوار: ', h('b', null, divar)) : null;
+  const divarLine = divar ? h('div', { class: 'pbar-divar' }, 'ارزیابی سایت: ', h('b', null, divar)) : null;
   // A down payment is not the price of the car: no bar.
   if (p.price && NojaDeals.isInstallment(p)) {
     return h('div', { class: 'pbar z-none' }, h('div', { class: 'pbar-h' }, h('b', null, 'ارزیابی قیمت'), h('span', { class: 'pbar-verdict warn' }, 'اقساطی')),
@@ -815,7 +815,7 @@ function openDrawer(token, keepScroll) {
         }), extra.map(([k, v]) => h('div', { class: 'spec' }, h('div', { class: 'k' }, k), h('div', { class: 'v' }, v)))),
         p.description ? [h('h3', { class: 'd-h' }, 'توضیحات فروشنده'), h('p', { class: 'desc' }, p.description)] : null)),
     h('div', { class: 'drawer-foot' },
-      url ? h('a', { class: 'btn primary', href: url, target: '_blank', rel: 'noopener' }, icon('external'), `دیدن آگهی در ${SITE_FA[p.source] || 'دیوار'}`) : null,
+      url ? h('a', { class: 'btn primary', href: url, target: '_blank', rel: 'noopener' }, icon('external'), `دیدن آگهی در ${siteIn(p.source)}`) : null,
       h('button', { class: 'btn cmp-toggle', type: 'button', 'aria-pressed': String(cmp), onclick: () => toggleCompare(p.token) }, icon('compare'), cmp ? 'در مقایسه' : 'مقایسه')));
 
   openOverlay([scrim, panel], (e) => {
@@ -849,7 +849,7 @@ function openCompare() {
     ['بدنه', (p) => h('span', { class: conditionClass(p.body) === 'bad' ? 'cond bad' : null }, p.body || '—')],
     ['موتور', (p) => h('span', { class: conditionClass(p.engine) === 'bad' ? 'cond bad' : null }, p.engine || '—')],
     ['شاسی', (p) => p.chassis || '—'], ['بیمه', (p) => p.insurance || '—'], ['محل', (p) => P.placeOf(p.subtitle) || '—'], ['انتشار', (p) => (p.publishedAt ? (p.publishedApprox ? roughAgoFa(p.publishedAt) : agoFa(p.publishedAt)) : '—')],
-    ['', (p) => (safeDivarUrl(p.url) ? h('a', { class: 'btn sm', href: safeDivarUrl(p.url), target: '_blank', rel: 'noopener' }, icon('external', 'sm'), 'دیوار') : '')],
+    ['', (p) => (safeDivarUrl(p.url) ? h('a', { class: 'btn sm', href: safeDivarUrl(p.url), target: '_blank', rel: 'noopener' }, icon('external', 'sm'), 'آگهی‌ها') : '')],
   ];
   const scrim = h('div', { class: 'scrim', onclick: closeOverlay });
   const modal = h('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': 'مقایسهٔ آگهی‌ها' },

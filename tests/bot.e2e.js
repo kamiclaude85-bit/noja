@@ -141,7 +141,7 @@ const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350)
   await waitFor(async () => (await getRun()).status === 'waiting-login', 'login prompt');
   await ui.bringToFront();
   await ui.waitForSelector('#status.attn');
-  assert.match(await ui.textContent('#status'), /وارد حساب دیوار شوید/);
+  assert.match(await ui.textContent('#status'), /وارد حساب سایت آگهی‌ها شوید/);
   await context.addCookies([{ name: 'token', value: 'x'.repeat(48), domain: '.divar.ir', path: '/' }]);
 
   // ---- Captcha wait, user presses «ادامه» ----
@@ -366,7 +366,7 @@ const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350)
   await ui.waitForSelector('.kpis');
   await ui.click('#bellBtn');
   await ui.waitForSelector('#bellPop .alert-item');
-  assert.match(await ui.textContent('#bellPop'), /از دیوار حذف شد/);
+  assert.match(await ui.textContent('#bellPop'), /از سایت حذف شد/);
   await shot(ui, 'dashboard-alerts');
   await ui.click('#bellBtn');
 

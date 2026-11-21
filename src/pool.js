@@ -10,7 +10,7 @@
 const { Scanner } = require('./scanner');
 
 const SITE_IDS = ['divar', 'bama', 'hamrah', 'k45'];
-const SITE_NAMES = { divar: 'دیوار', bama: 'باما', hamrah: 'همراه مکانیک', k45: 'خودرو۴۵' };
+const SITE_NAMES = { divar: 'آگهی‌ها', bama: 'باما', hamrah: 'همراه مکانیک', k45: 'خودرو۴۵' };
 const siteOf = (c) => (c && SITE_IDS.includes(c.source) ? c.source : 'divar');
 
 class ScannerPool {

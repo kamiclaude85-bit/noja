@@ -73,7 +73,7 @@ try {
     if ($path === '/scan' && $method === 'POST') {
         $c = body_json(100000);
         if (trim((string) ($c['query'] ?? '')) === '' && trim((string) ($c['searchUrl'] ?? '')) === '' && empty($c['priceMin']) && empty($c['priceMax'])) {
-            json_out(400, ['error' => 'نام خودرو یا محدودهٔ قیمت (یا لینک جستجوی دیوار) را وارد کنید.']);
+            json_out(400, ['error' => 'نام خودرو یا محدودهٔ قیمت (یا لینک جستجوی آگهی‌ها) را وارد کنید.']);
         }
         $id = queue_add('scan', $c);
         json_out(200, ['queued' => true, 'id' => $id]);

@@ -422,7 +422,7 @@
         if (!subtitle && asText(data.subtitle)) subtitle = asText(data.subtitle);
       }
       if (wt === 'DESCRIPTION_ROW' && data && !description) description = asText(data.text);
-      if (wt && /BUSINESS|DEALERSHIP|SHOP_|STORE_/i.test(wt)) strongDealer.push(`ویجت فروشگاهی دیوار (${wt})`);
+      if (wt && /BUSINESS|DEALERSHIP|SHOP_|STORE_/i.test(wt)) strongDealer.push(`ویجت فروشگاهی سایت (${wt})`);
 
       const label = asText(obj.title);
       const value = asText(obj.value);
@@ -444,7 +444,7 @@
         if (!val) continue;
         if (BUSINESS_KEY_RE.test(k)) {
           if (PERSONAL_VALUE_RE.test(val)) personalMarks.push(`${k}=${val}`);
-          else if (!/^(none|null|unknown|undefined)$/i.test(val)) strongDealer.push(`نوع آگهی‌دهنده در دیوار: ${val}`);
+          else if (!/^(none|null|unknown|undefined)$/i.test(val)) strongDealer.push(`نوع آگهی‌دهنده در سایت: ${val}`);
         } else if (BUSINESS_REF_KEY_RE.test(k)) {
           strongDealer.push(`آگهی متصل به کسب‌وکار (${k})`);
         }
@@ -630,9 +630,9 @@
       seller = 'dealer'; confidence = 'medium';
       reasons = [];
       if (installment.length) reasons.push(`فروش اقساطی/شرایطی: ${installment.join('، ')}`);
-      if (installmentField) reasons.push(`در مشخصات دیوار: «${installmentField}: ${fields[installmentField]}»`);
+      if (installmentField) reasons.push(`در مشخصات آگهی: «${installmentField}: ${fields[installmentField]}»`);
     } else if (personalMarks.length) {
-      seller = 'personal'; confidence = 'high'; reasons = ['دیوار این آگهی را شخصی علامت زده است'];
+      seller = 'personal'; confidence = 'high'; reasons = ['سایت این آگهی را شخصی علامت زده است'];
     } else if (score >= DEALER_SCORE_THRESHOLD) {
       seller = 'dealer'; confidence = 'low';
       reasons = [`کلمات نمایشگاهی در توضیحات: ${weak.join('، ')}`];

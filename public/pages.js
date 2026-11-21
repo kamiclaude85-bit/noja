@@ -108,7 +108,7 @@ function renderDashboard(view) {  const ads = allAds().map((a) => ({ a, f: adFla
     view.replaceChildren(h('div', { class: 'page' },
       pageHead('پیشخوان', 'هنوز آگهی‌ای جمع نشده است.'),
       h('div', { class: 'empty big' }, icon('car', 'xl'), h('b', null, 'اولین جستجو را شروع کنید'),
-        h('p', null, 'بگویید دنبال چه ماشینی هستید؛ ربات آگهی‌ها را از دیوار جمع می‌کند و اینجا برای پیگیری آماده می‌شوند.'),
+        h('p', null, 'بگویید دنبال چه ماشینی هستید؛ ربات آگهی‌ها را از سایت جمع می‌کند و اینجا برای پیگیری آماده می‌شوند.'),
         h('a', { class: 'btn primary lg', href: '#/search' }, icon('search'), 'جستجوی جدید'))));
     return;
   }
@@ -200,7 +200,7 @@ function renderDashboard(view) {  const ads = allAds().map((a) => ({ a, f: adFla
       kpi('تماس‌های امروز', calls.length, due ? `${fa(due)} مورد وقتش رسیده` : 'همه سر وقت', '#/ads?view=calls', due ? 'red' : '', 'phone'),
       kpi('قرار بازدید', visitsSoon.length, overdueVisits ? `${fa(overdueVisits)} نتیجه ثبت نشده` : 'امروز و فردا', '#/ads?stage=visit', overdueVisits ? 'red' : '', 'calendar'),
       kpi('کاهش قیمت', drops.length, 'در ۷ روز گذشته', '#/ads?view=drops', drops.length ? 'green' : '', 'trend'),
-      kpi('در حال پیگیری', tracking.length, soldTracked.length ? `${fa(soldTracked.length)} تا از دیوار حذف شد` : 'فهرست کوتاه تا بازدید', '#/ads?stage=active', '', 'star')),
+      kpi('در حال پیگیری', tracking.length, soldTracked.length ? `${fa(soldTracked.length)} تا از سایت حذف شد` : 'فهرست کوتاه تا بازدید', '#/ads?stage=active', '', 'star')),
     h('div', { class: 'dash-grid' },
       listCard('پیشنهادهای ویژه', 'flame', deals, dealItem, 'فعلاً آگهی‌ای خیلی زیر قیمت معمول نیست. با آگهی‌های بیشتر دقیق‌تر می‌شود.', '#/deals'),
       listCard('تماس‌های امروز', 'phone', calls, quickCall, 'برای امروز تماسی برنامه‌ریزی نشده.', '#/ads?view=calls'),
@@ -216,7 +216,7 @@ const AD_TABS = [
   ['active', 'همه (فعال)'], ['new', 'جدید'], ['shortlist', 'فهرست کوتاه'], ['calling', 'در حال تماس'], ['waiting', 'منتظر تماس'],
   ['talking', 'صحبت شد'], ['visit', 'قرار بازدید'], ['visited', 'بازدید شد'], ['bought', 'خریدم'], ['rejected', 'حذف‌شده‌ها'],
 ];
-const AD_VIEWS = { calls: 'تماس‌های امروز', drops: 'کاهش قیمت', sold: 'حذف‌شده از دیوار' };
+const AD_VIEWS = { calls: 'تماس‌های امروز', drops: 'کاهش قیمت', sold: 'حذف‌شده از سایت' };
 
 function adTabMatch(f, tab, viewName) {
   if (viewName === 'calls') return f.callToday && !['bought', 'rejected'].includes(f.stage);
@@ -349,19 +349,19 @@ function renderPrices(view, params) {
     chips.replaceChildren(...list.map((m) => h('button', { class: 'chip-btn', type: 'button', 'aria-pressed': String(m.key === modelKey), onclick: () => go(m.key) },
       m.label, m.total ? h('small', null, fa(m.total)) : null)),
     ...(list.length < every.length ? [h('button', { class: 'chip-btn more', type: 'button', onclick: () => { showAll = true; drawChips(); } }, `${fa(every.length - list.length)} مدل دیگر`)] : []),
-    ...(typed && !list.length ? [h('span', { class: 'muted' }, 'در فهرست دیوار پیدا نشد.')] : []));
+    ...(typed && !list.length ? [h('span', { class: 'muted' }, 'در فهرست سایت پیدا نشد.')] : []));
   };
   search.addEventListener('input', () => { PRICE_TYPED = search.value; drawChips(); });
   search.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const l = found(); if (search.value.trim() && l.length) go(l[0].key); } });
   drawChips();
-  const head = pageHead('قیمت‌یاب', 'قیمت آگهی‌های دو ماه اخیر دیوار، هر شهر. آگهی‌های اقساطی و تصادفی حساب نمی‌شوند؛ ماشین رنگ‌دار با قیمتِ «اگر سالم بود» آمده. پای معامله معمولاً چند درصد پایین‌تر بسته می‌شود.');
+  const head = pageHead('قیمت‌یاب', 'قیمت آگهی‌های دو ماه اخیر سایت، هر شهر. آگهی‌های اقساطی و تصادفی حساب نمی‌شوند؛ ماشین رنگ‌دار با قیمتِ «اگر سالم بود» آمده. پای معامله معمولاً چند درصد پایین‌تر بسته می‌شود.');
   const picker = h('section', { class: 'card price-pick' }, h('label', { class: 'pick-search' }, icon('search'), search), chips);
 
   if (want || !entries.length) {
     const collect = () => startScan({ query: want.label, city: budgetCity(), maxAgeDays: reviewPeriod(), maxAds: 40, speed: 'slow' }).catch((e) => toast(e.message, 'err'));
     view.replaceChildren(h('div', { class: 'page' }, head, picker, want
       ? h('div', { class: 'empty big' }, icon('trend', 'xl'), h('b', null, 'از ', h('bdi', null, want.label), ' هنوز آگهی‌ای نخوانده‌ام'),
-        h('p', null, 'ربات آگهی‌های این مدل را آرام از دیوار می‌خواند؛ بعد قیمت خرید و فروشش همین‌جا می‌آید.'),
+        h('p', null, 'ربات آگهی‌های این مدل را آرام از سایت می‌خواند؛ بعد قیمت خرید و فروشش همین‌جا می‌آید.'),
         h('button', { class: 'btn primary lg', type: 'button', onclick: collect }, icon('search'), 'جمع‌آوری آگهی‌های این مدل'))
       : h('div', { class: 'empty big' }, icon('trend', 'xl'), h('b', null, 'هنوز آگهی کافی نیست'),
         h('p', null, 'مدل ماشین را بالا بنویسید تا ربات آگهی‌هایش را بخواند.'))));
@@ -836,7 +836,7 @@ function blocksCard() {
         h('span', { class: 'chip-status' }, blocks.length ? `${fa(week)} بار در ۷ روز اخیر` : 'تا حالا نبوده')),
       blocks.length ? [
         h('p', { class: 'muted', style: 'margin:0 0 8px' },
-          `به‌طور میانگین وقتی دیوار تأیید خواسته، ربات در یک ساعت قبلش ${fa(avg('views1h'))} آگهی و در ۲۴ ساعت قبلش ${fa(avg('views24h'))} آگهی باز کرده بود.`),
+          `به‌طور میانگین وقتی سایت تأیید خواسته، ربات در یک ساعت قبلش ${fa(avg('views1h'))} آگهی و در ۲۴ ساعت قبلش ${fa(avg('views24h'))} آگهی باز کرده بود.`),
         h('ul', { class: 'items' }, blocks.slice(-15).reverse().map((b) => h('li', { class: 'item' },
           h('div', { class: 'item-main' },
             h('b', null, `${dateTimeFa(b.t)} · ${WHERE[b.where] || b.where}`),
@@ -845,7 +845,7 @@ function blocksCard() {
               `${fa(b.runMinutes)} دقیقه بعد از شروع جستجو`, b.sinceLastBlockMin != null ? `${fa(b.sinceLastBlockMin)} دقیقه بعد از کپچای قبلی` : null,
               HOW[b.resolved] || '',
             ].filter(Boolean).join(' · ')))))),
-      ] : h('p', { class: 'muted empty-line' }, 'هر بار دیوار کپچا یا «درخواست زیاد» نشان دهد، اینجا ثبت می‌شود تا الگوی دیوار معلوم شود.'));
+      ] : h('p', { class: 'muted empty-line' }, 'هر بار سایت کپچا یا «درخواست زیاد» نشان دهد، اینجا ثبت می‌شود تا الگوی سایت معلوم شود.'));
   }).catch(() => {}); // the online panel has no captcha log (it is kept on the PC)
   return box;
 }
@@ -925,8 +925,8 @@ function renderRuns(view) {
   const where = (c) => [c && c.city && CITY_NAME[c.city] ? CITY_NAME[c.city] : '', c && c.maxAds ? `تا ${fa(c.maxAds)} آگهی` : ''].filter(Boolean).join(' · ');
 
   // ---- 1. now ----
-  const NOW = { starting: 'در حال شروع', 'waiting-login': 'منتظر ورود شما به دیوار', collecting: 'در حال جمع کردن فهرست آگهی‌ها', reading: 'در حال خواندن آگهی‌ها',
-    resting: 'استراحت کوتاه (مثل یک آدم)', blocked: 'منتظر شما — دیوار سؤال امنیتی پرسیده', paused: 'مکث کرده' };
+  const NOW = { starting: 'در حال شروع', 'waiting-login': 'منتظر ورود شما به سایت آگهی‌ها', collecting: 'در حال جمع کردن فهرست آگهی‌ها', reading: 'در حال خواندن آگهی‌ها',
+    resting: 'استراحت کوتاه (مثل یک آدم)', blocked: 'منتظر شما — سایت سؤال امنیتی پرسیده', paused: 'مکث کرده' };
   const nowCardFor = (cur) => {
     const c = cur.criteria || {};
     const total = cur.toVisit || 0;
@@ -1083,7 +1083,7 @@ function runErrors(run) {
     h('ul', null, errs.map(([token, msg]) => {
       const it = run.items.find((x) => x.token === token) || {};
       const url = safeDivarUrl(it.href);
-      return h('li', null, `${it.title || token}: ${msg} `, url ? h('a', { href: url, target: '_blank', rel: 'noopener' }, 'باز کردن در دیوار') : null);
+      return h('li', null, `${it.title || token}: ${msg} `, url ? h('a', { href: url, target: '_blank', rel: 'noopener' }, 'باز کردن در سایت') : null);
     })));
 }
 
@@ -1114,11 +1114,11 @@ function renderRunStatus() {
   switch (st) {
     case 'starting': title = 'در حال آماده شدن…'; break;
     case 'waiting-login':
-      ic = 'login'; cls = 'attn'; pulse = false; title = 'یک بار وارد حساب دیوار شوید'; sub = run.message;
-      actions = [btn('نمایش پنجرهٔ دیوار', 'external', focus), btn('وارد شدم', 'check', () => runControl('continue'), 'primary'), btn('لغو', null, () => runControl('stop'), 'ghost')];
+      ic = 'login'; cls = 'attn'; pulse = false; title = 'یک بار وارد حساب سایت آگهی‌ها شوید'; sub = run.message;
+      actions = [btn('نمایش پنجرهٔ سایت', 'external', focus), btn('وارد شدم', 'check', () => runControl('continue'), 'primary'), btn('لغو', null, () => runControl('stop'), 'ghost')];
       break;
     case 'collecting':
-      ic = 'search'; title = 'در حال مرور نتایج دیوار'; sub = run.message;
+      ic = 'search'; title = 'در حال مرور نتایج سایت'; sub = run.message;
       actions = [btn('کافیه، برو سراغ آگهی‌ها', 'right', () => runControl('stop')), btn('پایان', 'stop', () => runControl('cancel'), 'ghost')];
       break;
     case 'reading':
@@ -1130,8 +1130,8 @@ function renderRunStatus() {
       actions = [btn('ادامه بدون استراحت', 'play', () => runControl('continue')), btn('پایان', 'stop', () => runControl('stop'), 'ghost')];
       break;
     case 'blocked':
-      ic = 'alert'; cls = 'attn'; pulse = false; title = 'دیوار تأیید می‌خواهد'; sub = run.message; meta = run.waitUntil ? countdown(run.waitUntil) : ''; pct = total ? done / total : 0;
-      actions = [btn('نمایش پنجرهٔ دیوار', 'external', focus), btn('حل شد، ادامه', 'check', () => runControl('continue'), 'primary'), btn('پایان', null, () => runControl('stop'), 'ghost')];
+      ic = 'alert'; cls = 'attn'; pulse = false; title = 'سایت تأیید می‌خواهد'; sub = run.message; meta = run.waitUntil ? countdown(run.waitUntil) : ''; pct = total ? done / total : 0;
+      actions = [btn('نمایش پنجرهٔ سایت', 'external', focus), btn('حل شد، ادامه', 'check', () => runControl('continue'), 'primary'), btn('پایان', null, () => runControl('stop'), 'ghost')];
       break;
     case 'paused':
       ic = 'pause'; pulse = false; title = 'ربات مکث کرده'; sub = `${fa(done)} از ${fa(total)} آگهی خوانده شده`; pct = total ? done / total : 0;
@@ -1288,7 +1288,7 @@ async function drawCloud(box) {
     const form = h('form', { class: 'card', style: 'margin-bottom:16px' },
       h('div', { class: 'card-h' }, h('h2', null, icon('refresh', 'sm'), 'پنل آنلاین'),
         h('span', { class: `chip-status${c.connected ? ' on' : ''}` }, status)),
-      h('p', { class: 'muted', style: 'margin:0 0 12px' }, 'با وصل کردن، آگهی‌ها و پیگیری‌ها روی پنل آنلاین هم دیده می‌شوند و از گوشی هم می‌شود جستجو خواست. حساب دیوار روی همین کامپیوتر می‌ماند.'),
+      h('p', { class: 'muted', style: 'margin:0 0 12px' }, 'با وصل کردن، آگهی‌ها و پیگیری‌ها روی پنل آنلاین هم دیده می‌شوند و از گوشی هم می‌شود جستجو خواست. حساب سایت آگهی‌ها روی همین کامپیوتر می‌ماند.'),
       h('div', { class: 'search-row two' },
         h('label', { class: 'field' }, h('span', null, 'نشانی پنل'), url),
         h('label', { class: 'field' }, h('span', null, 'کلید ربات'), key)),
@@ -1385,7 +1385,7 @@ async function renderSettings(view) {
         evToggle('calls', 'وقتی وقت تماس با فروشنده رسیده (با شماره و لینک آگهی)'),
         evToggle('visits', 'یک ساعت قبل از قرار بازدید، و اگر نتیجهٔ بازدید ثبت نشده'),
         evToggle('runs', 'بعد از هر بررسی: تعداد آگهی‌های جدید و ارزان‌ترین‌ها، کاهش قیمت‌ها'),
-        evToggle('needsYou', 'وقتی ربات منتظر شماست (ورود به دیوار یا کپچا)')),
+        evToggle('needsYou', 'وقتی ربات منتظر شماست (ورود به سایت آگهی‌ها یا کپچا)')),
       h('section', { class: 'card' },
         h('div', { class: 'card-h' }, h('h2', null, 'ساعت سکوت')),
         h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: !!s.quiet.enabled, onchange: (e) => save({ quiet: { enabled: e.target.checked } }) }), 'شب‌ها پیام نفرست (بعداً، صبح فرستاده می‌شود)'),

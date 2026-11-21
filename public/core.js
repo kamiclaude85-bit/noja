@@ -200,7 +200,10 @@ function publishedLine(p, cls = 'where') {
 }
 
 // Where ads are read from, and the two companies that inspect and sell cars themselves.
-const SITE_FA = { divar: 'دیوار', bama: 'باما', hamrah: 'همراه مکانیک', k45: 'خودرو۴۵' };
+// (the first site is not named in the panel: «آگهی‌ها» on its tag, «سایت» in sentences)
+const SITE_FA = { divar: 'آگهی‌ها', bama: 'باما', hamrah: 'همراه مکانیک', k45: 'خودرو۴۵' };
+/** «در سایت» for the first site, «در باما» … for the others. */
+const siteIn = (source) => (source && source !== 'divar' && SITE_FA[source] ? SITE_FA[source] : 'سایت');
 const isCompanyAd = (p) => !!p && (p.source === 'hamrah' || p.source === 'k45');
 /** «شخصی», «نمایشگاهی», or the company («hamrah», «k45») for the seller filter. */
 const sellerKind = (p) => (isCompanyAd(p) ? p.source : p.seller);
@@ -227,7 +230,7 @@ function describeCriteria(c) {
     let path = '';
     try { path = decodeURIComponent(new URL(c.searchUrl).pathname).split('/car/')[1] || ''; } catch (_) { path = ''; }
     const item = path && typeof catalogItems === 'function' ? catalogItems().find((i) => i.path === path) : null;
-    parts.push(item ? item.fa : path ? 'جستجوی دیوار' : 'همهٔ خودروها');
+    parts.push(item ? item.fa : path ? 'جستجوی آگهی‌ها' : 'همهٔ خودروها');
   } else if (lim.priceMin || lim.priceMax) parts.push('همهٔ خودروها');
   if (lim.yearMin || lim.yearMax) {
     parts.push(lim.yearMin === lim.yearMax ? `مدل ${faYear(lim.yearMin)}` : `مدل ${lim.yearMin ? faYear(lim.yearMin) : '…'} تا ${lim.yearMax ? faYear(lim.yearMax) : '…'}`);
