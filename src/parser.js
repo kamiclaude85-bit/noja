@@ -323,9 +323,45 @@
       .replace(/آگهی(?:‌|\s)?های بیشتر برای.*$/, '')
       .replace(/\s+/g, ' ').trim();
     if (!brand) return { key: '', label: 'نامشخص', trim: '' };
+    // The model from Divar's own catalog (car-models.js): the longest catalog name the ad's name
+    // starts with («سمند سورن پلاس XU7P» → «سمند سورن», «شاهین G» → «شاهین»). Bama, Hamrah
+    // Mechanic and Khodro45 names are already in Divar's words, so all four sites meet here.
+    const norm = normalizeText(brand).split(' ').filter(Boolean);
+    const hit = catalogModelOf(norm);
+    if (hit) {
+      // the label and trim in the ad's own spelling («جک S5», not «جک s5»)
+      const n = hit.split(' ').length;
+      const orig = brand.split(' ');
+      let used = 0; let i = 0;
+      while (i < orig.length && used < n) { used += normalizeText(orig[i]).split(' ').filter(Boolean).length; i++; }
+      if (used === n) return { key: hit, label: orig.slice(0, i).join(' '), trim: orig.slice(i).join(' ') };
+      return { key: hit, label: norm.slice(0, n).join(' '), trim: norm.slice(n).join(' ') };
+    }
+    // not in the catalog: the make and the first word after it
     const words = brand.split(' ');
     const n = words.length >= 2 && (MAKES.includes(words[0]) || WITH_BODY.includes(words[0])) ? 2 : 1;
     return { key: normalizeText(words.slice(0, n).join(' ')), label: words.slice(0, n).join(' '), trim: words.slice(n).join(' ') };
+  }
+
+  // Divar's catalog models, by first word, longest first (see car-models.js).
+  let CATALOG_INDEX = null;
+  function catalogModelOf(words) {
+    if (!CATALOG_INDEX) {
+      let list = root.NojaCarModels;
+      if (!list && typeof require === 'function') { try { list = require('./car-models'); } catch (_) { list = []; } }
+      CATALOG_INDEX = new Map();
+      for (const name of list || []) {
+        const w = normalizeText(name).split(' ').filter(Boolean);
+        if (!w.length) continue;
+        if (!CATALOG_INDEX.has(w[0])) CATALOG_INDEX.set(w[0], []);
+        CATALOG_INDEX.get(w[0]).push(w);
+      }
+      for (const arr of CATALOG_INDEX.values()) arr.sort((a, b) => b.length - a.length);
+    }
+    for (const w of CATALOG_INDEX.get(words[0]) || []) {
+      if (w.length <= words.length && w.every((x, i) => words[i] === x)) return w.join(' ');
+    }
+    return null;
   }
 
 

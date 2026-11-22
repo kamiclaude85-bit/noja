@@ -22,6 +22,7 @@ fs.mkdirSync(OUT, { recursive: true });
 fs.cpSync(path.join(ROOT, 'public'), OUT, { recursive: true });
 fs.copyFileSync(path.join(ROOT, 'src', 'parser.js'), path.join(OUT, 'parser.js'));
 fs.copyFileSync(path.join(ROOT, 'src', 'deals.js'), path.join(OUT, 'deals.js'));
+fs.copyFileSync(path.join(ROOT, 'src', 'car-models.js'), path.join(OUT, 'car-models.js'));
 // Server side
 for (const f of ['api.php', 'setup.php', 'cron.php', 'update.php', '.htaccess']) fs.copyFileSync(path.join(ROOT, 'host', f), path.join(OUT, f));
 fs.cpSync(path.join(ROOT, 'host', 'lib'), path.join(OUT, 'lib'), { recursive: true });

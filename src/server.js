@@ -291,8 +291,9 @@ function createServer({ scanner, store, context, notifier, cloud }) {
       if (p === '/' || p === '/index.html') file = path.join(PUBLIC, 'index.html');
       else if (p === '/parser.js') file = path.join(__dirname, 'parser.js');
       else if (p === '/deals.js') file = path.join(__dirname, 'deals.js');
+      else if (p === '/car-models.js') file = path.join(__dirname, 'car-models.js');
       else file = path.join(PUBLIC, path.normalize(decodeURIComponent(p)).replace(/^([/\\])+/, ''));
-      if (!file.startsWith(PUBLIC) && ![path.join(__dirname, 'parser.js'), path.join(__dirname, 'deals.js')].includes(file)) return send(res, 403, 'forbidden', 'text/plain');
+      if (!file.startsWith(PUBLIC) && !['parser.js', 'deals.js', 'car-models.js'].map((f) => path.join(__dirname, f)).includes(file)) return send(res, 403, 'forbidden', 'text/plain');
       fs.readFile(file, (err, buf) => {
         if (err) return send(res, 404, 'not found', 'text/plain');
         send(res, 200, buf, TYPES[path.extname(file)] || 'application/octet-stream');

@@ -164,12 +164,12 @@ test('budget: best buys judged against their own model + year; gaps listed for f
   assert.ok(r.picks.find((x) => x.token === 'b11').score < r.picks[0].score, 'paint lowers the score');
   assert.ok(!r.picks.some((x) => x.post.price > 1000e6), 'over budget left out');
   assert.equal(r.missing.length, 1);
-  assert.equal(r.missing[0].label, 'پراید');
+  assert.equal(r.missing[0].label, 'پراید 131'); // the model from Divar's catalog
   // After the price-range search, the bot lines up a search for the model without comparables.
   const store = { db: { ads: Object.fromEntries(posts.map((p) => [p.token, { post: p }])) } };
   const run = { criteria: { city: 'tehran', maxAgeDays: 30, speed: 'slow', batch: 'abc123', budget: { min: 850e6, max: 1000e6 } } };
   const more = followUpSearches(store, run);
-  assert.deepEqual(more.map((c) => [c.query, c.yearMin, c.yearMax, c.batch]), [['پراید', 1399, 1399, 'abc123']]);
+  assert.deepEqual(more.map((c) => [c.query, c.yearMin, c.yearMax, c.batch]), [['پراید 131', 1399, 1399, 'abc123']]);
 });
 
 test('search queue: waits for the bot, keeps order, holds at the daily cap, drops a stopped batch', () => {
@@ -296,4 +296,18 @@ test('a new-car list read only partly keeps the other makes and is read again', 
   const items = store.db.searches.__bama_prices.criteria.bamaPrices.items;
   assert.equal(items.filter((r) => r.make === 'دنا').length, 200, 'the makes not reached are kept');
   assert.equal(store.bamaPricesAt(), 0, 'read again at the next Bama search');
+});
+
+test('models from Divar\'s catalog: real models apart, trim-level entries folded into their car', () => {
+  const P = require('../src/parser');
+  const key = (b) => P.modelOf({ brand: b }).key;
+  assert.equal(key('سمند سورن پلاس XU7P بنزینی'), 'سمند سورن');
+  assert.equal(key('سمند LX ساده'), 'سمند');
+  assert.equal(key('شاهین G'), key('شاهین GL دنده ای'));
+  assert.equal(key('پراید 131 SE'), 'پراید 131');
+  assert.notEqual(key('پراید 131 SE'), key('پراید وانت 151 GX'));
+  assert.notEqual(key('تیبا 2 (هاچبک) EX'), key('تیبا صندوق‌دار'));
+  assert.equal(key('دنا پلاس EF7 اتوماتیک توربو'), 'دنا');
+  assert.equal(P.modelOf({ brand: 'جک S5 2.0 لیتر اتوماتیک' }).label, 'جک S5'); // shown as written
+  assert.equal(key('سمند سورن پلاس XU7P بنزینیآگهی‌های بیشتر برای سمند سورن'), 'سمند سورن');
 });
