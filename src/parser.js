@@ -183,15 +183,19 @@
   // Levels, from best to worst. `factor` is the usual price of such a car against a clean one,
   // measured on Tehran asking prices (Nov 2026, same model/trim, year and km held equal):
   // 1–2 pieces painted 6–13% under, several pieces / two-tone / accident about 19–21% under.
+  // Price factor of each body level against a clean car of the same trim, year and km. Re-measured
+  // on 1,200 ads (Nov 2026: minor ≈1.00 n=47, paint 0.97 n=20, replaced 0.97 n=6, paintMany 0.79 n=4,
+  // accident 0.88 n=12) and set halfway from the first estimate, as sellers of damaged cars ask
+  // optimistically and the samples are still small.
   const BODY_LEVELS = {
     clean: { rank: 0, label: 'بدنه سالم', factor: 1 },
-    minor: { rank: 1, label: 'خط و خش / صافکاری بی‌رنگ', factor: 0.98 },
-    paint: { rank: 2, label: 'رنگ‌شدگی ۱ تا ۲ قطعه', factor: 0.91 },
-    paintMany: { rank: 3, label: 'رنگ‌شدگی چند قطعه', factor: 0.82 },
-    replaced: { rank: 3, label: 'قطعهٔ تعویضی', factor: 0.94 },
+    minor: { rank: 1, label: 'خط و خش / صافکاری بی‌رنگ', factor: 0.99 },
+    paint: { rank: 2, label: 'رنگ‌شدگی ۱ تا ۲ قطعه', factor: 0.95 },
+    paintMany: { rank: 3, label: 'رنگ‌شدگی چند قطعه', factor: 0.84 },
+    replaced: { rank: 3, label: 'قطعهٔ تعویضی', factor: 0.95 },
     twoTone: { rank: 4, label: 'دوررنگ', factor: 0.8 },
     full: { rank: 5, label: 'تمام‌رنگ', factor: 0.76 },
-    accident: { rank: 6, label: 'تصادفی / ضربهٔ شاسی', factor: 0.8 },
+    accident: { rank: 6, label: 'تصادفی / ضربهٔ شاسی', factor: 0.85 },
   };
   const NUM_WORDS = { یک: 1, یه: 1, دو: 2, سه: 3, چهار: 4, پنج: 5, شش: 6, چند: 3, نیم: 1 };
   const PART = '(?:گلگیر|گل گیر|درب|کاپوت|سقف|صندوق|درب صندوق|ستون|رکاب|درب موتور|درب عقب|درب جلو|پشت آمپر)(?:\\s*(?:ها|های))?(?:\\s*(?:جلو|عقب|راننده|شاگرد|چپ|راست|سمت راننده|سمت شاگرد))?';

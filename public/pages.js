@@ -1551,7 +1551,7 @@ function renderDeals(view, params) {
     emptyText: tab === 'drops' ? 'وقتی فروشنده‌ای قیمتش را پایین بیاورد، اینجا می‌آید.' : 'وقتی آگهی‌ای از هم‌مدل‌ها و هم‌سال‌هایش ارزان‌تر باشد، اینجا می‌آید.',
     // the verdict of the price bar, so a lowered price can be judged from the list
     rowNote: (p) => {
-      const v = p._deal && NojaDeals.priceVerdict(p.price, p._deal.expected);
+      const v = p._deal && NojaDeals.priceVerdict(p.price, p._deal.expected, p._deal.fairTop);
       return v ? h('div', { class: `zone-note z-${v.zone}` }, ZONE_TEXT[v.zone], p._deal.approx ? ' (تقریبی)' : '', ` · خوب تا ${formatPrice(v.good)}`) : null;
     },
   });

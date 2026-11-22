@@ -77,11 +77,14 @@ test('bama: an ad page becomes a post like a Divar one; body words in Divar term
 
 test('the same car on Divar and Bama is found, and counted once in a market', () => {
   const car = (token, price, source, km = 60000) => ({ token, source, brand: 'پژو 207 دنده ای', year: 1402, mileage: km, price: price * 1e6, title: 'پژو', description: '' });
-  const posts = [car('d1', 2500, undefined), car('bm-1', 2520, 'bama', 61000), car('d2', 2400, undefined, 90000), car('d3', 2450, undefined, 70000)];
+  // a real cross-post: same km, nearly the same price; d4/bm-2 share a round km but not the price
+  const posts = [car('d1', 2500, undefined), car('bm-1', 2510, 'bama', 60000), car('d2', 2400, undefined, 90000), car('d3', 2450, undefined, 70000),
+    car('bm-2', 2520, 'bama', 70000)];
   const dup = D.crossDuplicates(posts);
   assert.equal(dup.get('d1'), 'bm-1');
   assert.equal(dup.get('bm-1'), 'd1');
   assert.equal(dup.has('d2'), false);
+  assert.equal(dup.has('bm-2'), false, 'same round km, 3% apart: two cars');
   const g = D.priceGuide(posts).find((x) => x.year === 1402);
-  assert.equal(g.total, 3, 'four ads, three cars');
+  assert.equal(g.total, 4, 'five ads, four cars');
 });

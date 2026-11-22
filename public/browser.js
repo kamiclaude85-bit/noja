@@ -246,7 +246,7 @@ function delta(p) {
   // the same edges as the price bar: «عالی» and «خوب» are under the usual price, «معقول» around it
   if (r <= NojaDeals.ZONES.good) return { cls: 'low', text: `${ap}${fa(Math.max(1, Math.round((1 - r) * 100)))}٪ زیر قیمت معمول` };
   // above the «fair» end of the price bar it is expensive; in between, a reasonable price
-  if (r > NojaDeals.ZONES.fair) return { cls: 'high', text: `${ap}${fa(Math.round((r - 1) * 100))}٪ بالای قیمت معمول` };
+  if (r > (p._deal.fairTop || NojaDeals.ZONES.fair)) return { cls: 'high', text: `${ap}${fa(Math.round((r - 1) * 100))}٪ بالای قیمت معمول` };
   return { cls: 'fair', text: `${p._deal.approx ? 'تقریباً ' : ''}قیمت معقول` };
 }
 
@@ -677,7 +677,7 @@ const ZONE_TEXT = { great: 'قیمت عالی', good: 'قیمت خوب', fair: '
  */
 function priceBar(p) {
   const d = p._deal;
-  const v = d && NojaDeals.priceVerdict(p.price, d.expected);
+  const v = d && NojaDeals.priceVerdict(p.price, d.expected, d.fairTop);
   const divar = (p.fields || {})['ارزیابی قیمت'];
   const divarLine = divar ? h('div', { class: 'pbar-divar' }, 'ارزیابی سایت: ', h('b', null, divar)) : null;
   // A down payment is not the price of the car: no bar.
@@ -697,7 +697,7 @@ function priceBar(p) {
   const ph = (p._ad && p._ad.priceHistory) || [];
   const was = ph.length > 1 ? Math.max(...ph.slice(0, -1).map((x) => x.price || 0)) : 0;
   const dropLine = was > p.price ? (() => {
-    const old = NojaDeals.priceVerdict(was, d.expected);
+    const old = NojaDeals.priceVerdict(was, d.expected, d.fairTop);
     return h('div', { class: 'pbar-drop' }, icon('trend', 'sm'),
       `قیمت را ${formatPrice(was - p.price)} کم کرد: از ${formatPrice(was)} (${ZONE_TEXT[old.zone]}) به ${formatPrice(p.price)} (${ZONE_TEXT[v.zone]})`);
   })() : null;
@@ -706,7 +706,7 @@ function priceBar(p) {
   const bubble = Math.abs(v.diff) < d.expected * 0.01 ? 'هم‌قیمت بازار'
     : v.diff < 0 ? `${amount} پایین‌تر از قیمت معمول` : `${amount} بالاتر از قیمت معمول`;
   return h('div', { class: `pbar z-${v.zone}` },
-    h('div', { class: 'pbar-h' }, h('b', null, 'ارزیابی قیمت'), h('span', { class: `pbar-verdict${d.caution ? ' warn' : ''}` }, ZONE_TEXT[v.zone], d.caution ? ' — با احتیاط' : d.approx || (d.range && d.range[1] > d.range[0] * 1.2) ? ' (تقریبی)' : '')),
+    h('div', { class: 'pbar-h' }, h('b', null, 'ارزیابی قیمت'), h('span', { class: `pbar-verdict${d.caution ? ' warn' : ''}` }, ZONE_TEXT[v.zone], d.caution ? ' — با احتیاط' : d.approx || d.spread > 0.15 ? ' (تقریبی)' : '')),
     h('div', { class: 'pbar-track-wrap' },
       // shifted by its own width in the same proportion, so it stays inside the box at the ends
       h('div', { class: 'pbar-bubble', style: `inset-inline-start:${at(p.price)};transform:translateX(-${at(p.price)})` }, bubble),
@@ -728,7 +728,8 @@ function priceBar(p) {
     // what it was compared with, so a verdict can be checked by eye
     d.range ? h('small', { class: 'pbar-note' }, `قیمت آن آگهی‌ها از ${formatPrice(d.range[0])} تا ${formatPrice(d.range[1])}`,
       d.medKm != null && p.mileage != null ? `؛ کارکرد معمولشان ${fa(Math.round(d.medKm / 1000))} هزار، این ماشین ${fa(Math.round(p.mileage / 1000))} هزار` : '',
-      d.range[1] > d.range[0] * 1.2 ? ' — قیمت‌ها خیلی پراکنده‌اند، با احتیاط قضاوت کنید.' : '.') : null,
+      // spread of the middle half of the prices (one odd ad at either end does not count)
+      d.spread > 0.15 ? ' — قیمت‌ها خیلی پراکنده‌اند، با احتیاط قضاوت کنید.' : '.') : null,
     divarLine);
 }
 

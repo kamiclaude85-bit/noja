@@ -107,7 +107,7 @@ test('too few of the same year: approximate from nearby years, never a special o
   const d = computeDeals(posts);
   const o = d.get('older');
   assert.equal(o.approx, 'years');
-  assert.ok(Math.abs(o.expected - 501e6 / 1.02) < 6e6, 'moved one year back, about 2%');
+  assert.ok(Math.abs(o.expected - 501e6 / 1.05) < 6e6, 'moved one year back, about 5% (no step measured for this model)');
   assert.equal(o.deal, false);
   assert.equal(o.sure, false);
   assert.match(o.reasons[0], /تقریبی/);
@@ -310,4 +310,24 @@ test('models from Divar\'s catalog: real models apart, trim-level entries folded
   assert.equal(key('دنا پلاس EF7 اتوماتیک توربو'), 'دنا');
   assert.equal(P.modelOf({ brand: 'جک S5 2.0 لیتر اتوماتیک' }).label, 'جک S5'); // shown as written
   assert.equal(key('سمند سورن پلاس XU7P بنزینیآگهی‌های بیشتر برای سمند سورن'), 'سمند سورن');
+});
+
+test('audit fixes: one zero-km ad does not swing the mileage effect; the year step is learned; «معقول» follows the market', () => {
+  const D = require('../src/deals');
+  const mk = (t, price, km, year = 1403, extra = {}) => ({ ...base, brand: 'دنا پلاس EF7 اتوماتیک توربو آپشنال', gearbox: 'اتوماتیک', token: t, price: price * 1e6, mileage: km, year, ...extra });
+  // used cars lose ~1% per 10,000 km; two zero-km ads asked far higher
+  const used = [20, 25, 30, 35, 40, 45, 50, 55].map((k, i) => mk(`u${i}`, 3700 - k * 3.7, k * 1000));
+  const posts = [...used, mk('z1', 4200, 0), mk('z2', 4150, 50), mk('ad', 3550, 30000)];
+  const d = D.computeDeals(posts).get('ad');
+  // at 30,000 km the others ask about 3,590: the usual price stays close to it (not pulled up by the two new ones)
+  assert.ok(d.expected > 3.55e9 && d.expected < 3.66e9, `usual price ${d.expected}`);
+  // the year step of this model is measured from its own ads: +10% from 1402 to 1403
+  const older = [3240, 3250, 3260, 3270].map((p, i) => mk(`o${i}`, p, 30000, 1402));
+  const lone = mk('lone', 3000, 30000, 1401);
+  const d2 = D.computeDeals([...used, ...older, lone]);
+  assert.equal(d2.get('lone').approx, 'years');
+  // «معقول» reaches at least 4% over the usual price, more when the market itself is wider (max 8%)
+  assert.ok(d.fairTop >= 1.04 && d.fairTop <= 1.08);
+  assert.equal(D.priceVerdict(3.762e9, 3.6e9).zone, 'high'); // 4.5% over
+  assert.equal(D.priceVerdict(3.762e9, 3.6e9, 1.06).zone, 'fair'); // a wider market: still «معقول»
 });

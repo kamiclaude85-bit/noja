@@ -105,7 +105,7 @@ test('an ad of each site becomes a post like Divar\'s, with no phone number', ()
 
 test('the same car on a company site and on Divar counts once in the market', () => {
   const base = { year: 1400, brand: 'پژو 206 تیپ 2', title: 'پژو 206 تیپ 2', mileage: 80000, publishedAt: Date.now() };
-  const posts = [{ ...base, token: 'a', price: 1.8e9 }, { ...base, token: 'hm-1', source: 'hamrah', price: 1.81e9, mileage: 80500 }];
+  const posts = [{ ...base, token: 'a', price: 1.8e9 }, { ...base, token: 'hm-1', source: 'hamrah', price: 1.805e9 }];
   const dup = D.crossDuplicates(posts);
   assert.equal(dup.get('a'), 'hm-1');
 });

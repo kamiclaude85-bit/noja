@@ -160,16 +160,24 @@
   }
 
   /** Least-squares slope of price on mileage (toman per km), or null. */
-  function slope(points) {
+  /**
+   * Price per km: the median slope of all pairs of ads at least 5,000 km apart (Theil–Sen), so a
+   * zero-km or a worn-out ad cannot swing it. At most 3% of the price per 10,000 km; more km never
+   * makes a car dearer (null: the usual 1%).
+   */
+  function slope(points, level) {
     if (points.length < 6) return null;
-    const mx = points.reduce((s, p) => s + p[0], 0) / points.length;
-    const my = points.reduce((s, p) => s + p[1], 0) / points.length;
-    let num = 0;
-    let den = 0;
-    for (const [x, y] of points) { num += (x - mx) * (y - my); den += (x - mx) ** 2; }
-    if (!den) return null;
-    const b = num / den;
-    return b < 0 ? b : null; // more km should never make a car more expensive
+    const s = [];
+    for (let i = 0; i < points.length; i++) {
+      for (let k = i + 1; k < points.length; k++) {
+        const dx = points[k][0] - points[i][0];
+        if (Math.abs(dx) >= 5000) s.push((points[k][1] - points[i][1]) / dx);
+      }
+    }
+    if (s.length < 5) return null;
+    const b = median(s);
+    if (!(b < 0)) return null;
+    return level ? Math.max(b, (-0.03 * level) / 1e4) : b;
   }
 
   const fa = (n) => Number(n).toLocaleString('fa-IR');
@@ -202,18 +210,27 @@
     const med0 = median(list.map(clean));
     const used = med0 ? list.filter((p) => clean(p) > med0 * 0.75 && clean(p) < med0 * 1.35) : [];
     if (used.length < GUIDE_MIN) return { n: used.length, enough: false };
-    const prices = used.map(clean).sort((a, b) => a - b);
-    const market = quantile(prices, 0.5);
+    const raw = used.map(clean).sort((a, b) => a - b);
+    const rough = quantile(raw, 0.5);
     const kms = used.filter((p) => p.mileage != null);
     const medKm = kms.length ? median(kms.map((p) => p.mileage)) : null;
-    const b = slope(kms.map((p) => [p.mileage, clean(p)])) ?? -market * 1e-6; // ~1% per 10,000 km
+    // mileage: the median of pairwise slopes (one zero-km ad cannot swing it), 0–3% per 10,000 km
+    const b = slope(kms.map((p) => [p.mileage, clean(p)]), rough) ?? -rough * 1e-6; // else ~1% per 10,000 km
+    // every ad seen at the group's usual mileage before the middle price is taken
+    const atMed = (p) => (p.mileage != null && medKm != null
+      ? Math.min(clean(p) * 1.2, Math.max(clean(p) * 0.8, clean(p) + b * (medKm - p.mileage))) : clean(p));
+    const prices = used.map(atMed).sort((a, c) => a - c);
+    const market = quantile(prices, 0.5);
     return {
+      // the middle half of the prices: how spread the market is (one odd ad does not count)
+      q1: quantile(prices, 0.25),
+      q3: quantile(prices, 0.75),
       n: used.length,
       skipped: list.length - used.length,
       enough: true,
       sure: used.length >= GUIDE_SURE,
-      min: prices[0],
-      max: prices[prices.length - 1],
+      min: raw[0],
+      max: raw[raw.length - 1],
       marketRaw: market,
       // «خرید خوب» is the same line as on the price bar (3% under the usual price), everywhere.
       buyGood: round5m(market * ZONES.good),
@@ -234,9 +251,17 @@
    */
   const sameCarKey = (p) => `${P.modelOf(p).key}|${P.shamsiYear(p.year)}`;
   /** Two ads of the same model and year (see sameCarKey) from different sites, same car? */
-  const sameCar = (a, b) => (a.source || 'divar') !== (b.source || 'divar')
-    && Math.abs((a.mileage || 0) - (b.mileage || 0)) <= 2000
-    && Math.abs(a.price - b.price) / Math.max(a.price, b.price) <= 0.03;
+  // A real cross-post has the same trim and colour, the same km (a typo at most) and nearly the same
+  // price. Round mileages (70,000) are common, so with them the price must match almost exactly;
+  // otherwise two different cars of a popular model would be counted once (audit, Nov 2026).
+  const sameCar = (a, b) => {
+    if ((a.source || 'divar') === (b.source || 'divar')) return false;
+    if (trimOf(a) !== trimOf(b)) return false;
+    if (a.color && b.color && P.normalizeText(a.color) !== P.normalizeText(b.color)) return false;
+    const dk = Math.abs((a.mileage || 0) - (b.mileage || 0));
+    const dp = Math.abs(a.price - b.price) / Math.max(a.price, b.price);
+    return dk <= 100 && dp <= ((a.mileage || 0) % 1000 === 0 ? 0.005 : 0.015);
+  };
   function crossDuplicates(posts) {
     const out = new Map();
     const buckets = new Map();
@@ -246,8 +271,13 @@
       if (!buckets.has(k)) buckets.set(k, []);
       buckets.get(k).push(p);
     }
+    // one twin per ad
     for (const list of buckets.values()) {
-      for (const a of list) for (const b of list) if (a !== b && sameCar(a, b)) out.set(a.token, b.token);
+      for (const a of list) {
+        if (out.has(a.token)) continue;
+        const b = list.find((x) => x !== a && !out.has(x.token) && sameCar(a, x));
+        if (b) { out.set(a.token, b.token); out.set(b.token, a.token); }
+      }
     }
     return out;
   }
@@ -258,12 +288,14 @@
     // A car advertised on both Divar and Bama counts once in a market. (Two ads on the same site
     // with the same mileage and price are usually two cars, e.g. a dealer's stock.)
     const counted = new Map();
+    const paired = new Set();
     for (const p of posts) {
       if (!marketable(p, now)) continue;
       const dk = p.mileage != null ? sameCarKey(p) : null;
       if (dk) {
         const seen = counted.get(dk) || [];
-        if (seen.some((x) => sameCar(x, p))) continue;
+        const twin = seen.find((x) => !paired.has(x.token) && sameCar(x, p));
+        if (twin) { paired.add(twin.token); continue; }
         seen.push(p);
         counted.set(dk, seen);
       }
@@ -347,6 +379,10 @@
       model: g.key, peers: g.n, sure: g.sure && !g.approx, approx: g.approx || null, installment, expected: Math.round(expected), discount, score,
       // what it was compared with: the asking prices (as if clean) and the usual mileage
       range: [Math.round(g.min), Math.round(g.max)], medKm: g.medKm, newCar: nc, capped: !!capped,
+      // how spread the comparable prices are (middle half), and where «معقول» ends for this market:
+      // 4% over the usual price, or the top of the middle half when the market itself is wider (≤8%)
+      spread: g.q1 && g.q3 ? (g.q3 - g.q1) / g.marketRaw : null,
+      fairTop: g.q3 ? Math.min(1.08, Math.max(ZONES.fair, g.q3 / g.marketRaw + 0.01)) : ZONES.fair,
       level, deal: level === 'hot' || level === 'good', caution: level === 'caution', dealer,
       body: c, reasons, warnings,
     };
@@ -357,7 +393,32 @@
    * Returns Map token → { model, peers, expected, discount, score, level, deal, caution, dealer, body, reasons[], warnings[] }
    * for every ad that has enough comparable ads. level: hot | good | dealer | caution | null.
    */
-  const YEAR_STEP = 0.02; // one model year newer ≈ 2% dearer (Tehran asking prices, Nov 2026)
+  // One model year newer is dearer by the model's own step, measured from its ads (the middle price
+  // of neighbouring years, same trim, 3+ ads each); otherwise 5% (the middle of 22 measured pairs,
+  // Nov 2026: 0–10%). Used only to bring other years' ads to this ad's year.
+  const YEAR_STEP = 0.05;
+  const yearSteps = new Map();
+  function learnYearSteps(groups) {
+    yearSteps.clear();
+    const byTrim = new Map();
+    for (const g of groups.values()) {
+      if (g.list.length < 3) continue;
+      const k = `${g.modelKey}|${trimOf(g.list[0])}`;
+      if (!byTrim.has(k)) byTrim.set(k, new Map());
+      byTrim.get(k).set(P.shamsiYear(g.year), median(g.list.map((p) => p.price / condOf(p).factor)));
+    }
+    const steps = new Map();
+    for (const [k, ys] of byTrim) {
+      const years = Array.from(ys.keys()).sort((a, b) => a - b);
+      for (let i = 1; i < years.length; i++) {
+        const s = (ys.get(years[i]) / ys.get(years[i - 1])) ** (1 / (years[i] - years[i - 1])) - 1;
+        const mk = k.split('|')[0];
+        if (!steps.has(mk)) steps.set(mk, []);
+        steps.get(mk).push(s);
+      }
+    }
+    for (const [mk, s] of steps) yearSteps.set(mk, Math.min(0.12, Math.max(0, median(s))));
+  }
 
   /**
    * Too few ads of the same trim and year: compare with the same model and trim from nearby
@@ -377,7 +438,8 @@
     const trim = trimOf(p);
     const others = (modelList || []).filter((q) => q.token !== p.token);
     const moved = (qs) => qs.map((q) => {
-      const c = { ...q, price: q.price * (1 + YEAR_STEP) ** (y - P.shamsiYear(q.year)) };
+      const step = yearSteps.has(P.modelOf(p).key) ? yearSteps.get(P.modelOf(p).key) : YEAR_STEP;
+      const c = { ...q, price: q.price * (1 + step) ** (y - P.shamsiYear(q.year)) };
       if (bodyCache) bodyCache.set(c, condOf(q));
       return c;
     });
@@ -401,6 +463,7 @@
 
   function computeDeals(posts, { now = Date.now(), newPrices = null } = {}) {
     const groups = marketGroups(posts, now);
+    learnYearSteps(groups);
     const byModel = new Map();
     for (const g of groups.values()) {
       if (!byModel.has(g.modelKey)) byModel.set(g.modelKey, []);
@@ -489,11 +552,11 @@
   //   great ≤ 8% under · good ≤ 3% under · fair up to 4% over · above that: expensive.
   // ---------------------------------------------------------------------------
   const ZONES = { great: 0.92, good: 0.97, fair: 1.04 };
-  function priceVerdict(price, expected) {
+  function priceVerdict(price, expected, fairTop = ZONES.fair) {
     if (!(price > 0) || !(expected > 0)) return null;
     const great = round5m(expected * ZONES.great);
     const good = round5m(expected * ZONES.good);
-    const fair = round5m(expected * ZONES.fair);
+    const fair = round5m(expected * fairTop);
     const zone = price <= great ? 'great' : price <= good ? 'good' : price <= fair ? 'fair' : 'high';
     return { zone, great, good, fair, expected: round5m(expected), diff: price - expected };
   }
