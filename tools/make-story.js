@@ -19,6 +19,7 @@ const { chromium } = require('playwright-core');
 const P = require('../src/parser');
 const D = require('../src/deals');
 const { cutPhoto } = require('./cut-photo');
+const { commonsPhoto } = require('./commons-photo');
 
 const ROOT = path.join(__dirname, '..');
 const DATA = path.join(ROOT, 'data');
@@ -146,7 +147,13 @@ ${photo ? `<div class="photo ${car.photoStyle}"><img src="${photo}"></div>` : '<
   // each car's photo: cut out when its background is a plain studio one, else shown as a card
   const noPhoto = [];
   for (const car of ok) {
-    const src = photoFor(P.modelOf({ brand: car.brand }).key);
+    const model = P.modelOf({ brand: car.brand });
+    let src = photoFor(model.key);
+    // none in the folder: a public-domain photo from Wikimedia Commons, saved there for next time
+    if (!src) {
+      const found = await commonsPhoto(model.label).catch((e) => { console.log(`Commons: ${e.message}`); return null; });
+      if (found) { console.log(`photo of ${model.label} found on Wikimedia Commons («${found.title}») — check before posting`); src = found.file; }
+    }
     if (!src) { noPhoto.push(car.name); continue; }
     const r = await cutPhoto(page, src);
     car.photoFile = r.clean ? r.file : src;
