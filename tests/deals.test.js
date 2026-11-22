@@ -23,7 +23,10 @@ test('finds the ad clearly under the usual price for the same model and year', (
   assert.equal(d.get('deal').level, 'hot');
   assert.ok(d.get('deal').reasons[0].includes('زیر قیمت معمول'));
   assert.equal(d.get('a').deal, false);
-  assert.equal(d.has('other-year'), false, 'not compared with other years');
+  // three model years away: only an approximate judgement (same trim, prices moved to its year), never an offer
+  assert.equal(d.get('other-year').approx, 'years');
+  assert.equal(d.get('other-year').deal, false);
+  assert.equal(d.get('other-year').level, null);
 });
 
 test('mileage is taken into account', () => {
@@ -242,4 +245,55 @@ test('scanner pool: one bot per site', () => {
   assert.equal(pool.runById('r1').id, 'r1');
   assert.equal(pool.byRun('nope'), null);
   assert.deepEqual(pool.runs.map((r) => r.id), ['r1']);
+});
+
+test('one trim whatever the word order; manuals never priced against automatics or turbos', () => {
+  const D = require('../src/deals');
+  assert.equal(D.trimKey('پلاس 5 دنده ساده EF7'), D.trimKey('پلاس EF7 5 دنده ساده'));
+  const dena = (token, price, year, brand, gearbox) => ({ ...base, token, price: price * 1e6, mileage: 60000, year, brand, gearbox });
+  const posts = [
+    // the same manual trim, written both ways, a few years around
+    dena('m1', 2500, 1399, 'دنا پلاس EF7 5 دنده ساده', 'دنده‌ای'), dena('m2', 2750, 1401, 'دنا پلاس EF7 5 دنده ساده', 'دنده‌ای'),
+    dena('m3', 2400, 1402, 'دنا پلاس 5 دنده ساده EF7', 'دنده‌ای'), dena('m4', 2700, 1403, 'دنا پلاس EF7 5 دنده ساده', 'دنده‌ای'),
+    dena('ad', 2650, 1401, 'دنا پلاس 5 دنده ساده EF7', 'دنده‌ای'),
+    // many automatic turbos of the same year (much dearer)
+    ...[3050, 3100, 3080, 3120, 3200, 2950, 3020].map((p, i) => dena(`at${i}`, p, 1401, 'دنا پلاس EF7 اتوماتیک توربو آپشنال', 'اتوماتیک')),
+  ];
+  const d = computeDeals(posts).get('ad');
+  assert.ok(d.expected > 2.55e9 && d.expected < 2.8e9, `usual price from manuals only (${d.expected})`);
+  assert.equal(d.level, null, 'not a special offer');
+  assert.equal(D.kindOf(posts[0]).gear, 'manual');
+  assert.deepEqual(D.kindOf(posts[5]), { gear: 'auto', turbo: true });
+});
+
+test('a used car is never priced above today\'s new car of its kind (less ~4% a year)', () => {
+  const newPrices = [
+    { make: 'دنا', model: 'پلاس EF7P', trim: '6 دنده', year: 1405, kind: 'بازار', price: 3330000000 },
+    { make: 'دنا', model: 'پلاس EF7P', trim: '6 دنده', year: 1405, kind: 'بازار', price: 3250000000 },
+    { make: 'دنا', model: 'پلاس EF7', trim: 'اتوماتیک توربو آپشنال', year: 1405, kind: 'بازار', price: 4400000000 },
+    { make: 'دنا', model: 'پلاس EF7P', trim: '6 دنده', year: 1405, kind: 'کارخانه', price: 2083000000 },
+  ];
+  // only inflated asking prices of a manual 1401: the usual price is held at the new price less 4 years
+  const posts = [3300, 3350, 3400, 3380, 3420, 3360].map((p, i) => ({ ...base, token: `x${i}`, price: p * 1e6, mileage: 60000, year: 1401, brand: 'دنا پلاس 5 دنده ساده EF7', gearbox: 'دنده‌ای' }));
+  const d = computeDeals(posts, { newPrices }).get('x0');
+  assert.deepEqual(d.newCar, { min: 3250000000, max: 3330000000, year: 1405 }); // manual rows, market prices only
+  assert.equal(d.capped, true);
+  assert.equal(d.expected, Math.round(3330000000 * 0.96 ** 4));
+  // without the list: as before
+  assert.equal(computeDeals(posts).get('x0').capped, false);
+});
+
+test('a new-car list read only partly keeps the other makes and is read again', () => {
+  const os = require('node:os');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { Store } = require('../src/store.js');
+  const store = new Store(fs.mkdtempSync(path.join(os.tmpdir(), 'radyab-np-')));
+  const row = (make, i) => ({ make, model: `m${i}`, trim: '', year: 1405, kind: 'بازار', price: 1e9 + i });
+  store.setBamaPrices([...Array.from({ length: 300 }, (_, i) => row('آ', i)), ...Array.from({ length: 200 }, (_, i) => row('دنا', i))]);
+  assert.ok(store.bamaPricesAt() > 0, 'full list: done for today');
+  store.setBamaPrices(Array.from({ length: 100 }, (_, i) => row('آ', i))); // cut short after the first make
+  const items = store.db.searches.__bama_prices.criteria.bamaPrices.items;
+  assert.equal(items.filter((r) => r.make === 'دنا').length, 200, 'the makes not reached are kept');
+  assert.equal(store.bamaPricesAt(), 0, 'read again at the next Bama search');
 });

@@ -954,8 +954,21 @@ function renderRuns(view) {
       h('p', { class: 'muted run-note' }, cur.status === 'reading' ? '«توقف» آگهی‌ای را که باز است تمام می‌کند و بعد می‌ایستد؛ آگهی‌های خوانده‌شده می‌مانند.' : 'با «توقف»، جستجوی بعدی نوبت شروع می‌شود.'));
   };
   let nowCard;
-  if (currents.length) nowCard = currents.map(nowCardFor);
-  else {
+  // «توقف همه»: the queue is emptied first (so nothing starts next), then every running search stops
+  const stopAll = () => {
+    if (!confirm(`همهٔ جستجوهای در حال انجام${queue.length ? ` و ${fa(queue.length)} جستجوی نوبت` : ''} متوقف شوند؟`)) return;
+    act(async () => {
+      if (queue.length) await api('/api/queue', { method: 'DELETE' });
+      for (const cur of currents) await api(`/api/runs/${encodeURIComponent(cur.id)}/${cur.status === 'collecting' ? 'cancel' : 'stop'}`, { method: 'POST' }).catch(() => {});
+      toast('ربات می‌ایستد؛ آگهی‌ای را که باز است تمام می‌کند و بعد متوقف می‌شود.');
+    });
+  };
+  if (currents.length) {
+    nowCard = [h('div', { class: 'stop-all' },
+      h('span', { class: 'muted' }, `${fa(currents.length)} جستجو در حال انجام${queue.length ? ` · ${fa(queue.length)} در نوبت` : ''}`),
+      h('button', { class: 'btn danger', type: 'button', onclick: stopAll }, icon('stop', 'sm'), 'توقف همه')),
+    ...currents.map(nowCardFor)];
+  } else {
     const off = App.host && !App.bot.online;
     nowCard = h('section', { class: 'card run-now idle' },
       h('div', { class: 'run-now-h' }, h('span', { class: 'live-pulse off', 'aria-hidden': 'true' }), h('b', null, off ? 'ربات خاموش است' : 'ربات بیکار است')),

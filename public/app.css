@@ -980,6 +980,7 @@ tr.sold { opacity: .55; }
 .run-stats { display: flex; gap: 16px; font-size: 13.5px; color: var(--text-2); }
 .run-stats b { color: var(--text); font-size: 16px; }
 .run-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.stop-all { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
 .run-note { margin: 0; font-size: 12.5px; }
 .live-pulse.off { background: var(--text-3); animation: none; box-shadow: none; }
 .card.run-queue, .card.run-now { margin-bottom: 12px; }

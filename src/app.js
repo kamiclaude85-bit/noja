@@ -133,7 +133,9 @@ async function startApp(opts = {}) {
     const now = Date.now();
     const plan = planPriceCheck(store.db.searches, store.db.ads, CRM.ACTIVE_STAGES, now, busyKeys());
     store.markDailyCheck({ day: localDay(now), at: now, keys: plan.items.map((x) => x.key), idle: plan.idle, merged: plan.merged, by });
-    if (plan.items.length) cloud.enqueue(plan.items.map((x) => cleanCriteria(x.criteria)));
+    // one batch for the whole check: «توقف» on any of its searches stops the rest of it too
+    const batch = `d${localDay(now).replace(/-/g, '')}${by === 'hand' ? 'h' : ''}`;
+    if (plan.items.length) cloud.enqueue(plan.items.map((x) => cleanCriteria({ ...x.criteria, batch })));
     cloud.syncSoon();
     return { queued: plan.items.length, idle: plan.idle, merged: plan.merged };
   };

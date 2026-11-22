@@ -318,7 +318,10 @@
   function modelOf(post) {
     // «برند و مدل» is the most consistent source (Divar's breadcrumbs sometimes skip a level:
     // «شاهین › G», «کیا › نسل دوم»); breadcrumbs are used only when it is missing.
-    const brand = String(post.brand || (post.make ? `${post.make} ${post.model || ''} ${post.trim || ''}` : '')).replace(/\s+/g, ' ').trim();
+    const brand = String(post.brand || (post.make ? `${post.make} ${post.model || ''} ${post.trim || ''}` : ''))
+      // a link's text read along with the name: «… بنزینیآگهی‌های بیشتر برای سمند …»
+      .replace(/آگهی(?:‌|\s)?های بیشتر برای.*$/, '')
+      .replace(/\s+/g, ' ').trim();
     if (!brand) return { key: '', label: 'نامشخص', trim: '' };
     const words = brand.split(' ');
     const n = words.length >= 2 && (MAKES.includes(words[0]) || WITH_BODY.includes(words[0])) ? 2 : 1;

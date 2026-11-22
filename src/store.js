@@ -476,7 +476,15 @@ class Store {
    * online panel the way searches already do (the panel takes them out of the list).
    */
   setBamaPrices(items) {
-    this.db.searches[BAMA_PRICES_KEY] = { tokens: [], createdAt: Date.now(), criteria: { hidden: true, bamaPrices: { at: Date.now(), items } } };
+    // A read cut short (stopped, or the page ended early) only renews the makes it reached; the
+    // other makes keep yesterday's rows, so a partial list never wipes the full one.
+    const old = this.db.searches[BAMA_PRICES_KEY];
+    const oldItems = (old && old.criteria && old.criteria.bamaPrices && old.criteria.bamaPrices.items) || [];
+    const seen = new Set(items.map((r) => r.make));
+    // cut short: read again at the next Bama search (not «done for today»)
+    const partial = oldItems.length > 0 && items.length < oldItems.length * 0.8;
+    items = [...items, ...oldItems.filter((r) => !seen.has(r.make))];
+    this.db.searches[BAMA_PRICES_KEY] = { tokens: [], createdAt: Date.now(), criteria: { hidden: true, bamaPrices: { at: Date.now(), items, partial } } };
     this.changes.searches = true;
     this.bump();
     this.scheduleFlush();
@@ -484,7 +492,10 @@ class Store {
 
   bamaPricesAt() {
     const s = this.db.searches[BAMA_PRICES_KEY];
-    return (s && s.criteria && s.criteria.bamaPrices && s.criteria.bamaPrices.at) || 0;
+    const bp = s && s.criteria && s.criteria.bamaPrices;
+    // a list read only partly (or saved short before this check existed): due again
+    if (!bp || bp.partial || (bp.items || []).length < 400) return 0;
+    return bp.at || 0;
   }
 
   touchSearch(key, criteria) {

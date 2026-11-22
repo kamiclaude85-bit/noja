@@ -276,7 +276,8 @@ class Notifier {
     lines.push(parts.join('، '));
     // Special offers among the new ads (compared with every ad of the same model+year in memory).
     const all = Object.values(this.store.db.ads).filter((r) => r.post).map((r) => ({ ...r.post, removed: r.removed }));
-    const deals = D.computeDeals(all);
+    const bp = this.store.db.searches.__bama_prices;
+    const deals = D.computeDeals(all, { newPrices: bp && bp.criteria && bp.criteria.bamaPrices ? bp.criteria.bamaPrices.items : null });
     const hot = fresh.filter((p) => deals.get(p.token) && deals.get(p.token).deal)
       .sort((a, b) => deals.get(b.token).score - deals.get(a.token).score).slice(0, 3);
     if (hot.length) {

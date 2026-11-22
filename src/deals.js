@@ -51,6 +51,97 @@
     return null;
   }
 
+  // ---------- trims, their kind, and the new-car price ----------
+  /**
+   * One name per trim, whatever the word order the site wrote it in: Divar's «پلاس 5 دنده ساده EF7»
+   * and Bama's «پلاس EF7 5 دنده ساده» are the same trim (the words of each site's own catalog, sorted).
+   */
+  //   - the gearbox words are replaced by the ad's gearbox («G» with a manual gearbox on Divar =
+  //     Bama's «G دنده ای دنده ای»; Bestern «» automatic = Bama's «اتوماتیک»);
+  //   - words that do not tell trims apart go: the usual fuel («بنزینی»), «تیپ», the engine size in
+  //     litres («2.0 لیتر»), a word written twice; «5 دنده» / «6 دنده» (the speeds) stay.
+  const GEAR_WORD = /^(دنده|دستی|ای|اتوماتیک|اتومات|cvt|dct|at|mt|automatic|manual)$/;
+  const FILLER = /^(تیپ|بنزینی|بنزین|لیتر)$/;
+  function gearOf(s) {
+    const t = P.normalizeText(s || '').toLowerCase();
+    return /اتومات|automatic|cvt|dct|(^| )at( |$)/.test(t) ? 'auto' : /دنده|دستی|manual|(^| )mt( |$)/.test(t) ? 'manual' : '';
+  }
+  function trimWords(trim) {
+    let s = P.normalizeText(trim).toLowerCase().replace(/[()«»"'،,]/g, ' ');
+    s = s.replace(/(\d)\s*دنده/g, ' $1speed ').replace(/\d+(\.\d+)?\s*لیتر/g, ' ');
+    return [...new Set(s.split(' ').filter((w) => w && !GEAR_WORD.test(w) && !FILLER.test(w)))].sort().join(' ');
+  }
+  // The site's catalog name says the gearbox best («G CVT», «اتوماتیک TU5P»: sellers sometimes pick
+  // the wrong one in the gearbox box); then the gearbox box; then what most ads of the trim have.
+  function trimKey(trim, gearbox = '', usual = '') {
+    const gear = gearOf(trim) || gearOf(gearbox) || usual;
+    return `${trimWords(trim)}${gear ? `|${gear}` : ''}`;
+  }
+  // ads with no gearbox at all (Khodro45): the gearbox most ads of the same model and trim have
+  const usualGear = new Map();
+  function learnGears(posts) {
+    const count = new Map();
+    for (const p of posts || []) {
+      const m = P.modelOf(p);
+      const g = gearOf(m.trim) || gearOf(p.gearbox);
+      if (!g) continue;
+      const k = `${m.key}|${trimWords(m.trim)}`;
+      const c = count.get(k) || { auto: 0, manual: 0 };
+      c[g]++;
+      count.set(k, c);
+    }
+    for (const [k, c] of count) usualGear.set(k, c.auto > c.manual ? 'auto' : 'manual');
+  }
+  /** The trim of an ad, as above. */
+  const trimOf = (p) => {
+    const m = P.modelOf(p);
+    return trimKey(m.trim, p.gearbox, usualGear.get(`${m.key}|${trimWords(m.trim)}`) || '');
+  };
+
+  /** Gearbox and engine of an ad (or of a new-car row): { gear: 'auto' | 'manual' | '', turbo }. */
+  function kindOf(p) {
+    const m = P.modelOf(p);
+    const t = P.normalizeText(`${m.trim} ${p.title || ''}`).toLowerCase();
+    return { gear: gearOf(m.trim) || gearOf(p.gearbox) || usualGear.get(`${m.key}|${trimWords(m.trim)}`) || '', turbo: /توربو|turbo|(^| )tc( |$)/.test(t) };
+  }
+  /** Same gearbox (when both are known) and the same engine (turbo or not): comparable trims. */
+  const sameKind = (a, b) => {
+    const x = kindOf(a); const y = kindOf(b);
+    return (!x.gear || !y.gear || x.gear === y.gear) && x.turbo === y.turbo;
+  };
+
+  const NEW_DROP = 0.04; // a used car loses about 4% a year against today's new price (ceiling only)
+  /**
+   * Today's new-car price of this ad's model and kind (same gearbox and engine), from Bama's daily
+   * «قیمت روز خودرو» list (market prices, not dealers' ads): { min, max, year } of the newest year.
+   */
+  function newCarFor(p, items) {
+    if (!items || !items.length) return null;
+    const m = P.modelOf(p);
+    const k = kindOf(p);
+    if (!k.gear) return null;
+    const rows = [];
+    for (const r of items) {
+      if (r.kind !== 'بازار' || !(r.price > 0)) continue;
+      const row = { brand: `${P.divarModelName(`${r.make} ${r.model}`)} ${r.trim || ''}`, title: r.note || '' };
+      if (P.modelOf(row).key !== m.key) continue;
+      const rk = kindOf(row);
+      if (rk.gear !== k.gear || rk.turbo !== k.turbo) continue;
+      rows.push({ ...r, year: P.shamsiYear(r.year) });
+    }
+    if (!rows.length) return null;
+    const year = Math.max(...rows.map((r) => r.year));
+    const newest = rows.filter((r) => r.year === year);
+    return { min: Math.min(...newest.map((r) => r.price)), max: Math.max(...newest.map((r) => r.price)), year };
+  }
+
+  /** The most a used car of this model year should cost: today's new price less ~4% a year. */
+  function newCarCeiling(p, nc) {
+    if (!nc) return null;
+    const age = nc.year - P.shamsiYear(p.year);
+    return age >= 1 ? Math.round(nc.max * (1 - NEW_DROP) ** age) : null;
+  }
+
   /** «پژو 206 تیپ ۲» → "پژو 206 تیپ 2". Falls back to the title without «مدل …». */
   function modelName(p) {
     const raw = p.brand || String(p.title || '').replace(/[،,]?\s*مدل\s*[\d۰-۹]+.*$/, '');
@@ -58,7 +149,7 @@
   }
   function groupKey(p) {
     const m = P.modelOf(p);
-    return `${m.key}|${P.normalizeText(m.trim)}|${p.year}`;
+    return `${m.key}|${trimOf(p)}|${p.year}`;
   }
 
   function median(a) {
@@ -162,6 +253,7 @@
   }
 
   function marketGroups(posts, now, allTrims = false) {
+    learnGears(posts);
     const groups = new Map();
     // A car advertised on both Divar and Bama counts once in a market. (Two ads on the same site
     // with the same mileage and price are usually two cars, e.g. a dealer's stock.)
@@ -194,7 +286,12 @@
   /** Judge one ad against its market (built without the ad itself). */
   function judge(p, g) {
     const c = condOf(p);
-    const expected = usualPrice(p, g);
+    let expected = usualPrice(p, g);
+    // never more than today's new price of the same kind, less ~4% a year (Bama's daily list)
+    const nc = g.newCar || null;
+    const ceiling = newCarCeiling(p, nc);
+    const capped = ceiling && expected > ceiling;
+    if (capped) expected = ceiling;
     const discount = (expected - p.price) / expected;
     const reasons = [];
     const warnings = [];
@@ -202,6 +299,7 @@
     const basis = g.approx === 'years' ? `${fa(g.n)} آگهی همین مدل و تیپ از سال‌های نزدیک، تقریبی`
       : g.approx === 'trims' ? `${fa(g.n)} آگهی همین مدل با تیپ‌های دیگر، تقریبی`
         : g.approx === 'few' ? `فقط ${fa(g.n)} آگهی هم‌مدل و هم‌سال، تقریبی` : `${fa(g.n)} آگهی هم‌مدل و هم‌سال`;
+    if (capped) reasons.push(`قیمت معمول به قیمت صفر محدود شد: صفر ${nc.year} امروز ${priceFa(nc.max)}، منهای حدود ۴٪ برای هر سال`);
     if (discount > 0.005) reasons.push(`${fa(Math.round(discount * 100))}٪ زیر قیمت معمول (${priceFa(Math.round(expected))}، از روی ${basis})`);
     else if (discount < -0.005) warnings.push(`${fa(Math.round(-discount * 100))}٪ گران‌تر از هم‌مدل‌ها`);
     if (p.mileage != null && g.medKm && p.mileage < g.medKm * 0.8) reasons.push(`کارکرد کم (${fa(Math.round(p.mileage / 1000))} هزار، معمول ${fa(Math.round(g.medKm / 1000))} هزار)`);
@@ -248,7 +346,7 @@
     return {
       model: g.key, peers: g.n, sure: g.sure && !g.approx, approx: g.approx || null, installment, expected: Math.round(expected), discount, score,
       // what it was compared with: the asking prices (as if clean) and the usual mileage
-      range: [Math.round(g.min), Math.round(g.max)], medKm: g.medKm,
+      range: [Math.round(g.min), Math.round(g.max)], medKm: g.medKm, newCar: nc, capped: !!capped,
       level, deal: level === 'hot' || level === 'good', caution: level === 'caution', dealer,
       body: c, reasons, warnings,
     };
@@ -276,7 +374,7 @@
    */
   function marketFor(p, exactList, modelList) {
     const y = P.shamsiYear(p.year);
-    const trim = P.normalizeText(P.modelOf(p).trim);
+    const trim = trimOf(p);
     const others = (modelList || []).filter((q) => q.token !== p.token);
     const moved = (qs) => qs.map((q) => {
       const c = { ...q, price: q.price * (1 + YEAR_STEP) ** (y - P.shamsiYear(q.year)) };
@@ -285,17 +383,23 @@
     });
     const exact = guideFor((exactList || []).filter((q) => q.token !== p.token));
     if (exact.enough && exact.n >= DEAL_PEERS) return exact;
-    const years = guideFor(moved(others.filter((q) => P.normalizeText(P.modelOf(q).trim) === trim && Math.abs(P.shamsiYear(q.year) - y) <= 2)));
+    const sameTrim = others.filter((q) => trimOf(q) === trim);
+    const years = guideFor(moved(sameTrim.filter((q) => Math.abs(P.shamsiYear(q.year) - y) <= 2)));
     if (years.enough && years.n >= DEAL_PEERS) return { ...years, approx: 'years' };
-    const trims = guideFor(moved(others.filter((q) => Math.abs(P.shamsiYear(q.year) - y) <= 1)));
+    // other trims only of the same kind: a manual car is never priced against automatics, nor a
+    // plain engine against turbos (they cost hundreds of millions more)
+    const trims = guideFor(moved(others.filter((q) => sameKind(q, p) && Math.abs(P.shamsiYear(q.year) - y) <= 1)));
     if (trims.enough && trims.n >= DEAL_PEERS) return { ...trims, approx: 'trims' };
     if (exact.enough) return { ...exact, approx: 'few' };
     if (years.enough) return { ...years, approx: 'years' };
+    // the same trim further off (±3 years) before other trims
+    const far = guideFor(moved(sameTrim.filter((q) => Math.abs(P.shamsiYear(q.year) - y) <= 3)));
+    if (far.enough) return { ...far, approx: 'years' };
     if (trims.enough) return { ...trims, approx: 'trims' };
     return null;
   }
 
-  function computeDeals(posts, { now = Date.now() } = {}) {
+  function computeDeals(posts, { now = Date.now(), newPrices = null } = {}) {
     const groups = marketGroups(posts, now);
     const byModel = new Map();
     for (const g of groups.values()) {
@@ -309,7 +413,7 @@
       const g0 = groups.get(key);
       const g = marketFor(p, g0 && g0.list, byModel.get(P.modelOf(p).key));
       if (!g) continue;
-      out.set(p.token, judge(p, { ...g, key }));
+      out.set(p.token, judge(p, { ...g, key, newCar: newCarFor(p, newPrices) }));
     }
     return out;
   }
@@ -394,7 +498,7 @@
     return { zone, great, good, fair, expected: round5m(expected), diff: price - expected };
   }
 
-  const api = { computeDeals, crossDuplicates, priceVerdict, ZONES, isInstallment, marketable: (p, now = Date.now()) => marketable(p, now), modelName, priceGuide, myCarPrice, budgetPicks, isHavaleh, BODY_FACTORS, DEAL_MIN, HOT_MIN, TOO_CHEAP, MARKET_DAYS };
+  const api = { computeDeals, crossDuplicates, trimKey, trimOf, kindOf, newCarFor, newCarCeiling, priceVerdict, ZONES, isInstallment, marketable: (p, now = Date.now()) => marketable(p, now), modelName, priceGuide, myCarPrice, budgetPicks, isHavaleh, BODY_FACTORS, DEAL_MIN, HOT_MIN, TOO_CHEAP, MARKET_DAYS };
   root.NojaDeals = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -311,8 +311,7 @@ const App = {
 /** «قیمت‌یاب» numbers: the same market the special offers use. */
 App.computeGuide = () => {
   // Same market for everyone: the last two months, every city (see src/deals.js), not this device's filters.
-  const ads = Array.from(App.ads.values()).filter((a) => a.post);
-  const posts = ads.map((a) => ({ ...a.post, removed: a.removed }));
+  const posts = App.marketPosts || Array.from(App.ads.values()).filter((a) => a.post).map((a) => ({ ...a.post, removed: a.removed }));
   App.guide = globalThis.NojaDeals.priceGuide(posts);
   App.guideAll = globalThis.NojaDeals.priceGuide(posts, { allTrims: true }); // «همهٔ تیپ‌ها»
 };
@@ -371,6 +370,9 @@ App.refreshAds = async (force) => {
     App.version = r.version;
     const ads = App.relevant(r.ads, r.searches);
     App.ads = new Map(ads.map((a) => [a.token, a]));
+    // The market is every ad read, also the ones a search hides from its list (a «دنا پلاس توربو»
+    // search on Bama also brings the plain manuals): the prices are the same as the bot's.
+    App.marketPosts = r.ads.filter((a) => a.post).map((a) => ({ ...a.post, removed: a.removed }));
     // Bama's new-car prices travel as a hidden entry of the searches list.
     const hidden = r.searches.find((s) => s.criteria && s.criteria.hidden && s.criteria.bamaPrices);
     App.bamaPrices = hidden ? hidden.criteria.bamaPrices : null;
@@ -381,8 +383,9 @@ App.refreshAds = async (force) => {
     App.caps = capsEntry ? capsEntry.criteria.caps : null;
     App.searches = r.searches.filter((s) => !(s.criteria && s.criteria.hidden)).sort((a, b) => (b.lastRunAt || 0) - (a.lastRunAt || 0));
     App.meta = { stages: r.stages, activeStages: r.activeStages, rejectReasons: r.rejectReasons, callResults: r.callResults };
-    App.deals = globalThis.NojaDeals.computeDeals(ads.map((a) => ({ ...a.post, removed: a.removed })));
-    App.dups = globalThis.NojaDeals.crossDuplicates(ads.map((a) => a.post).filter(Boolean));
+    // with Bama's new-car prices of the day: a used car's usual price is never above them
+    App.deals = globalThis.NojaDeals.computeDeals(App.marketPosts, { newPrices: App.bamaPrices && App.bamaPrices.items });
+    App.dups = globalThis.NojaDeals.crossDuplicates(App.marketPosts);
     App.computeGuide();
     App.emit('ads');
     return true;

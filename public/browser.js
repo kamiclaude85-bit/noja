@@ -243,7 +243,8 @@ function delta(p) {
   if (!p._deal || !p._deal.expected || !p.price) return null;
   const r = p.price / p._deal.expected;
   const ap = p._deal.approx ? 'حدود ' : ''; // compared with nearby years / other trims
-  if (r <= 0.95) return { cls: 'low', text: `${ap}${fa(Math.round((1 - r) * 100))}٪ زیر قیمت معمول` };
+  // the same edges as the price bar: «عالی» and «خوب» are under the usual price, «معقول» around it
+  if (r <= NojaDeals.ZONES.good) return { cls: 'low', text: `${ap}${fa(Math.max(1, Math.round((1 - r) * 100)))}٪ زیر قیمت معمول` };
   // above the «fair» end of the price bar it is expensive; in between, a reasonable price
   if (r > NojaDeals.ZONES.fair) return { cls: 'high', text: `${ap}${fa(Math.round((r - 1) * 100))}٪ بالای قیمت معمول` };
   return { cls: 'fair', text: `${p._deal.approx ? 'تقریباً ' : ''}قیمت معقول` };
@@ -658,6 +659,16 @@ function zeroKmLine(p) {
       h('small', null, ` (${market.trim || market.model}${market.note ? `، ${market.note}` : ''}) — این آگهی ${pct < 1 ? 'هم‌قیمت آن' : `${fa(pct)}٪ ${diff < 0 ? 'ارزان‌تر' : 'گران‌تر'}`}`)));
 }
 
+/** A used car: today's new price of the same kind (gearbox, engine) from Bama, and the ceiling it sets. */
+function usedNewLine(p, d) {
+  const nc = d && d.newCar;
+  if (!nc) return null;
+  const cap = NojaDeals.newCarCeiling(p, nc);
+  return h('div', { class: 'pbar-new' }, icon('trend', 'sm'),
+    h('span', null, `صفر همین نوع، مدل ${faYear(nc.year)}، امروز در باما: `, h('b', { class: 'num' }, nc.min === nc.max ? formatPrice(nc.max) : `${formatPrice(nc.min)} تا ${formatPrice(nc.max)}`),
+      cap ? h('small', null, ` — کارکردهٔ مدل ${faYear(p.year)} نباید بیشتر از حدود ${formatPrice(cap)} حساب شود${d.capped ? ' (قیمت معمول به همین محدود شد)' : ''}`) : null));
+}
+
 const ZONE_TEXT = { great: 'قیمت عالی', good: 'قیمت خوب', fair: 'قیمت معقول', high: 'گران' };
 
 /**
@@ -691,7 +702,7 @@ function priceBar(p) {
       `قیمت را ${formatPrice(was - p.price)} کم کرد: از ${formatPrice(was)} (${ZONE_TEXT[old.zone]}) به ${formatPrice(p.price)} (${ZONE_TEXT[v.zone]})`);
   })() : null;
   const amount = formatPrice(Math.abs(Math.round(v.diff / 1e6) * 1e6));
-  const newLine = zeroKmLine(p);
+  const newLine = zeroKmLine(p) || usedNewLine(p, d);
   const bubble = Math.abs(v.diff) < d.expected * 0.01 ? 'هم‌قیمت بازار'
     : v.diff < 0 ? `${amount} پایین‌تر از قیمت معمول` : `${amount} بالاتر از قیمت معمول`;
   return h('div', { class: `pbar z-${v.zone}` },
