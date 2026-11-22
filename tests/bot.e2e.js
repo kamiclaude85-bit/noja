@@ -108,7 +108,7 @@ const shot = async (page, name) => { if (SHOTS) { await page.waitForTimeout(350)
   const baleBase = `http://127.0.0.1:${bale.address().port}`;
 
   context.on('page', (pg) => { pg.waitForURL(/\/v\//, { timeout: 60000 }).then(() => { newTabs++; }).catch(() => {}); });
-  const app = await startApp({ context, dataDir: path.join(tmp, 'data'), port: 4799, log: () => {}, notifyApiBases: { bale: baleBase } });
+  const app = await startApp({ context, openPanel: true, dataDir: path.join(tmp, 'data'), port: 4799, log: () => {}, notifyApiBases: { bale: baleBase } });
   const ui = context.pages().find((p) => p.url().startsWith(app.panelUrl));
   assert.ok(ui, 'Radyab opened in Chrome');
   const getJson = async (p) => (await fetch(`${app.panelUrl}${p}`)).json();

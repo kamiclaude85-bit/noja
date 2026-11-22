@@ -1373,12 +1373,25 @@ function todayBySiteLine() {
     `امروز: ${parts.join(' · ')}`, full.length ? ` — سقف ${full.map((id) => SITE_FA[id]).join('، ')} پر شده` : '');
 }
 
+/** The bot runs out of sight (no window to close): switching it off from here. PC panel only. */
+function quitCard() {
+  const btn = h('button', { class: 'btn danger', type: 'button', onclick: async () => {
+    if (!confirm('ربات خاموش شود؟ جستجوی در حال انجام نیمه‌کاره می‌ماند و تا روشن کردن دوباره (یا روشن شدن ویندوز) کاری انجام نمی‌شود.')) return;
+    btn.disabled = true;
+    try { await api('/api/quit', { method: 'POST', body: {} }); toast('ربات خاموش شد.'); } catch (e) { toast(e.message, 'err'); btn.disabled = false; }
+  } }, icon('stop', 'sm'), 'خاموش کردن ربات');
+  return h('section', { class: 'card', style: 'margin-top:16px' },
+    h('div', { class: 'card-h' }, h('h2', null, icon('gear', 'sm'), 'ربات')),
+    h('p', { class: 'muted', style: 'margin:0 0 12px' }, 'ربات پشت‌صحنه کار می‌کند و با روشن شدن ویندوز خودش شروع می‌شود؛ پنجرهٔ کروم فقط وقتی به شما نیاز است (کپچا) جلو می‌آید. برای روشن کردن دستی، فایل radyab.vbs را در پوشهٔ برنامه باز کنید.'),
+    btn);
+}
+
 async function renderSettings(view) {  let s = await api('/api/settings/notify').catch(() => null);
   if (!s) { view.replaceChildren(h('div', { class: 'page' }, h('div', { class: 'empty' }, 'ارتباط با ربات برقرار نیست.'))); return; }
   const box = h('div');
   const cloudBox = h('div');
   view.replaceChildren(h('div', { class: 'page narrow-ish' },
-    pageHead('تنظیمات', 'سقف روزانهٔ هر سایت، و یادآوری تماس‌ها، بازدیدها و آگهی‌های جدید روی گوشی‌تان.'), capsCard(), cloudBox, box));
+    pageHead('تنظیمات', 'سقف روزانهٔ هر سایت، و یادآوری تماس‌ها، بازدیدها و آگهی‌های جدید روی گوشی‌تان.'), capsCard(), cloudBox, box, App.host ? null : quitCard()));
   if (!App.host) drawCloud(cloudBox);
 
   const save = async (patch, msg) => {

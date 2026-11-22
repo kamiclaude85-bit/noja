@@ -18,6 +18,7 @@ const S = require('./page-scripts');
 const H = require('./human');
 const B = require('./bama');
 const CO = require('./companies');
+const W = require('./window');
 
 /** Timing profiles (milliseconds). */
 const SPEEDS = {
@@ -120,7 +121,7 @@ class Scanner {
     const until = Date.now() + ms;
     while (Date.now() < until && !(this.control && this.control.stop)) await H.sleep(Math.min(250, until - Date.now()));
   }
-  focus() { if (this.page) this.page.bringToFront().catch(() => {}); }
+  focus() { if (this.page) W.showWindow(this.page).catch(() => {}); }
 
   setStatus(run, status, message, activity) {
     run.status = status;
@@ -132,6 +133,9 @@ class Scanner {
   /** Wait until «ادامه» is pressed, `autoCheck()` is true, or `untilMs` passes. */
   async waitForUser(run, status, message, { autoCheck, untilMs } = {}) {
     const prev = { status: run.status, message: run.message };
+    // you are needed (captcha, sign-in): the window comes forward, and goes back out of sight after
+    const needsYou = status === 'blocked' || status === 'waiting-login';
+    if (needsYou) W.showWindow(this.waitPage || this.page).catch(() => {});
     run.waitUntil = untilMs || null;
     this.setStatus(run, status, message);
     this.store.saveRun(run, true);
@@ -146,6 +150,8 @@ class Scanner {
     }
     if (!pressed && this.control.stop) how = 'stop';
     this.control.resume = null;
+    if (needsYou) W.hideWindow(this.waitPage || this.page).catch(() => {});
+    this.waitPage = null;
     run.waitUntil = null;
     this.setStatus(run, prev.status, prev.message);
     return how;
@@ -185,6 +191,7 @@ class Scanner {
     const last = this.store.listBlocks().slice(-1)[0];
     if (last) ev.sinceLastBlockMin = Math.round((ev.t - last.t) / 60000);
     await page.bringToFront().catch(() => {});
+    this.waitPage = page;
     const how = await this.waitForUser(run, 'blocked',
       'سایت تأیید خواسته (کپچا یا «درخواست زیاد»). در پنجرهٔ سایت حلش کنید و «ادامه» را بزنید. اگر کاری نکنید، ربات ۵ دقیقه صبر می‌کند و آرام ادامه می‌دهد.',
       { untilMs: Date.now() + 5 * 60 * 1000 });

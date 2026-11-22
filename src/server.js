@@ -121,7 +121,7 @@ function publicRun(run, store) {
   };
 }
 
-function createServer({ scanner, store, context, notifier, cloud }) {
+function createServer({ scanner, store, context, notifier, cloud, quit }) {
   return http.createServer(async (req, res) => {
     try {
       // Only accept requests from the panel itself (blocks other websites poking the local API).
@@ -203,8 +203,15 @@ function createServer({ scanner, store, context, notifier, cloud }) {
       if (p === '/api/login' && req.method === 'POST') {
         const page = await context.newPage();
         await page.goto('https://divar.ir/', { waitUntil: 'domcontentloaded' }).catch(() => {});
-        await page.bringToFront().catch(() => {});
+        // signing in is up to you: the window comes forward (close the tab when done)
+        await require('./window').showWindow(page);
         return send(res, 200, { ok: true });
+      }
+      // «خاموش کردن ربات» in the settings (the bot runs out of sight, with no window to close)
+      if (p === "/api/quit" && req.method === "POST" && quit) {
+        send(res, 200, { ok: true });
+        setTimeout(() => quit(), 300);
+        return;
       }
       let m = p.match(/^\/api\/runs\/([A-Za-z0-9_-]+)$/);
       if (m && req.method === 'GET') {

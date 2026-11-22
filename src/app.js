@@ -23,7 +23,13 @@ const ROOT = path.join(__dirname, '..');
 async function launchChrome({ profileDir, executablePath }) {
   const { chromium } = require('playwright-core');
   fs.mkdirSync(profileDir, { recursive: true });
-  const base = { headless: false, viewport: null, locale: 'fa-IR', args: ['--start-maximized'] };
+  // The window starts out of sight at a normal size (see window.js); a window out of sight is still
+  // drawn and timed like a visible one (Chrome would otherwise slow it down).
+  const base = {
+    headless: false, viewport: null, locale: 'fa-IR',
+    args: ['--window-position=-32000,-32000', '--window-size=1366,900', '--disable-background-timer-throttling',
+      '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'],
+  };
   const attempts = executablePath
     ? [{ executablePath }]
     : [{ channel: 'chrome' }, { channel: 'msedge' }];
@@ -103,11 +109,19 @@ async function startApp(opts = {}) {
   Object.defineProperty(notifier, 'forward', { get: () => (cloud.enabled ? (m) => cloud.forward(m) : null) });
   cloud.start();
   if (cloud.enabled) cloud.sync().catch(() => {});
-  const server = createServer({ scanner, store, context, notifier, cloud });
+  const server = createServer({ scanner, store, context, notifier, cloud, quit: opts.onQuit });
   const port = await listen(server, opts.port || 4777);
   const panelUrl = `http://127.0.0.1:${port}/`;
 
-  if (opts.openPanel !== false) {
+  // every window Chrome opens for the bot stays out of sight too
+  if (!opts.context) {
+    const { hideWindow, enable } = require('./window');
+    enable();
+    context.on('page', (p) => { hideWindow(p).catch(() => {}); });
+    for (const p of context.pages()) hideWindow(p).catch(() => {});
+  }
+  // The panel opens in your own browser (http://127.0.0.1:4777), not in the bot's Chrome.
+  if (opts.openPanel === true) {
     const [first] = context.pages();
     const page = first || await context.newPage();
     await page.goto(panelUrl);
