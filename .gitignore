@@ -4,3 +4,10 @@ chrome-profile/
 *.zip
 .DS_Store
 dist/
+
+# story media: downloaded galleries, previews, daily outputs and generated cut-outs stay local
+media/makers-all/
+media/makers/
+media/contact/
+media/stories/
+media/**/*.cut.png

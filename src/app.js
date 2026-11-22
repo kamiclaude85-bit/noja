@@ -9,6 +9,7 @@ const { createServer, cleanCriteria } = require('./server');
 const { followUpSearches } = require('./budget');
 const { Notifier } = require('./notify');
 const { Cloud } = require('./cloud');
+const { PriceHistory } = require('./history');
 const { dueSearches, localDay, planPriceCheck, dailyCheckDue } = require('./daily');
 const CRM = require('./crm');
 const { searchKey } = require('./scanner');
@@ -114,8 +115,35 @@ async function startApp(opts = {}) {
 
   // Daily backup of the ad memory and follow-up notes (like Noja's daily backup).
   try { store.backupNow(false); } catch (e) { (opts.log || console.error)(e); }
-  const backupTimer = setInterval(() => { try { store.backupNow(false); } catch (_) { /* retry next hour */ } }, 60 * 60 * 1000);
+  // Daily price history (history.js): today's market prices, renewed every hour (the last one counts).
+  const history = new PriceHistory(dataDir);
+  const snapshot = () => {
+    try { history.snapshot(Object.values(store.db.ads).filter((r) => r.post).map((r) => ({ ...r.post, removed: r.removed }))); } catch (e) { log(e); }
+  };
+  setTimeout(snapshot, 30 * 1000).unref();
+  const backupTimer = setInterval(() => { try { store.backupNow(false); } catch (_) { /* retry next hour */ } snapshot(); }, 60 * 60 * 1000);
   backupTimer.unref();
+
+  // Daily Instagram story (tools/make-story.js): once a day from 11:00 (after the morning price
+  // check), built on this PC into media/stories/<day>/ — frames and story.mp4. Only for the real
+  // data folder (not for tests).
+  const STORY_HOUR = 11;
+  let storyBusy = false;
+  const storyDue = () => {
+    const now = new Date();
+    if (storyBusy || now.getHours() < STORY_HOUR || dataDir !== path.join(ROOT, 'data')) return;
+    const out = path.join(ROOT, 'media', 'stories', localDay(now.getTime()), 'story.mp4');
+    if (fs.existsSync(out)) return;
+    storyBusy = true;
+    const { execFile } = require('node:child_process');
+    execFile(process.execPath, [path.join(ROOT, 'tools', 'make-story.js')], { cwd: ROOT, timeout: 15 * 60 * 1000 }, (err, stdout) => {
+      storyBusy = false;
+      if (err) log(err); else log(`story: ${String(stdout).trim().split('\n').pop()}`);
+    });
+  };
+  const storyTimer = setInterval(storyDue, 30 * 60 * 1000);
+  storyTimer.unref();
+  setTimeout(storyDue, 2 * 60 * 1000).unref();
 
   // Phone reminders: check every minute for due calls and visits.
   const notifyTimer = setInterval(() => { notifier.tick().catch(log); }, 60 * 1000);
@@ -160,6 +188,7 @@ async function startApp(opts = {}) {
 
   const close = async () => {
     clearInterval(backupTimer);
+    clearInterval(storyTimer);
     clearInterval(notifyTimer);
     clearInterval(queueTimer);
     clearInterval(autoTimer);
