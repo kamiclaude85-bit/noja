@@ -34,6 +34,10 @@ const OLD_STREAK_STOP = 5;
 /** At most this many result pages (24 ads each on Divar) per search. */
 const MAX_LIST_PAGES = 15;
 
+/** The site a search reads: divar, bama, hamrah or k45. */
+const siteOfCriteria = (c) => (c && ['bama', 'hamrah', 'k45'].includes(c.source) ? c.source : 'divar');
+const SITE_FA_NAME = { divar: 'سایت آگهی‌ها', bama: 'باما', hamrah: 'همراه مکانیک', k45: 'خودرو۴۵' };
+
 /** Identifies a saved search, so its ads can be remembered across runs. */
 function searchKey(c) {
   if (c.searchUrl) return `url:${c.searchUrl}`;
@@ -194,7 +198,9 @@ class Scanner {
   async run(run) {
     const c = run.criteria;
     const pace = SPEEDS[c.speed] || SPEEDS.normal;
-    const dailyLimit = Math.max(1, Number(c.dailyLimit) || DEFAULT_DAILY_LIMIT);
+    // the cap of this site (set in «تنظیمات»; what a saved search carries from before is not used)
+    const site = siteOfCriteria(c);
+    const dailyLimit = this.store.capFor ? this.store.capFor(site) : DEFAULT_DAILY_LIMIT;
     const page = await this.context.newPage();
     this.page = page;
     try {
@@ -296,9 +302,9 @@ class Scanner {
         if (this.control.stop) break;
         await this.pauseGate(run);
         n++;
-        if (this.store.dailyCount() >= dailyLimit) {
+        if (this.store.dailyCount(site) >= dailyLimit) {
           return this.finish(run, 'done',
-            `به سقف روزانهٔ ${fa(dailyLimit)} آگهی رسیدیم؛ ${fa(run.stats.newAds)} آگهی جدید خوانده شد. بقیه را فردا ادامه دهید (یا سقف را در تنظیمات بیشتر کنید).`);
+            `به سقف روزانهٔ ${SITE_FA_NAME[site]} (${fa(dailyLimit)} آگهی) رسیدیم؛ ${fa(run.stats.newAds)} آگهی جدید خوانده شد. بقیه را فردا ادامه دهید، یا سقف این سایت را در «تنظیمات» بیشتر کنید.`);
         }
         this.setStatus(run, 'reading', `در حال خواندن آگهی ${fa(n)} از ${fa(queue.length)}`, item.title || '');
         const t0 = Date.now();
@@ -334,7 +340,7 @@ class Scanner {
         }
         run.stats.opened++;
         run.stats.readMs += Date.now() - t0;
-        this.store.countView();
+        this.store.countView(site);
         this.store.saveRun(run);
 
         sinceBreak++;

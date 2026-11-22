@@ -178,14 +178,14 @@ test('search queue: waits for the bot, keeps order, holds at the daily cap, drop
   let today = 0;
   const started = [];
   const scanner = { busy: false, free: () => !scanner.busy, start: (c) => { started.push(c.query); return { id: 'x' }; } };
-  const cloud = new Cloud({ store: { dailyCount: () => today }, scanner, dataDir: dir });
+  const cloud = new Cloud({ store: { dailyCount: () => today, capFor: () => 300 }, scanner, dataDir: dir });
   cloud.enqueue([{ query: 'a', batch: 'b1' }, { query: 'b', batch: 'b1' }, { query: 'c', batch: 'b2' }]);
   scanner.busy = true; cloud.startPending(); assert.deepEqual(started, [], 'waits while busy');
   scanner.busy = false; cloud.startPending(); assert.deepEqual(started, ['a']);
   today = 300; cloud.startPending(); assert.deepEqual(started, ['a'], 'holds at the daily cap');
   today = 0; cloud.dropBatch('b1'); cloud.startPending(); assert.deepEqual(started, ['a', 'c'], 'the stopped batch is dropped');
   // kept on disk
-  assert.deepEqual(new Cloud({ store: { dailyCount: () => 0 }, scanner, dataDir: dir }).pending.length, 0);
+  assert.deepEqual(new Cloud({ store: { dailyCount: () => 0, capFor: () => 300 }, scanner, dataDir: dir }).pending.length, 0);
 });
 
 test('search queue: a Bama search starts while a Divar one runs; each site keeps its order', () => {
@@ -198,13 +198,38 @@ test('search queue: a Bama search starts while a Divar one runs; each site keeps
   const started = [];
   const site = (c) => (c.source === 'bama' ? 'bama' : 'divar');
   const scanner = { free: (c) => !busy[site(c)], start: (c) => { started.push(c.query); busy[site(c)] = true; return { id: c.query }; } };
-  const cloud = new Cloud({ store: { dailyCount: () => 0 }, scanner, dataDir: dir });
+  const cloud = new Cloud({ store: { dailyCount: () => 0, capFor: () => 300 }, scanner, dataDir: dir });
   cloud.enqueue([{ query: 'd1' }, { query: 'b1', source: 'bama' }, { query: 'd2' }, { query: 'b2', source: 'bama' }]);
   cloud.startPending();
   assert.deepEqual(started, ['b1'], 'Divar busy: the first Bama search starts');
   busy.divar = false; busy.bama = false; cloud.startPending();
   assert.deepEqual(started, ['b1', 'd1', 'b2'], 'one of each, in their order');
   assert.deepEqual(cloud.pending.map((c) => c.query), ['d2']);
+});
+
+test('daily cap: each site has its own, set in the settings; a full site does not hold the others', () => {
+  const os = require('node:os');
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { Store } = require('../src/store.js');
+  const { Cloud } = require('../src/cloud.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'radyab-caps-'));
+  const store = new Store(dir);
+  assert.deepEqual(store.caps(), { divar: 300, bama: 300, hamrah: 300, k45: 300 });
+  assert.deepEqual(store.setCaps({ divar: 2, bama: '5', hamrah: 0, k45: 99999 }), { divar: 2, bama: 5, hamrah: 300, k45: 2000 });
+  store.countView('divar'); store.countView('divar'); store.countView('bama');
+  assert.equal(store.dailyCount('divar'), 2);
+  assert.equal(store.dailyCount('bama'), 1);
+  assert.equal(store.dailyCount(), 3);
+  assert.deepEqual(store.dailyCounts(), { divar: 2, bama: 1 });
+  const started = [];
+  const scanner = { free: () => true, start: (c) => { started.push(c.query); return { id: c.query }; } };
+  const cloud = new Cloud({ store, scanner, dataDir: dir });
+  cloud.enqueue([{ query: 'd1' }, { query: 'b1', source: 'bama' }]);
+  cloud.startPending();
+  assert.deepEqual(started, ['b1'], 'the first site is at its cap of 2; Bama (1 of 5) goes on');
+  // the caps travel to the online panel as a hidden saved search
+  assert.ok(store.db.searches.__caps.criteria.hidden);
 });
 
 test('scanner pool: one bot per site', () => {

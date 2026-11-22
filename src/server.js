@@ -137,6 +137,7 @@ function createServer({ scanner, store, context, notifier, cloud }) {
           busyAll: scanner.runs.map((r) => r.id), // Divar and Bama can run together
           loggedIn: await isLoggedIn(context).catch(() => false),
           today: store.dailyCount(),
+          todayBy: store.dailyCounts(),
           dailyLimit: DEFAULT_DAILY_LIMIT,
           runs: store.listRuns(),
           // Searches waiting their turn (phone, «خرید با بودجه»)
@@ -157,6 +158,12 @@ function createServer({ scanner, store, context, notifier, cloud }) {
           const s = store.setAuto(String(b.key || ''), cleanAuto(b));
           return send(res, 200, { ok: true, auto: s.auto });
         } catch (e) { return send(res, 404, { error: e.message }); }
+      }
+      // Daily cap of each site: { divar: 300, bama: 300, hamrah: 300, k45: 300 }.
+      if (p === '/api/caps' && req.method === 'POST') {
+        const caps = store.setCaps(await readBody(req));
+        if (cloud) { cloud.syncSoon(); cloud.startPending(); }
+        return send(res, 200, { ok: true, caps });
       }
       // Daily price check of all saved searches, now: { queued, keys }.
       if (p === '/api/daily-check' && req.method === 'POST' && cloud && cloud.dailyNow) {

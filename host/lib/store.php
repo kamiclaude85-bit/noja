@@ -174,6 +174,7 @@ function panel_state(): array {
         'busyAll' => $b['online'] && is_array($st['busyAll'] ?? null) ? $st['busyAll'] : [],
         'loggedIn' => $st['loggedIn'] ?? null,
         'today' => (int) ($st['today'] ?? 0),
+        'todayBy' => is_array($st['todayBy'] ?? null) ? $st['todayBy'] : new stdClass(),
         'dailyLimit' => (int) ($st['dailyLimit'] ?? 300),
         'runs' => list_runs(),
     ];

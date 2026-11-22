@@ -194,6 +194,7 @@ function renderDashboard(view) {  const ads = allAds().map((a) => ({ a, f: adFla
   view.replaceChildren(h('div', { class: 'page' },
     pageHead('پیشخوان', new Date().toLocaleDateString('fa-IR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })),
     botCard,
+    todayBySiteLine(),
     dailyCheckCard(ads),
     h('div', { class: 'kpis' },
       kpi('آگهی جدید امروز', newToday, `${fa(unreviewed)} آگهی هنوز بررسی نشده`, '#/ads?stage=new', newToday ? 'blue' : '', 'plus'),
@@ -1311,13 +1312,60 @@ async function drawCloud(box) {
   draw();
 }
 
-async function renderSettings(view) {
-  let s = await api('/api/settings/notify').catch(() => null);
+// ---------- daily cap of each site ----------
+const CAP_SITES = ['divar', 'bama', 'hamrah', 'k45'];
+const capsOf = () => ({ divar: 300, bama: 300, hamrah: 300, k45: 300, ...(App.caps || {}) });
+
+/** «تنظیمات»: how many ad pages a day the bot may open on each site, and today's count. */
+function capsCard() {
+  const caps = capsOf();
+  const by = App.state.todayBy || {};
+  const inputs = {};
+  const rows = CAP_SITES.map((id) => {
+    inputs[id] = h('input', { type: 'number', min: 10, max: 2000, step: 10, value: caps[id], inputmode: 'numeric', class: 'num', 'aria-label': `سقف روزانهٔ ${SITE_FA[id]}` });
+    const used = by[id] || 0;
+    return h('label', { class: 'cap-row' },
+      h('span', { class: `src-tag ${id}` }, SITE_FA[id]),
+      inputs[id],
+      h('small', { class: `muted num${used >= caps[id] ? ' full' : ''}` }, `امروز ${fa(used)} از ${fa(caps[id])}`));
+  });
+  const saveBtn = h('button', { class: 'btn primary', type: 'submit' }, icon('check', 'sm'), 'ذخیره');
+  const form = h('form', { class: 'card caps-card', style: 'margin-bottom:16px' },
+    h('div', { class: 'card-h' }, h('h2', null, icon('clock', 'sm'), 'سقف روزانهٔ ربات')),
+    h('p', { class: 'muted', style: 'margin:0 0 12px' }, 'ربات از هر سایت در روز بیشتر از این تعداد آگهی باز نمی‌کند. هر سایت سقف خودش را دارد؛ وقتی یکی پر شد، جستجوهای همان سایت تا فردا صبر می‌کنند و بقیه کارشان را ادامه می‌دهند.'),
+    h('div', { class: 'cap-rows' }, rows),
+    h('div', { class: 'form-actions' }, saveBtn));
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    saveBtn.disabled = true;
+    const body = Object.fromEntries(CAP_SITES.map((id) => [id, Number(inputs[id].value) || 300]));
+    try {
+      const r = await api('/api/caps', { method: 'POST', body });
+      App.caps = r.caps;
+      toast(r.later ? 'ذخیره شد؛ ربات در اولین ارتباط اعمالش می‌کند.' : 'سقف روزانه ذخیره شد.');
+      form.replaceWith(capsCard());
+    } catch (err) { toast(err.message, 'err'); saveBtn.disabled = false; }
+  });
+  return form;
+}
+
+/** One line for the dashboard: today's count of each site that opened anything (or is full). */
+function todayBySiteLine() {
+  const caps = capsOf();
+  const by = App.state.todayBy || {};
+  const parts = CAP_SITES.filter((id) => by[id]).map((id) => `${SITE_FA[id]} ${fa(by[id])} از ${fa(caps[id])}`);
+  if (!parts.length) return null;
+  const full = CAP_SITES.filter((id) => (by[id] || 0) >= caps[id]);
+  return h('a', { class: `today-by${full.length ? ' full' : ''}`, href: '#/settings' }, icon('clock', 'sm'),
+    `امروز: ${parts.join(' · ')}`, full.length ? ` — سقف ${full.map((id) => SITE_FA[id]).join('، ')} پر شده` : '');
+}
+
+async function renderSettings(view) {  let s = await api('/api/settings/notify').catch(() => null);
   if (!s) { view.replaceChildren(h('div', { class: 'page' }, h('div', { class: 'empty' }, 'ارتباط با ربات برقرار نیست.'))); return; }
   const box = h('div');
   const cloudBox = h('div');
   view.replaceChildren(h('div', { class: 'page narrow-ish' },
-    pageHead('تنظیمات', 'یادآوری تماس‌ها، بازدیدها و آگهی‌های جدید را روی گوشی‌تان بگیرید.'), cloudBox, box));
+    pageHead('تنظیمات', 'سقف روزانهٔ هر سایت، و یادآوری تماس‌ها، بازدیدها و آگهی‌های جدید روی گوشی‌تان.'), capsCard(), cloudBox, box));
   if (!App.host) drawCloud(cloudBox);
 
   const save = async (patch, msg) => {

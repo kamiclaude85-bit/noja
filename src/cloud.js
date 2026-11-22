@@ -168,7 +168,7 @@ class Cloud {
     return {
       payload: {
         since: this.st.cursor,
-        state: { busy, busyAll, busyKey: this.busyKey(), busyKeys: this.scanner.runs.map((r) => { try { return require('./scanner').searchKey(r.criteria); } catch (_) { return null; } }).filter(Boolean), loggedIn: this.loggedIn == null ? null : this.loggedIn, today: s.dailyCount(), dailyLimit: this.dailyLimit || 300, pending: this.pending.length,
+        state: { busy, busyAll, busyKey: this.busyKey(), busyKeys: this.scanner.runs.map((r) => { try { return require('./scanner').searchKey(r.criteria); } catch (_) { return null; } }).filter(Boolean), loggedIn: this.loggedIn == null ? null : this.loggedIn, today: s.dailyCount(), todayBy: s.dailyCounts(), dailyLimit: this.dailyLimit || 300, pending: this.pending.length,
           queue: this.pending.slice(0, 40).map((c) => ({ id: c.qid, createdAt: c.queuedAt, criteria: c })) },
         ads,
         gone: hasGone ? gone : undefined,
@@ -327,6 +327,10 @@ class Cloud {
       const { cleanAuto } = require('./daily');
       try { this.store.setAuto(String((q.body || {}).key || ''), cleanAuto(q.body)); } catch (_) { /* search gone */ }
       this.syncSoon();
+    } else if (q.kind === 'caps') {
+      // daily cap of each site, changed in the online panel
+      this.store.setCaps(q.body || {});
+      this.syncSoon();
     } else if (q.kind === 'daily') {
       // «بررسی قیمت همین حالا» in the online panel
       if (this.dailyNow) this.dailyNow('hand');
@@ -357,8 +361,8 @@ class Cloud {
       const i = this.pending.findIndex((c) => siteOf(c) === site);
       if (i < 0 || !this.scanner.free(this.pending[i])) continue;
       // Daily cap reached: the rest waits until tomorrow (checked again every hour).
-      const cap = Number(this.pending[i].dailyLimit) || 300;
-      if (this.store.dailyCount() >= cap) continue;
+      const cap = this.store.capFor(site);
+      if (this.store.dailyCount(site) >= cap) continue;
       try {
         this.scanner.start(this.pending[i]);
       } catch (e) { this.log(e); continue; } // not started: it stays in line

@@ -16,6 +16,11 @@ const P = require('./parser');
 
 const MAX_RUNS = 30;
 const BAMA_PRICES_KEY = '__bama_prices'; // see setBamaPrices
+// Daily cap of each site (see caps()): 1 to 2000 ad pages a day, 300 unless set.
+const CAPS_KEY = '__caps';
+const CAP_SITES = ['divar', 'bama', 'hamrah', 'k45'];
+const DEFAULT_CAP = 300;
+const cleanCap = (v) => { const n = Math.round(Number(v)); return Number.isFinite(n) && n >= 1 ? Math.min(n, 2000) : DEFAULT_CAP; };
 const MAX_BACKUPS = 30;
 /** Backup files: radyab-YYYY-MM-DD(-n).json.gz; older ones from before the rename are noja-…. */
 const BACKUP_NAME_RE = /^(radyab|noja)-\d{4}-\d{2}-\d{2}(-\d+)?\.json\.gz$/;
@@ -121,16 +126,22 @@ class Store {
   bump() { this.db.version = (this.db.version || 0) + 1; }
 
   // ---------- daily counter ----------
-  /** How many ad pages the bot opened today (local date). */
-  dailyCount() {
+  /** How many ad pages the bot opened today (local date): on one site, or on all of them. */
+  dailyCount(site) {
     const today = new Date().toLocaleDateString('en-CA');
-    if (this.daily.date !== today) this.daily = { date: today, count: 0 };
-    return this.daily.count;
+    if (this.daily.date !== today) this.daily = { date: today, count: 0, bySite: {} };
+    // a day file from before the count per site: what was opened was on the first site
+    if (!this.daily.bySite) this.daily.bySite = this.daily.count ? { divar: this.daily.count } : {};
+    return site ? this.daily.bySite[site] || 0 : this.daily.count;
   }
 
-  countView() {
+  /** Today's count of each site: { divar: 12, bama: 3 … }. */
+  dailyCounts() { this.dailyCount(); return { ...this.daily.bySite }; }
+
+  countView(site = 'divar') {
     this.dailyCount();
     this.daily.count++;
+    this.daily.bySite[site] = (this.daily.bySite[site] || 0) + 1;
     // Times of the ad pages opened in the last 24 h (for the captcha log: how busy was the bot?).
     const now = Date.now();
     this.daily.times = (this.daily.times || []).filter((t) => now - t < 24 * 3600000);
@@ -368,6 +379,28 @@ class Store {
     this.scheduleFlush();
   }
 
+  /**
+   * Daily cap of each site (ad pages a day), set in «تنظیمات». Kept as a hidden saved search, so
+   * it reaches the online panel with the searches. Missing or odd values: DEFAULT_CAP.
+   */
+  caps() {
+    const s = this.db.searches[CAPS_KEY];
+    const c = (s && s.criteria && s.criteria.caps) || {};
+    return Object.fromEntries(CAP_SITES.map((id) => [id, cleanCap(c[id])]));
+  }
+
+  capFor(site) { return this.caps()[site] || DEFAULT_CAP; }
+
+  setCaps(caps) {
+    const next = { ...this.caps() };
+    for (const id of CAP_SITES) if (caps && caps[id] != null && caps[id] !== '') next[id] = cleanCap(caps[id]);
+    this.db.searches[CAPS_KEY] = { tokens: [], createdAt: Date.now(), criteria: { hidden: true, caps: next } };
+    this.changes.searches = true;
+    this.bump();
+    this.scheduleFlush();
+    return next;
+  }
+
   /** Remember that today's automatic check of this search was lined up. */
   markAutoRan(key, day) {
     const s = this.db.searches[key];
@@ -478,4 +511,4 @@ class Store {
   }
 }
 
-module.exports = { Store };
+module.exports = { Store, CAPS_KEY, CAP_SITES, DEFAULT_CAP };

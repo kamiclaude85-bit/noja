@@ -544,6 +544,14 @@ code { font-family: ui-monospace, Consolas, monospace; font-size: 13px; backgrou
 .daily-opts select { font: inherit; padding: 3px 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); }
 .daily-opts select:disabled { opacity: .5; }
 .daily-card.done .state-icon { background: var(--good-soft); color: var(--good); }
+.cap-rows { display: grid; gap: 10px; }
+.cap-row { display: grid; grid-template-columns: 120px 110px 1fr; align-items: center; gap: 10px; }
+.cap-row .src-tag { justify-self: start; }
+.cap-row input { width: 100%; box-sizing: border-box; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font: inherit; }
+.cap-row small.full { color: var(--bad); font-weight: 600; }
+@media (max-width: 560px) { .cap-row { grid-template-columns: 1fr 96px; } .cap-row small { grid-column: 1 / -1; margin-top: -6px; } }
+.today-by { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; color: var(--text-2); margin: -6px 2px 14px; text-decoration: none; }
+.today-by.full { color: var(--bad); }
 .dash-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .dash-grid .card + .card { margin-top: 0; }
 

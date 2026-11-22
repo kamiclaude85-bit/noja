@@ -84,6 +84,21 @@ try {
         foreach ($items as $c) if (is_array($c)) queue_add('scan', $c);
         json_out(200, ['queued' => true, 'count' => count($items)]);
     }
+    // Daily cap of each site: shown here at once, applied by the bot at its next check-in.
+    if ($path === '/caps' && $method === 'POST') {
+        $b = body_json(10000);
+        $searches = kv_get('searches', []) ?: [];
+        $caps = $searches['__caps']['criteria']['caps'] ?? [];
+        foreach (['divar', 'bama', 'hamrah', 'k45'] as $id) {
+            if (isset($b[$id]) && $b[$id] !== '') $caps[$id] = max(1, min(2000, (int) $b[$id]));
+            elseif (!isset($caps[$id])) $caps[$id] = 300;
+        }
+        $searches['__caps'] = ['tokens' => [], 'createdAt' => now_ms(), 'criteria' => ['hidden' => true, 'caps' => $caps]];
+        kv_set('searches', $searches);
+        next_seq();
+        queue_add('caps', $caps);
+        json_out(200, ['ok' => true, 'caps' => $caps, 'later' => true]);
+    }
     // Daily price check of all saved searches, now: the bot lines them up at its next check-in.
     if ($path === '/daily-check' && $method === 'POST') {
         queue_add('daily', []);
